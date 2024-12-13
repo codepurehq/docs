@@ -1,0 +1,54 @@
+---
+title: 'Setup a scanner'
+description: 'Learn how to setup a scanner to use with Corgea'
+---
+
+## Get Started
+
+Corgea recommends customers use Semgrep because it's free to get started, and easy to use. 
+
+<Steps>
+  <Step title="Register with Semgrep:">
+    Register with Semgrep: [semgrep.dev/login](https://semgrep.dev/login)
+
+    Sign up by clicking on Sign in with GitHub or Sign in with GitLab. Follow the on-screen prompts to grant Semgrep the needed permissions and proceed.
+
+  </Step>
+  <Step title="Install Semgrep's CLI command">
+
+
+    <CodeGroup>
+    ```bash OS X
+    brew install semgrep
+
+    OR
+
+    python3 -m pip install semgrep
+
+    ```
+
+    ```bash Linux
+    python3 -m pip install semgrep
+    ```
+
+    ```bash Windows
+    python3 -m pip install semgrep
+    ```
+    </CodeGroup>
+
+
+  </Step>
+  <Step title="Login with Semgrep locally">
+    Log in to your Semgrep account. Running this command launches a browser window, but you can also use the link that's returned in the CLI to proceed:
+
+    <CodeGroup>
+    ```bash OS X, Windows, Linux
+    semgrep login 
+    ```
+    </CodeGroup>
+
+  </Step>
+  <Step title="Fix issues with Corgea">
+    You can now start to fix issues with Corgea. Go to our [Scanning guide](scanning) to learn more. 
+  </Step>
+</Steps>

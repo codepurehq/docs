@@ -1,0 +1,69 @@
+---
+title: 'Visual Studio 2022'
+description: 'Bring Corgea to your Visual Studio Code'
+---
+Corgea is a Visual Studio extension that helps developers triage false positive SAST (Static Application Security Testing) findings and automatically fix insecure code. It integrates with the Corgea cloud service to provide a seamless experience within Visual Studio.
+
+<Note>The Corgea Visual Studio Code plugin is in Beta. For any issues or support, please email support@corgea.com.</Note>
+
+
+<img src="/images/vs2022.png" style={{ borderRadius: '0.5rem' }} />
+
+
+## Installation
+
+1. [Install](https://marketplace.visualstudio.com/items?itemName=Corgea.corgea) the extension from the Visual Studio Marketplace.
+
+OR
+
+1. Open Visual Studio 2022.
+2. Go to `Tools` > `Extensions and Updates`.
+3. Search for "Corgea" in the Online section.
+4. Click `Download` and follow the prompts to install the extension.
+
+## Setup
+
+1. After installing the extension, restart Visual Studio.
+2. Go to `Tools` > `Corgea` > `Login`.
+3. Enter your Corgea URL (default:https://corgea.app) and your API Key to authenticate.
+
+## Usage
+
+### Fetch Vulnerabilities
+
+1. Open your solution in Visual Studio.
+2. Go to `Tools` > `Corgea` > `Fetch Vulnerabilities`.
+3. The Vulnerability Tool Window will open, displaying a list of vulnerabilities found in your project.
+
+### View Vulnerability Details
+
+1. In the Vulnerability Tool Window, double-click on a vulnerability to open the Vulnerability Details Tool Window.
+2. This window provides detailed information about the vulnerability, including:
+   - Classification (e.g., SQL Injection, Cross-Site Scripting)
+   - Urgency level
+   - Status (e.g., fix available, false positive)
+   - Code diff showing the proposed fix
+   - Issue description
+   - Explanation of the fix
+
+### Apply Fix
+
+If a fix is available for the vulnerability, you can apply it directly from the Vulnerability Details Tool Window:
+
+1. Review the code diff and the explanation of the fix.
+2. Click the "Apply Fix" button.
+3. The modified code will be applied to your project.
+
+### Mark as False Positive
+
+If you determine that a vulnerability is a false positive, you can mark it as such:
+
+1. In the Vulnerability Details Tool Window, click the "See in Corgea" button.
+2. This will open the vulnerability details in the Corgea web application.
+3. Follow the instructions in the Corgea web app to mark the vulnerability as a false positive and provide reasoning.
+
+## Additional Features
+
+- The extension integrates with Visual Studio's secure storage to securely store your Corgea account credentials.
+- It automatically detects the active project in your solution and fetches vulnerabilities for that project.
+- The Vulnerability Details Tool Window provides a convenient way to view and navigate to the vulnerable code in your project.

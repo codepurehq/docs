@@ -1,0 +1,93 @@
+---
+title: 'Authentication'
+description: 'Corgea API Endpoints'
+---
+
+
+# Authentication and Token Verification
+
+## Introduction
+
+Authentication is a crucial part of interacting with the Corgea CLI API. The API uses token-based authentication to ensure secure access to its endpoints. This section covers how to verify your token using the provided endpoint.
+
+## Verify Token
+
+The Verify Token endpoint allows you to check the validity of your token. This is the first step in ensuring you have the necessary permissions to access other API endpoints.
+
+### Endpoint
+
+- **URL**: `https://corgea.app/api/cli/verify/{token}`
+- **Method**: `GET`
+
+### Parameters
+
+| Name  | In   | Type   | Required | Description           |
+|-------|------|--------|----------|-----------------------|
+| token | path | string | yes      | The token to be verified |
+
+### Request Example
+
+The `<RequestExample>` component works similar to CodeGroup, but displays the request content on the right sidebar. Thus, you can put multiple code blocks inside `<RequestExample>`.
+
+<RequestExample>
+
+```shell
+# cURL
+curl -X GET "https://corgea.app/api/cli/verify/your_token_here"
+```
+
+```http
+# HTTP Request
+GET /cli/verify/your_token_here HTTP/1.1
+Host: corgea.app
+```
+
+</RequestExample>
+
+<ResponseExample>
+
+```json
+# Success Response
+{
+  "status": "ok"
+}
+```
+
+```json
+# Error Response
+{
+  "status": "error"
+}
+```
+
+</ResponseExample>
+
+### Response Codes
+
+- `200 OK`: The token is valid.
+- `400 Bad Request`: The token is invalid.
+
+### Usage
+
+To use this endpoint, replace `your_token_here` with the actual token you wish to verify. This will return a JSON response indicating whether the token is valid or not.
+
+### Example Scenario
+
+#### Step-by-Step Example
+
+1. **Prepare the request**:
+    - Ensure you have your token ready.
+    - Use the `curl` command or any HTTP client to send a GET request to the endpoint.
+
+2. **Send the request**:
+    - Execute the request in your terminal or HTTP client.
+
+3. **Check the response**:
+    - If the response status is `200 OK` and `status` is `ok`, your token is valid.
+    - If the response status is `400 Bad Request` and `status` is `error`, your token is invalid.
+
+### Notes
+
+- Always ensure your token is kept secure and not exposed in public repositories or logs.
+- Use this endpoint as the first step before making requests to other endpoints to confirm your token's validity.
+

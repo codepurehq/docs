@@ -1,0 +1,71 @@
+---
+title: 'GitHub'
+description: 'Start generating fixes for your repository'
+---
+## Setup
+
+Currently Corgea supports GitHub repositories via the [Corgea GitHub App](https://github.com/apps/corgea).
+This page will help you setup the GitHub App so Corgea can issue pull requests to scan and fix vulnerabilities.
+
+
+You can install the Github App from our [integrations](https://www.corgea.app/integrations/) page or from an issue as seen in the following steps:
+
+
+<Steps>
+  <Step title="Install the Corgea GitHub App">
+  Click on the Install button next to the GitHub logo on the Integrations page. 
+    <Frame>
+      <img src="/images/github_integrations.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+  </Step>
+  <Step title="Continue setup in Github">
+    Select only one organization to install for and make sure that the organization
+    you selected matches what your typed in previously. GitHub will ask you to accept
+    permissions and select which repositories are accessible. Only repositories
+    that are made accessible to Corgea will be capable of recieving pull requests
+    from Corgea.
+    </Step>
+</Steps>
+
+## Using Corgea with GitHub
+
+Great! You've now connected Corgea with GitHub. The GitHub app will now scan every PR to find and provide suggested fixes, and you can now issue PRs to fix vulnerabilities from Corgea. 
+
+## Scanning PRs
+Corgea scans each pull request for potential vulnerabilities and suggests actionable fixes.
+    <Frame>
+      <img src="/images/github-scan.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+## Issuing PRs from Corgea
+      You can now issue a PR that fixes an issue from any issue page in Corgea.
+    <Frame>
+      <img src="/images/fix-issue.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+    When you click "Create Pull-Request" a new tab will open with pull request created.
+    You may need to disable your pop-up blocker.
+
+    <Frame>
+      <img src="/images/github-pr-fix.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="GitHub app not installed">
+    You may not have full permissions in GitHub to install a GitHub App by yourself.
+    In this instance the admin or owner of the GitHub Organization will recieve a
+    request from you in their notifcations. During this waiting period will display
+    that the install is pending. When the Organization owner/admin accepts the
+    request Corgea will recieve a webhook and update your account.
+  </Accordion>
+  <Accordion title="Re-issue the Pull Request">
+    You may have chosen the wrong base branch to merge into. In order to change this,
+    close the existing pull request and delete the branch created in GitHub. Currently,
+    you will have to message Corgea support to reset the Issue/Fix for you. In the future,
+    you will be able to delete and reset from the Corgea interface.
+  </Accordion>
+  <Accordion title="Track Pull Request Status in Corgea">
+    This is on the roadmap for development.
+  </Accordion>
+</AccordionGroup>

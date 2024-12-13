@@ -1,0 +1,69 @@
+---
+title: 'Slack'
+description: 'Setting up the Slack Integration with Corgea'
+---
+
+Corgea's Slack integration allows you to receive notifications in your Slack workspace when a scan is completed using Slack's Workflow Builder.
+
+## Prerequisites 
+
+Before setting up the integration, ensure you have:
+
+- Administrative access to your Corgea account
+- Appropriate permissions in your Slack workspace
+
+## Setting Up Slack Workflow Builder
+
+This method provides flexibility by allowing you to create custom workflows that can route notifications to different channels or trigger other automated actions.
+
+<Steps>
+  <Step title="Create a Workflow">
+    1. In Slack, click on your workspace name
+    2. Select "Tools" → "Workflow Builder"
+    3. Click "Create" to start a new workflow
+    4. Select "Webhook" as the trigger
+    5. Give your workflow a name and click "Next"
+  </Step>
+  <Step title="Configure Workflow Steps">
+    1. After creating the webhook, copy the provided Webhook URL
+    2. Add steps to your workflow (e.g., "Send a message")
+    3. Configure the message format using variables from the webhook payload
+    4. You can add additional steps like:
+       - Sending messages to multiple channels
+       - Creating reminders
+       - Updating channel topics
+       - Integrating with other Slack apps
+  </Step>
+  <Step title="Configure in Corgea">
+    1. Log in to your Corgea account and go to "Integrations"
+    2. Find the Slack section and click "Add Integration"
+    3. Select "Slack Workflow"
+    4. Enter a name for the integration
+    5. Paste the Workflow Webhook URL
+    6. Click "Save"
+  </Step>
+</Steps>
+
+## Notification Content
+
+Corgea will send the following information to your Slack workflow:
+
+- User who initiated the scan
+- Project name
+- Number of issues found
+- Severity breakdown
+- Direct link to scan results
+
+## Customization Options
+
+With Workflow Builder, you can:
+- Create conditional logic for different types of notifications
+- Route messages to different channels based on severity
+- Trigger custom automations based on scan results
+- Integrate with other Slack workflows and apps
+- Use variables to customize message format and content
+
+## Additional Resources
+- [Slack Workflow Builder Guide](https://slack.com/help/articles/360035692513-Guide-to-Workflow-Builder)
+
+By configuring the Workflow Builder integration, you can ensure your team stays informed about security scan results and take advantage of Slack's automation capabilities for a more streamlined security workflow.

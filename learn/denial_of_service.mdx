@@ -1,0 +1,51 @@
+---
+title: Denial of Service Attacks
+description: "What is a Denial of Service attack?"
+---
+
+## What is a Denial of Service (DoS) attack? 
+A Denial of Service (DoS) attack is when an attacker tries disrupting the normal functioning of a targeted server, service, or network. The primary goal is to make the targeted resource unavailable to its intended users.
+
+Here's a simple analogy: 
+Imagine a shop that can only serve a limited number of customers at a time. A DoS attack is like large crowd trying to enter the shop, not allowing real customers to enter. This "crowding" happens when attackers flood a server or network with an overwhelming amount of traffic or requests. It's is so intense that the server cannot handle it, leading to a slowdown or complete shutdown of the service.
+
+This can be done using a number of different techniques like: 
+1. **Traffic Floods**: Sending a huge amount of requests or traffice. 
+2. **Resource Depletion**: Consuming all available resources on the target server (like memory or bandwidth), so it can't process legitimate requests.
+3. **Connection Overload**: Opening a large number of connections to the server and keeping them open, preventing real users from connecting.
+
+This type of attack doesn't just affect the targeted server or service, but also the users who rely on it.
+
+In some cases, DoS attacks are used as a distraction or smokescreen to occupy security teams while they do other malicious activities like stealing data. 
+
+You can read about DoS attacks on the [OWASP page](https://owasp.org/www-community/attacks/Denial_of_Service), and this is a weakness that is labelled as a [CWE400: Uncontrolled Resource Consumption
+Weakness ID: 400](https://cwe.mitre.org/data/definitions/400.html) when found in code. 
+
+## How do I protect against a Denial of Service (DoS) attack? 
+
+
+Preventing Denial of Service (DoS) attacks can involve several strategies to protect servers and networks from being overwhelmed by malicious traffic. Here are a few ways to do this:
+
+1. Increase Bandwidth: Having more bandwidth than you usually need can help absorb the increased traffic during a DoS attack. This is like having a larger doorway for your shop, so it's harder to block it completely.
+2. Use Anti-DoS Software: There are specialized tools designed to detect and mitigate DoS attacks. These tools can identify abnormal traffic patterns and filter out malicious traffic before it reaches your server.
+3. Configure Networks: Adjust settings on routers and firewalls to reject suspicious traffic. For example, you can set up rules to drop packets from obvious sources of attack or limit the rate of connections.
+4. Content Delivery Networks (CDNs): CDNs can distribute your traffic across multiple servers around the world. This not only speeds up content delivery but also disperses the traffic, making it harder for an attack to target a single point in your network.
+5. Regularly Update and Patch Systems: Keeping your systems updated can protect against certain types of DoS attacks that exploit vulnerabilities in outdated software.
+6. Collaboration with ISP: Your ISP can be a valuable ally in mitigating DoS attacks. They can help filter out attack traffic, provide additional bandwidth, or even block traffic from certain sources.
+
+It usually requires a combinator of strategies to combat complex DoS attackes like Distributed DoS attackes. No single method is foolproof, so a layered approach is usually best.
+
+## Example fix for Denial of Service (DoS) attack:
+The issue, identified as CWE400 (uncontrolled resource consumption), was detected in the Django settings file because there was no rate limiting imposed on the Django REST Framework. This allows an attacker to conduct a Denial of Service attack by bombarding the application with a lot of API requests. 
+
+To solve for this in code is: 
+- Limited resources available to both anonymous and logged-in users.
+- Throttled incoming requests.
+
+    <Frame>
+      <img src="/images/cwe400-example.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+## How does Corgea help? 
+
+Corgea can fix [CWE400: Uncontrolled Resource Consumption Weakness ID: 400](https://cwe.mitre.org/data/definitions/400.html) when found in code like in the example above. [Register today](https://www.corgea.app/registration/) for free to protect your resources against this type of attack.

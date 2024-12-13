@@ -1,0 +1,103 @@
+---
+title: 'Business Logic Application Security Testing (Private Beta)'
+description: 'Comprehensive vulnerability coverage in Corgea'
+---
+
+## Overview
+
+BLAST (Business Logic Application Security Testing) is Corgea's next-generation code scanning solution, designed to detect and fix security vulnerabilities in application code, with a particular emphasis on business logic, authentication and code flaws. Unlike traditional Static Application Security Testing (SAST) tools, BLAST uses advanced AI-driven techniques to enhance detection accuracy, reduce false positives, and provide actionable insights for developers and security teams.
+
+By leveraging the power of Large Language Models (LLMs) combined with static analysis, BLAST delivers a deeper contextual understanding of code, allowing it to detect vulnerabilities that standard SAST tools might miss. This document provides a technical overview of how BLAST works, what it can detect, and how it integrates into development workflows.
+
+<Note>BLAST is currently in **private beta** and is **not enabled by default**. If you're interested in participating in the beta, please reach out to our support team for more details.</Note>
+
+## Key Features
+
+- **AI-Enhanced Code Analysis**: Combines the reasoning capabilities of LLMs with static code analysis to accurately detect vulnerabilities.
+- **Business Logic and Traditional SAST Vulnerability Detection**: In addition to detecting business logic flaws, BLAST is fully capable of identifying the standard SAST vulnerabilities (e.g., buffer overflows, injection vulnerabilities, and insecure data handling).
+- **Low False Positive Rate**: Reduces the noise associated with traditional code scanning by focusing on real issues.
+- **Actionable Insights**: Provides clear explanations for detected vulnerabilities, improving developer understanding and efficiency in fixing issues.
+- **Seamless Workflow Integration**: Designed to integrate into existing CI/CD pipelines and pull request workflows.
+- **Comprehensive Secret Scanning**: Detects hardcoded secrets, credentials, and sensitive information across your entire codebase.
+
+## Vulnerability Classes Detected
+
+BLAST excels at detecting business logic vulnerabilities, which are often missed by traditional SAST tools. In addition to business logic vulnerabilities, BLAST can also detect common security flaws found in regular SAST scanning. Below are some of the specific vulnerabilities detected by BLAST:
+
+- **Business Logic Vulnerabilities (CWE-840)**: Flaws that allow users to manipulate or bypass critical processes, such as purchase limits or transaction validation.
+- **Code Logic Vulnerabilities (CWE-633)**: Errors in the logic of the code, such as incorrect conditions or loops, leading to unexpected behavior.
+- **Insecure Authentication (CWE-287)**: Issues such as missing multi-factor authentication or insecure token management.
+- **Insecure Authorization (CWE-285)**: Weak access controls that allow unauthorized actions or resource access.
+- **Context Dependent Vulnerabilities (CWE-696)**: Vulnerabilities that occur only under certain conditions, like time-based or state-dependent errors.
+- **Improper Session Management (CWE-384)**: Mismanagement of session identifiers, such as predictable session IDs or insecure storage.
+- **Timing Attacks (CWE-208)**: Vulnerabilities based on the time it takes to execute certain operations, which can leak sensitive information.
+- **Race Conditions (CWE-362)**: Flaws that result from uncontrolled timing or ordering of operations.
+- **Unhygienic Data Handling (CWE-20)**: Poor input validation or escaping of special characters, leading to vulnerabilities like SQL injection.
+- **Insecure Data Storage (CWE-311)**: Storing sensitive data insecurely, such as in plaintext or using weak encryption.
+- **Sensitive Data Exposure (CWE-200)**: Accidental exposure of sensitive information through logs, error messages, or improper storage.
+- **Improper Error Handling (CWE-209)**: Leaking information through error messages or causing unintended behavior due to poor error management.
+- **Improper Logging (CWE-532)**: Logging sensitive data or failing to log important security events.
+- **Improper Exception Handling (CWE-248)**: Failing to handle exceptions securely, leading to potential crashes, data loss, or security risks.
+- **Hardcoded Secrets (CWE-798)**: Detection of embedded credentials, API keys, and other sensitive information in source code.
+
+While BLAST is particularly adept at detecting business and code logic flaws, it can also scan for and detect a wide array of traditional SAST vulnerabilities not limited to those listed here.
+
+## Secret Scanning Capabilities
+
+BLAST includes comprehensive secret scanning functionality to identify exposed sensitive information across your codebase. The scanner detects various types of secrets, including:
+
+- API keys and tokens (AWS, Google Cloud, Azure, etc.)
+- Authentication credentials (usernames, passwords)
+- Database connection strings
+- Private keys and certificates
+- OAuth tokens
+- Personal access tokens (GitHub, GitLab, etc.)
+- Encryption keys
+- Environment variables containing sensitive data
+- Internal service endpoints and URLs
+- Payment processing credentials
+
+The secret scanner uses pattern matching, entropy analysis, and AI-powered contextual understanding to minimize false positives while ensuring comprehensive coverage. When secrets are detected, BLAST provides detailed information about:
+
+- The type of secret detected
+- Its location in the codebase
+- The potential security impact
+- Recommendations for secure storage alternatives (e.g., using environment variables or secret management services)
+
+## Technology Behind BLAST
+
+BLAST is powered by Corgea's proprietary CodeIQ technology, which combines AI with Abstract Syntax Trees (ASTs) to provide a comprehensive analysis of the entire codebase. This approach offers several advantages:
+
+- **Project-Level Analysis**: BLAST parses the entire project to build a complete picture of how code components interact. This ensures that vulnerabilities arising from complex code relationships are not missed.
+- **Contextual Intelligence**: The AI engine understands the broader context of the code, including how different components—such as middleware, configurations, and templates—contribute to potential vulnerabilities.
+- **False Positive Reduction**: By understanding the code context and logic, BLAST reduces the rate of false positives that plague traditional SAST tools.
+
+### Comparison to Traditional Methods
+
+Traditional static analysis techniques like source-sink analysis and call-graphs have significant limitations:
+
+- **Source-Sink Analysis**: Tends to miss validation steps and context-specific vulnerabilities, often leading to false positives.
+- **Call-Graphs**: Miss critical runtime behaviors like reflection or dynamic dependency injection, making it harder to detect certain vulnerabilities.
+- **Vector Search and RAG**: These newer methods suffer from overgeneralization, retrieving irrelevant data such as migration files or tests that do not contribute to the security context.
+
+In contrast, BLAST's AI-driven approach ensures comprehensive coverage without introducing irrelevant noise into the analysis.
+
+## Integration and Workflow
+
+BLAST integrates seamlessly into existing development environments and workflows. Key integration points include:
+
+- **CI/CD Pipelines**: BLAST can be integrated into your continuous integration/continuous deployment (CI/CD) pipeline to scan code automatically at each commit or pull request.
+- **Pull Request Reviews**: BLAST analyzes each pull request for potential vulnerabilities, providing actionable insights before code is merged into the main branch.
+- **IDE Integration**: Developers can run BLAST directly within their integrated development environment (IDE), receiving real-time feedback on potential vulnerabilities as they write code.
+
+### Supported Languages and Frameworks
+
+BLAST supports a wide range of languages and their associated frameworks, ensuring broad applicability across various application stacks:
+
+- **Languages**: C#, Python, Ruby, Go, JavaScript, TypeScript, Java
+- **Frameworks**: .NET, Django, Ruby on Rails, Node.js, Spring, Flask, and more
+
+
+## Conclusion
+
+BLAST is a next-generation application security tool that provides deep insights into business logic vulnerabilities, as well as traditional SAST vulnerabilities, offering more accurate detection and fewer false positives than conventional tools. By integrating AI and static analysis, BLAST helps development and security teams focus on real issues, making the development process more secure and efficient.

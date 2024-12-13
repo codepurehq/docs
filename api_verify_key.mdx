@@ -1,0 +1,70 @@
+---
+title: 'Verify Token Endpoint'
+description: 'Endpoint to verify the validity of a user token in Corgea'
+---
+
+# Corgea API Documentation
+
+## Verify Token Endpoint
+
+### Description
+The Verify Token endpoint is used to verify the validity of a user token. This endpoint checks if the provided token corresponds to a valid user in the system.
+
+### URL
+`GET /verify_token/<token>`
+
+### Method
+`GET`
+
+### Request Parameters
+- **token** (string, required): The token to be verified. This should be included in the URL.
+
+### Response
+The response will be in JSON format.
+
+#### Success Response
+If the token is valid, the response will be:
+
+- **status** (string): The status of the token verification. It will return "ok".
+
+```json
+{
+    "status": "ok"
+}
+```
+
+#### Error Response
+If the token is invalid, the response will be:
+
+- **status** (string): The status of the token verification. It will return "error".
+
+```json
+{
+    "status": "error"
+}
+```
+
+### Example Request
+```http
+GET /verify_token/your_token_here
+```
+
+### Example Response
+#### Success
+```json
+{
+    "status": "ok"
+}
+```
+
+#### Error
+```json
+{
+    "status": "error"
+}
+```
+
+### Notes
+- Ensure that the token is included in the URL when making the request.
+- This endpoint is protected from CSRF attacks using the `@csrf_exempt` decorator.
+- The allowed HTTP method for this endpoint is `GET`. Any other method will result in a `405 Method Not Allowed` response.

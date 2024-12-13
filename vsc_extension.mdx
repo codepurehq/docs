@@ -1,0 +1,67 @@
+---
+title: 'Visual Studio Code'
+description: 'Bring Corgea to your Visual Studio Code'
+---
+
+## Introduction
+
+Corgea is a powerful Visual Studio Code extension designed to enhance security practices by automatically fixing vulnerabilities in code. It integrates artificial intelligence to provide real-time security insights, making secure coding more accessible and effective.
+
+<Note>The Corgea Visual Studio Code plugin is in Beta. For any issues or support, please email support@corgea.com.</Note>
+
+## Features
+
+<img src="/images/vsc_extension.png" style={{ borderRadius: '0.5rem' }} />
+
+- **AI-Generated Fixes**: Offers intelligent, context-aware fixes for detected vulnerabilities.
+- **Vulnerability Management Panel**: A dedicated sidebar that lists detected vulnerabilities, allowing for easy management and review.
+- **Diff Application**: Enables direct application of suggested patches through an interactive interface.
+- **Detailed Vulnerability Insights**: Displays comprehensive details about each vulnerability in a separate webview panel.
+- **Secure API Integration**: Manage your API key and Corgea service endpoint securely within VS Code.
+- **User Authentication Management**: Provides functionalities for securely logging in and out, and managing API keys.
+
+## Prerequisites
+
+Before installing the Corgea extension, ensure you have the following:
+
+- **Corgea account**: have an active Corgea account. 
+- **Visual Studio Code (Version 1.50+)**: Download and install from [Visual Studio Code website](https://code.visualstudio.com/).
+
+## Installation Guide
+
+### Step 1: Install the Extension
+
+1. [Install](https://marketplace.visualstudio.com/items?itemName=Corgea.corgea) the extension from the Visual Studio Marketplace.
+
+### Step 2: Login
+<img src="/images/vsc_login.png" style={{ borderRadius: '0.5rem' }} />
+
+1. After installation, open the Command Palette by pressing `Ctrl+Shift+P`.
+2. Type `Corgea: Login` and press Enter.
+3. Follow the prompts to input your Corgea URL. If you are using the default URL (corgea.app), it will be prefilled.
+4. Enter your API key when prompted. This key can be obtained from your Corgea dashboard under the integrations section.
+
+## Usage
+
+### Viewing Vulnerabilities
+
+<img src="/images/vsc_list.png" style={{ borderRadius: '0.5rem' }} />
+
+- To view the list of detected vulnerabilities, click on the "Vulnerabilities" icon in the sidebar. This panel will display all the current issues along with their severity and location in your code.
+
+### Applying Fixes
+
+<img src="/images/vsc_apply_fix.png" style={{ borderRadius: '0.5rem' }} />
+
+- Click on a vulnerability in the sidebar to open its details in a new webview panel.
+- The details panel will provide a comprehensive overview of the issue, including a fix suggestion.
+- To apply a fix, click the `Apply Fix` button in the details panel. This will automatically update your code with the suggested fix.
+- Save the file with the changes. 
+
+### Logging Out
+
+- To login into another user or log out, use the Command Palette (`Ctrl+Shift+P`) and select the respective commands (`Corgea: Login` or `Corgea: Logout`).
+
+## Release Notes
+
+Full release notes are found on the extension's [change log page](https://marketplace.visualstudio.com/items/Corgea.corgea/changelog).

@@ -1,0 +1,210 @@
+---
+title: 'Security'
+description: "Corgea's Security and Privacy Standards"
+---
+
+## Our Promise
+
+At Corgea, security and privacy is at the heart of everything we do. It is our belief that great software delivers value while maintaining the privacy and security of it’s users data. Our commitment to these principles is unwavering, and it's evident in every facet of our operations. We have designed Corgea with a foundational emphasis on safeguarding user data and ensuring the highest levels of reliability.
+
+The team behind Corgea brings a wealth of experience from previous roles where they built and managed highly scalable applications compliant with stringent regulations such as FedRamp, ITAR, HIPAA, PCI, and various data privacy standards. This collective expertise ensures that Corgea not only meets but often exceeds industry standards.
+
+In conclusion, Corgea is more than just a service; it's a testament to our unwavering commitment to security and privacy. Our users can rest easy knowing that their data is in capable and caring hands.
+
+Best Regards, 
+
+Ahmad Sadeddin
+
+CEO of Corgea
+
+## Security FAQ
+
+<AccordionGroup>
+  <Accordion icon="code" title="What happens to our code within Corgea’s system?">
+    Protecting your intellectual property is our top priority. Corgea operates by storing only the code differences (diffs) necessary to facilitate fixes, handling them with industry-leading encryption standards during both storage and transmission. You own your data, and can always request deleting your data at anytime.
+  </Accordion>
+  <Accordion icon="robot" title="What model does Corgea use to fix my code?">
+    Corgea uses OpenAI selectively to fix insecure code combined with static code analysis techniques. 
+  </Accordion>
+  <Accordion icon="hammer" title="Does Corgea or OpenAI utilize our proprietary data to enhance its AI models?">
+    Your trust is paramount. Corgea is designed to respect your data’s confidentiality. We ensure that your data is not used to train or refine our models. OpenAI keeps copies of the content sent to them for a 30 days to monitoring abuse, as seen in their [API Data Usage Policies](https://openai.com/enterprise-privacy).
+  </Accordion>
+  <Accordion icon="users" title="Which 3rd parties do you share data with?">
+    To provide adequate service, Corgea limits the number of 3rd parties that receive data and shares with the following 3rd parties only:
+    - Amazon Web Services: used to host corgea instances, and databases. 
+    - OpenAI: used in aiding Corgea in fixing insecure code, and in part of the fix QA process. 
+    - Sentry: for application performance monitoring and error tracking. 
+    - Google Analytics: to track and report on website traffic and events. 
+  </Accordion>
+  <Accordion icon="merge" title="Does Corgea auto-merge the proposed fixes into our codebase?">
+    Corgea empowers your team with full control. While we automate the creation of Pull-Requests (PRs), the choice to merge rests with your engineers, ensuring that every change aligns with your project’s objectives. For those who prefer manual integration, diffs are available for direct application within your preferred IDE.
+  </Accordion>
+  <Accordion icon="biohazard" title="What measures does Corgea take to prevent prompt poisoning?">
+    Corgea does not allow user inputs into our fixing prompts, and we leverage AI-security checks before any fix is issued. Coupled with mandatory human reviews during the PR process, we provide a balanced defense against prompt poisoning.
+  </Accordion>
+  <Accordion icon="lock" title="How does Corgea ensure system security?">
+    We are advocates for security, adhering to and often surpassing SOC 2 compliance benchmarks. Our systems are currently undergoing SOC 2 auditing to further validate our steadfast commitment to security.
+  </Accordion>
+  <Accordion icon="house" title="Is Corgea deployed as a Single-tenant or Multi-tenant application?">
+    Corgea.app is a multi-tentant environment. We do offer enterprise customers single-tenant environment. Each customer gets a dedicated environment with separate compute and storage resources. These environments are siloed, ensuring no cross-communication or data leakage between customers.
+  </Accordion>
+</AccordionGroup>
+
+
+## Security Controls
+
+### Authentication and Session 
+#### Password Policy
+Corgea's password policy is designed to prevent the use of weak passwords, which are a common vulnerability point in security systems. The policy includes several requirements:
+
+- Personal Information Dissimilarity: Passwords must not be too similar to the user's personal information. This prevents easy guessing of passwords based on known user data.
+- Minimum Length: Each password must contain at least 8 characters. Longer passwords generally equate to stronger security.
+- Common Password Restriction: Passwords that are commonly used or easy to guess are prohibited. This includes passwords like "123456", "password", or "qwerty".
+- Numeric Restriction: Passwords that are entirely numeric are not allowed, as numeric-only passwords are often easier to crack.
+- Password Reset: Email's are required to verify a password change request.
+- Corgea uses uses the PBKDF2 algorithm with a SHA256 hash, a password stretching mechanism recommended by NIST. 
+
+#### Account Policy
+Corgea's account policy is designed to prevent abuse and increase security:
+- Email accounts can only be used once.
+- User accounts are activated through email.
+- Corgea reserves the right to terminate a user's account and a company's account
+
+#### Rate Limiting
+Corgea implements a limit on the number of requests a user can make within a certain timeframe. This is crucial in mitigating distributed denial-of-service (DDoS) attacks and ensuring the system's availability for all users.
+
+#### Authentication Brute-Force Prevention
+This control is essential in safeguarding against attackers who attempt to gain unauthorized access by guessing passwords. After a certain number of failed login attempts, the account may be locked for a period of time, or the response time is deliberately slowed down.
+
+#### Malicious Requests
+Corgea uses a Web Application Firewall (WAF) that detects and mitigates malicious requests across all traffic. If any traffic is detected as suspicious, the WAF will intiatiate a Javascript challenge that the user must pass to access Corgea.
+
+#### Session Expiration
+Session expiration is a key aspect of session security in Corgea:
+
+- Inactivity Timeout: User sessions are automatically terminated after a period of inactivity. This time period is carefully chosen to balance security with user convenience.
+- Prevention of Unauthorized Access: This mechanism helps in preventing unauthorized access to a user's session, especially in scenarios where a user might forget to log out from a shared or public computer.
+- Re-authentication Requirement: After session expiration, users are required to re-authenticate to ensure that the session is resumed securely.
+
+### Web Security 
+#### Cross Site Scripting (XSS) Protection
+Measures to prevent attackers from injecting malicious scripts into web pages. Corgea escapes specific characters to prevent malicious input. 
+
+#### Cross Site Request Forgery (CSRF) Protection
+Ensuring that requests made to a web application are from the authenticated user. CSRF protection works by checking for a secret in each POST request. This ensures that a malicious user cannot “replay” a form POST to your website and have another logged in user unwittingly submit that form. The malicious user would have to know the secret, which is user specific (using a cookie).
+
+#### SQL Injection Protection
+Safeguards against unauthorized database manipulations through SQL code injection. Queries in Corgea are protected from SQL injection since their queries are constructed using query parameterization. A query’s SQL code is defined separately from the query’s parameters. Since parameters may be user-provided and therefore unsafe, they are escaped by the underlying database driver.
+
+#### Clickjacking Protection
+Preventing attackers from tricking users into clicking on something different than what the user perceives. Corgea has clickjacking protection in the form of the X-Frame-Options middleware which in a supporting browser can prevent a site from being rendered inside a frame. 
+
+#### Host Header Validation
+Host header validation is crucial to ensure that HTTP requests are directed to the intended domain. 
+
+### Data Security 
+#### Data Collection
+Corgea's approach to data collection focuses on gathering essential information while maintaining user privacy and security. The types of data collected include:
+
+- Email Addresses: Used for account creation, communication, and notifications.
+- First and Last Names: Collected to personalize user experience and for identification purposes in account management.
+- IP Addresses: Gathered for security purposes, such as tracking login attempts and identifying potentially malicious activities.
+- Vulnerability Information from SAST/SCA Tools: Includes details of vulnerabilities identified in the code during Static Application Security Testing (SAST) and Software Composition Analysis (SCA).
+- Code: Source code from users necessary for the operation of Corgea's services, such as code reviews and vulnerability scans.
+- GitHub Access Tokens: Used to securely access repositories for code scanning and integration purposes.
+
+#### Data Encryption In-Transit & At-Rest
+Corgea ensures that all data, whether in transit or at rest, is securely encrypted:
+
+In-Transit Encryption:
+- Corgea redirects traffic from HTTP protocol (port 80) to HTTPS (port 443)
+- Utilizes AWS Certificate Manager (ACM) to manage and deploy SSL/TLS certificates.
+- Employs TLS 1.3, the latest and most secure version of the TLS protocol, ensuring that data transmitted over the internet is encrypted and secure from interception or tampering.
+
+At-Rest Encryption:
+- Implements Advanced Encryption Standard (AES) with a 256-bit key length for encrypting data at rest.
+- AES-256 is a robust encryption standard, widely recognized for its strength and effectiveness in protecting data from unauthorized access.
+
+#### Data Backups
+To prevent data loss and ensure data availability, Corgea implements a comprehensive backup strategy:
+
+- Daily Backups: Automated daily backups to capture and store the latest data, ensuring minimal data loss in case of system failures or data corruption.
+- 30-Day Archive: Maintains a rolling 30-day archive of backups, providing a window for data recovery in case of delayed detection of data loss or corruption.
+- AWS S3 / RDS Backups:
+Utilizes Amazon S3 for secure and scalable storage of backup data.
+Employs Amazon RDS Backups for database backup and recovery, taking advantage of its automated backup capabilities and point-in-time recovery features.
+
+#### Non-Production environments
+Non-production environments do not contain production data
+
+### SDLC Controls
+#### Security in SDLC
+Corgea has integrated security into every stage of the Software Development Life Cycle (SDLC) to ensure that security is not an afterthought but a fundamental aspect of development:
+
+- Threat Modeling during Design: In the design phase, threat modeling is conducted to identify potential security issues and create design strategies to mitigate these risks.
+- Secure Coding Practices: Developers are trained and encouraged to follow secure coding practices to minimize vulnerabilities in the code.
+- Regular Security Audits: Throughout the development process, regular security audits are performed to identify and rectify any security lapses.
+- Security Testing before Deployment: Prior to deployment, comprehensive security testing, including penetration testing and vulnerability assessments, is conducted to ensure the application is secure against known threats.
+
+#### Code-Reviews
+Corgea has instituted a rigorous code review process:
+
+- Mandatory Peer Reviews: All code changes undergo mandatory peer reviews. This process involves thorough examination by fellow developers to identify any code issues, including potential security vulnerabilities.
+- Checklists and Standards: Reviewers follow a checklist and adhere to established coding standards to ensure that nothing is overlooked during the review process.
+- Feedback and Iteration: Feedback from code reviews is used for immediate improvements and as a learning tool for future development.
+
+#### Supply-Chain Vulnerability Scanning during Code Merge
+Corgea takes supply chain security seriously, particularly during the integration of new code from external sources:
+
+- Automated Vulnerability Scanning: When new code is merged, automated tools scan for vulnerabilities that could be introduced from external libraries or dependencies.
+- Continuous Monitoring: Continuous monitoring and scanning of the code base to identify any vulnerabilities that might arise over time due to changes in the external code or libraries used.
+
+#### Secrets Scanning
+To protect sensitive data, Corgea employs automated secrets scanning:
+
+- Automated Detection: Tools are used to automatically scan the code repositories for unintended inclusion of secrets like passwords, API keys, and tokens.
+- Immediate Alerts: When secrets are detected, immediate alerts are generated for rapid response to secure the exposed data.
+
+#### SAST/SCA Code Scanning & Corgea for Security Fixes
+Corgea's approach to code scanning and security fixes includes:
+
+- Static Application Security Testing (SAST): This involves scanning the source code for potential security vulnerabilities that could be exploited.
+- Software Composition Analysis (SCA): SCA tools are used to analyze third-party components and open-source libraries for known vulnerabilities.
+- Automated Security Fixes: Corgea integrates tools that not only identify vulnerabilities but also suggest or implement security fixes automatically, reducing the time to remediation.
+
+
+### Infrastructure 
+#### Cloud Infrastructure
+Corgea leverages the power and flexibility of Amazon Web Services (AWS) for its cloud infrastructure needs. This choice provides a robust, scalable, and secure environment for hosting services and applications.
+
+
+#### Cloud Infrastructure Security Practices
+Corgea uses AWS security best practices, including VPCs, Security Groups, IAM roles, and will be conducting regular security assessments.
+
+#### Shared responsibility model of cloud security
+Corgea adheres to the AWS shared responsibility model, which delineates the security responsibilities between AWS and Corgea:
+
+- Security "Of" the Cloud: AWS is responsible for protecting the infrastructure that runs all the services offered in the AWS Cloud.
+- Security "In" the Cloud: Corgea's responsibility involves securing the content, platform, applications, systems, and networks they use on AWS.
+
+#### Network segmentation and isolation
+Corgea's approach to network segmentation and isolation is designed to enhance security and control:
+
+- Virtual Private Clouds (VPCs) and Subnets: By using VPCs and subnets, Corgea effectively segments its network, isolating different parts of its infrastructure for specific purposes.
+- Security Groups and Network ACLs: These are used to provide stateful and stateless filtering of traffic to and from resources.
+- Service Communication Controls: Ensuring that services within Corgea's infrastructure communicate only with authorized counterparts, thus reducing the risk of internal threats and external breaches.
+
+### Access controls
+#### Access to Data
+Corgea enforces strict access controls to ensure that staff access to data is limited and monitored:
+
+- Restricted Data Access: Access to sensitive data is tightly controlled and is only permitted in specific circumstances, such as addressing production issues. This minimizes the risk of unauthorized data access or leaks.
+- Infrastructure Access Control: Access to Corgea’s infrastructure is managed through a corporate Virtual Private Network (VPN). Our VPN provides a secure and encrypted connection, ensuring that access to internal resources is restricted to authorized personnel only.
+- Role-Based Access Control (RBAC): Implementation of RBAC to ensure that employees only have access to the information and resources necessary for their job functions.
+
+#### Access Logs
+Corgea maintains comprehensive access logs to track and audit access to its servers:
+
+- WAF Logging: All server access is logged within our WAF. This includes information about who accessed the server, when the access occurred, and what actions were performed.
+- Audit and Review: Regular audits of access logs are conducted to identify any unusual or unauthorized access patterns. This helps in quickly identifying and responding to potential security incidents.
+- Transparency and Accountability: Keeping detailed access logs ensures transparency in access management and holds staff accountable for their actions within the infrastructure.

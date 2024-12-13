@@ -1,0 +1,32 @@
+---
+title: 'How Corgea Works'
+description: 'Want to learn more about how Corgea works?'
+---
+
+
+## Introduction
+In this article, we delve into Corgea and how it works with Ahmad. 
+
+<Card>
+  <iframe
+    width="650"
+    height="400"
+    src="https://www.loom.com/embed/64cba8ad07a24964b3ffa6eacebc782d?sid=cd379f9e-74c4-4729-adde-8069919e9b37"
+    title="YouTube video player"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowFullScreen
+  ></iframe>
+</Card>
+
+
+## Overview of Corgea
+Corgea is an AI security platform that finds, triages and fixes insecure code. 
+
+## How Corgea Works
+Corgea's process involves several key steps:
+
+1. Scanning: Corgea scans your code repositories using our [BLAST scanner](blast). For a more indepth explanation of BLAST, [read our whitepaper](https://corgea.com/blog/whitepaper-blast-ai-powered-sast-scanner).
+2. Vulnerability Consumption: Corgea can also consume vulnerability reports from [integrated SAST tools](scanning#uploading-a-report).
+3. Contextual Understanding: Corgea leverages [CodeIQ](https://corgea.com/blog/introducing-corgea-codeiq-smarter-detection-triaging-and-fixing-of-insecure-code) which provides it with extensive context for [CWEs](vulnerability_support) across languages & frameworks like [languages like Python, JavaScript, and TypeScript](language_support).
+4. Issuing Fixes: Corgea issues fix suggestions for developers in [GitHub](github), [Azure DevOps](azure_devops) and IDE extensions ([VIsual Studio Code](vsc_extension) & [Visual Studio 2022](vs2022_extension))

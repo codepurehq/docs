@@ -1,0 +1,57 @@
+---
+title: 'Webhooks'
+description: 'Setting up Webhook Integrations in Corgea'
+---
+
+Corgea's webhook integration allows you to send data to any webhook URL, enabling seamless integration with various third-party services and applications. This feature provides a flexible way to extend Corgea's capabilities and automate workflows based on your specific needs.
+
+## Prerequisites
+
+Before setting up the webhook integration, ensure you have:
+
+- Administrative access to your Corgea account
+- A webhook URL from your target application/service
+
+## Setting up the Integration
+
+<Steps>
+  <Step title="Access Integrations Page">
+    Log in to your Corgea account and navigate to the "Integrations" page.
+  </Step>
+  <Step title="Connect Webhook">
+    Locate the "Webhook" integration under "Automation Integrations" and click the "Add +" button.
+  </Step>
+  <Step title="Configure Integration">
+    In the integration setup form, enter the following details:
+    - **Name**: A friendly name for the integration (e.g., "My Custom Webhook")
+    - **Webhook URL**: The URL where Corgea will send data
+  </Step>
+  <Step title="Save Configuration">
+    Click "Save" to complete the webhook integration setup.
+  </Step>
+</Steps>
+
+## Example Use Cases
+
+Here are some example use cases for integrating Corgea with webhooks:
+
+1. **Custom Notification Systems**: Send notifications to team communication tools when new vulnerabilities are discovered.
+
+2. **Incident Management**: Trigger incident creation in systems like PagerDuty or OpsGenie.
+
+3. **CI/CD Integration**: Send scan results to your build/deployment system.
+
+4. **Custom Workflows**: Build custom automations by connecting with internal systems.
+
+5. **Data Visualization**: Send data to tools like Grafana or Kibana for custom dashboards.
+
+## Webhook Payload
+
+When an event occurs, Corgea sends an HTTP POST request to your webhook URL containing relevant data about the event. The payload includes information such as:
+
+- Event type
+- Timestamp
+- User who triggered the event
+- Relevant event data (e.g., scan results, vulnerability details)
+
+By leveraging webhook integrations in Corgea, you can create powerful automated workflows and seamlessly connect with your existing tools and services.

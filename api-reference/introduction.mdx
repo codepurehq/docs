@@ -1,0 +1,292 @@
+---
+title: 'Introduction'
+description: 'Corgea API Endpoints'
+---
+
+# Corgea CLI API Documentation
+
+## Introduction
+
+Welcome to the Corgea CLI API Documentation. This API enables you to interact with the Corgea platform programmatically, allowing for various operations such as verifying tokens, uploading scans, managing issues, and more. Below you will find a comprehensive guide to all available endpoints, including the necessary parameters, request bodies, and responses.
+
+## Base URL
+
+All endpoints referenced in this documentation have the following base URL:
+
+```
+https://corgea.app/api/
+```
+
+## Authentication
+
+The Corgea CLI API uses token-based authentication. Ensure you include the token in your requests as required by specific endpoints. Unauthorized requests will result in a 401 status code.
+
+## Endpoints Overview
+
+### Authentication
+
+- **Verify Token**: Verify the validity of a given token.
+  - `GET /cli/verify/{token}`
+  
+  This endpoint checks if the provided token is valid and returns the status of the verification.
+
+#### Example Request
+
+```http
+GET /cli/verify/your-token-here HTTP/1.1
+Host: corgea.app
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Scan Upload
+
+- **Upload Scan**: Upload scan data for a specific run.
+  - `POST /cli/scan-upload`
+  
+  This endpoint allows you to upload a JSON report of a security scan for a specific run, identified by a run ID.
+
+#### Example Request
+
+```http
+POST /cli/scan-upload?token=your-token-here&run_id=run123&engine=engineName&project=projectName HTTP/1.1
+Host: corgea.app
+Content-Type: application/json
+
+{
+  "report": {
+    "data": "example report data"
+  }
+}
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Git Configuration
+
+- **Upload Git Config**: Upload git configuration data.
+  - `POST /cli/git-config-upload`
+  
+  This endpoint allows you to upload git configuration data for a specific run, identified by a run ID.
+
+#### Example Request
+
+```http
+POST /cli/git-config-upload?token=your-token-here&run_id=run123 HTTP/1.1
+Host: corgea.app
+Content-Type: text/plain
+
+your-git-config-content
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Code Upload
+
+- **Upload Code**: Upload code files for analysis.
+  - `POST /cli/code-upload`
+  
+  This endpoint allows you to upload code files for security analysis, for a specific run, identified by a run ID.
+
+#### Example Request
+
+```http
+POST /cli/code-upload?token=your-token-here&run_id=run123&path=path/to/code HTTP/1.1
+Host: corgea.app
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="example.py"
+Content-Type: text/x-python
+
+# example code content
+print("Hello, world!")
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### CI Data
+
+- **Upload CI Data**: Upload Continuous Integration (CI) data.
+  - `POST /cli/ci-data-upload`
+  
+  This endpoint allows you to upload CI-related data for a specific run, identified by a run ID.
+
+#### Example Request
+
+```http
+POST /cli/ci-data-upload?token=your-token-here&run_id=run123&platform=ci-platform HTTP/1.1
+Host: corgea.app
+Content-Type: application/json
+
+{
+  "data": {
+    "ci_key": "ci_value"
+  }
+}
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Issues Management
+
+- **Get All Issues**: Retrieve all issues related to a project.
+  - `GET /cli/issues`
+  
+  This endpoint retrieves a list of all security issues related to a specified project.
+
+#### Example Request
+
+```http
+GET /cli/issues?token=your-token-here&project=projectName HTTP/1.1
+Host: corgea.app
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok",
+  "issues": [
+    {
+      "id": "issue1",
+      "classification": "CWE-79",
+      "urgency": "high",
+      "project": "projectName",
+      "created_at": "2023-07-29T12:34:56Z",
+      "hold_fix": false,
+      "hold_reason": null,
+      "file_path": "path/to/file",
+      "line_num": 42
+    }
+  ]
+}
+```
+
+- **Get Issues Tree**: Retrieve a hierarchical representation of issues.
+  - `GET /cli/issues-tree`
+  
+  This endpoint retrieves a hierarchical representation of issues, grouped by file paths.
+
+#### Example Request
+
+```http
+GET /cli/issues-tree?token=your-token-here&project=projectName HTTP/1.1
+Host: corgea.app
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok",
+  "project": "projectName",
+  "issues": [
+    {
+      "file_path": "path/to/file",
+      "vulnerabilities": [
+        {
+          "id": "issue1",
+          "classification": "CWE-79",
+          "urgency": "high",
+          "line_num": 42,
+          "status": "fix_available"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **Get Issue**: Retrieve detailed information for a specific issue.
+  - `GET /cli/issue/{issue_id}`
+  
+  This endpoint retrieves detailed information for a specific issue, including its status and any available fixes.
+
+#### Example Request
+
+```http
+GET /cli/issue/issue1?token=your-token-here HTTP/1.1
+Host: corgea.app
+```
+
+#### Example Response
+
+```json
+{
+  "status": "ok",
+  "issue": {
+    "id": "issue1",
+    "urgency": "high",
+    "description": "Example issue description",
+    "classification": "CWE-79",
+    "file_path": "path/to/file",
+    "line_num": 42,
+    "on_hold": false,
+    "hold_reason": null,
+    "explanation": "Detailed explanation of the issue",
+    "false_positive": {
+      "result": "no",
+      "reasoning": "not applicable"
+    },
+    "status": "fix_available"
+  },
+  "fix": {
+    "id": "fix1",
+    "diff": "example diff",
+    "explanation": "Detailed explanation of the fix"
+  }
+}
+```
+
+## Error Handling
+
+The API uses standard HTTP status codes to indicate the success or failure of an API request. Common status codes include:
+
+- `200 OK`: The request was successful.
+- `400 Bad Request`: The request was invalid or cannot be otherwise served.
+- `401 Unauthorized`: Authentication failed or user does not have permissions for the requested operation.
+- `404 Not Found`: The requested resource could not be found.
+
+## Getting Started
+
+To get started with the Corgea CLI API:
+
+1. **Authenticate**: Verify your token using the `/cli/verify/{token}` endpoint.
+2. **Upload Scans**: Use the `/cli/scan-upload` endpoint to upload your scan data.
+3. **Manage Issues**: Retrieve and manage issues using the provided endpoints.
+
+For detailed information on each endpoint, refer to the specific sections in this documentation.
+
+We hope this documentation helps you effectively utilize the Corgea CLI API. If you have any questions or need further assistance, please contact our support team.

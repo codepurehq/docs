@@ -1,0 +1,77 @@
+---
+title: 'Applying Fixes'
+description: 'Start fixing vulnerable code.'
+---
+
+
+## Scanning your repository
+
+<Info>
+  **Prerequisite** You [registered](https://corgea.app/registration/) in Corgea
+
+  **Prerequisite** You have completed a [scan](scanning)
+</Info>
+
+  Depending on the size of the results in the scan, it may take sometime for results to show up. For a couple of hundred findings, it should take 10 mins. 
+
+  Go to [scanning](scanning) to learn more.
+
+<Steps>
+  <Step title="Select an Issue">
+    - Go to the [issues](https://corgea.app/issues) page.
+    - Click on an issue that has a fix that is ready you'd like to resolve.
+    <Frame>
+      <img src="/images/fix-status.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+  </Step>
+  <Step title="Review the fix">
+    Corgea puts rigious controls and checks to ensure fixes are of the highest quality. However, we do recommend reviewing the quality of the fix as they are AI generated.
+  </Step>
+  <Step title="Apply the fix">
+    If the fix seems appropriate, there are two ways to apply fixes:
+    - **Option 1**: Corgea Web Application 
+
+      Click on the "Fix Issue" and then on the "Issue PR" button. 
+      <Tip>To issue a pull-request from Corgea, you need to setup the appropriate integration with [GitHub](github) or [Azure DevOps](azure_devops).</Tip>
+      <Frame>
+        <img src="/images/fix-issue.png" style={{ borderRadius: '0.5rem' }} />
+      </Frame>
+      Corgea will automatically issue a pull-request with a description of the issue, and a description of the fix. It will tag the last committer to the file as a reviewer
+
+      Alternatively, users can download the Git diff or the full fixed file by clicking on the "Git Patch" or "Fixed File" options.
+    
+    - **Option 2**: Corgea IDE Extensions
+
+      Corgea supports applying fixes locally using our IDE extensions. Corgea supports [Visual Studio Code](vsc_extension) and [Visual Studio 2022](vs2022_extension) IDE extensions.
+      <Frame>
+        <img src="/images/vsc_apply_fix.png" style={{ borderRadius: '0.5rem' }} />
+      </Frame>
+
+  </Step>
+  <Step title="Optionally: Vote on the fix">
+    If the fix is good or bad, please leave a vote, and ideally a comment. We review your feedback and use it to make Corgea better, so we greatly appreciate them. 
+    <Frame>
+      <img src="/images/fix-feedback.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No Fix Generated">
+    It might several minutes to hours for fix to be generated based on the backlog of other fixes that you sent. 
+  </Accordion>
+  <Accordion title="I don't like the fix generated">
+    Please leave a vote using the thumbs up and down icons, and ideally a comment. We review your feedback and use it to make Corgea better, so we greatly appreciate them. 
+    <Frame>
+      <img src="/images/fix-feedback.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+  </Accordion>
+</AccordionGroup>
+
+
+
+
+

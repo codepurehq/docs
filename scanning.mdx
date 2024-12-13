@@ -1,0 +1,195 @@
+---
+title: 'Uploading Scans'
+description: 'Start generating fixes for your repository'
+---
+
+Users have a choice between two options: the Corgea Dropsite and the Corgea CLI. 
+
+<Info>
+  **Prerequisite** You registered in Corgea
+
+  **SAST Scanner** You have a SAST scanner like Checkmarx, CodeQL, Semgrep, Fortify, or Snyk. Corgea currently supports these scanners, with Veracode and Sonarqube support on the roadmap.
+</Info>
+
+## Corgea Dropsite
+The Corgea Dropsite is a web interface that allows you to easily add your project to Corgea for analysis. It provides several options to upload your code and reports from various security scanners. The Dropsite has a file size limit of 200MB. For larger projects, please use the Corgea CLI.
+
+### Adding a Project
+<Card>
+  <iframe
+    width="650"
+    height="400"
+    src="https://www.loom.com/embed/0d6f1e16aaa04b94ad9e0ed26ac85447"
+    title="YouTube video player"
+    frameborder="0"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+    allowFullScreen
+  ></iframe>
+</Card>
+
+To add a project to Corgea, follow these steps:
+Navigate to the Dropsite page by clicking on the "Add Project" button in the Corgea Projects page or the Scans page.
+    <Frame>
+      <img src="/images/add_project.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+On the Dropsite page, you will see several options to add your project:
+
+    <Frame>
+      <img src="/images/dropsite_add_project.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+#### Connect Your Repository (Recommended)
+This option allows you to connect your code repository directly to Corgea. Currently, GitHub and Azure DevOps are supported.
+Click on the GitHub or Azure DevOps button to authorize Corgea to access your repositories.
+Select the repository you want to add to Corgea.
+
+#### Add a Public Repository
+If your repository is publicly accessible, you can provide the URL to add it to Corgea.
+Click on the "Add a public repository" accordion.
+2. Enter the URL of your public repository in the input field.
+Click the "Add" button.
+
+#### Web Upload
+This option allows you to upload a ZIP file containing your project's code.
+Click on the "Web upload" accordion.
+Click the "Upload" button and select the ZIP file containing your project's code.
+
+<Tip>
+  To reduce file size and improve processing speed, exclude third-party libraries and build artifacts (e.g., node_modules, vendor, dist) when uploading your project. This can be done by downloading a zip from your repository directly.
+</Tip>
+
+<Warning>
+  Remember that the web upload has a 200MB file size limit. For larger projects, use the Corgea CLI.
+</Warning>
+
+After adding your project, you can proceed to the next step to upload a report from a supported security scanner.
+
+#### Uploading a Report
+
+    <Frame>
+      <img src="/images/upload_report.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+
+<Steps>
+  <Step title="Upload the report">
+    Select the report file (typically a JSON file) from your local machine, and drop it into the upload box.
+    <Info>Corgea supports Checkmarx (JSON), CodeQL (SARIF), Snyk (SARIF), Semgrep (JSON) and Fortify (FPR) scans.</Info>
+  </Step>
+  <Step title="Processing">
+    Once the report is uploaded successfully, Corgea will process your project and report.
+  </Step>
+  <Step title="View results">
+    You will be redirected to the Corgea dashboard, where you can view the analysis results for your project.
+  </Step>
+</Steps>
+
+By following these steps, you can easily add your project and upload security reports to Corgea for analysis and remediation.
+
+### Corgea CLI
+The Corgea CLI (Command-Line Interface) provides advanced features for integrating Corgea with your CI/CD pipeline, performing custom scans, and uploading large projects (>200MB).
+Click on the "Corgea CLI" accordion to learn more about installing and using the [CLI](install_cli).
+
+You can install the Corgea CLI using pip:
+    ```bash
+    pip install corgea-cli
+    ```
+
+[More on the CLI here](install_cli)
+
+
+#### Upload with the CLI
+<Steps>
+  <Step title="Go to repository">
+    Go to the repository you want to scan:
+  <CodeGroup>
+  ```bash Bash
+  cd <<Respository Name>>
+  ```
+  </CodeGroup>
+  </Step>
+  <Step title="Run the scan">
+    <CodeGroup>
+    ```bash Semgrep
+    corgea scan semgrep
+    ```
+
+    ```bash Snyk
+    corgea scan snyk
+    ```
+
+    ```bash Checkmarx
+    # Create a scan with a JSON output for example:
+    cx scan create --project-name juice-shop -s . --branch master --scan-types sast --report-format json --output-name report
+
+    #Upload the vulnerability report to Corgea
+    corgea upload report.json
+    ```
+
+    ```bash CodeQL
+    corgea upload <scan report in sarif json>
+    ```
+
+    ```bash Fortify
+    corgea upload <scan report in FPR>
+    ```
+    </CodeGroup>
+  </Step>
+  <Step title="See Results">
+    Once a scan is completed a scan report will be generated in the repository folder and a copy will be sent to Corgea for processing.
+
+    <Frame>
+      <img src="/images/completed-scan.png" style={{ borderRadius: '0.5rem' }} />
+    </Frame>
+  </Step>
+  <Step title="Issue Fixes">
+  Depending on the size of the results in the scan, it may take sometime for results to show up. For a couple of hundred findings, it should take 10 mins. 
+
+  Go to [fixes](fixes) to learn more.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Command Not Found">
+  This error happens because you haven't installed the Corega CLI or its not available in your PATH.
+  ```
+  bash: corgea: command not found
+  ```
+  Follow the instructions in the [install CLI section](http://localhost:3001/install_cli) to install the CLI.
+  </Accordion>
+
+  <Accordion title="Invalid token provided.">
+    Double check you have logged into the CLI with the correct token from [https://www.corgea.app/integrations/](https://www.corgea.app/integrations/)
+  </Accordion>
+  <Accordion title="Not Logged In">
+    You might receive an error that you're not logged into your SAST/SCA tool. 
+
+    Some tools require you to login to use the tool. For example, you can login to Semgrep with the following command:
+    ```
+      semgrep login
+    ```
+  </Accordion>
+  <Accordion title="Git Show Failed to Run">
+    You might receive an error that you're not logged into your SAST/SCA tool. 
+
+    Some tools require you to login to use the tool. For example, you can login to Semgrep with the following command:
+    ```
+      Command failed with output:
+      fatal: not a git repository (or any of the parent directories): .git
+
+
+      Failed to run 'git show -s --format=%B'. Possible reasons:
+
+      - the git binary is not available
+      - the current working directory is not a git repository
+      - the current working directory is not marked as safe
+          (fix with `git config --global --add safe.directory $(pwd)`)
+
+      Try running the command yourself to debug the issue.
+      Could not start scan Command failed with exit code: 128
+    ```
+  </Accordion>
+
+</AccordionGroup>

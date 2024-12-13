@@ -1,0 +1,52 @@
+---
+title: 'Zapier'
+description: 'Setting up the Zapier Integration in Corgea'
+---
+
+Corgea's Zapier integration allows you to automate various workflows and connect with thousands of other apps and services. This integration can help streamline your development processes, enhance collaboration, and improve overall productivity.
+
+## Prerequisites
+
+Before setting up the Zapier integration, ensure you have:
+
+- A Zapier account
+- Administrative access to your Corgea account
+
+## Setting up the Integration
+
+<Steps>
+  <Step title="Access Integrations Page">
+    Log in to your Corgea account and navigate to the "Integrations" page.
+  </Step>
+  <Step title="Connect Zapier">
+    Locate the "Zapier" integration under "Automation Integrations" and click the "Add +" button.
+  </Step>
+  <Step title="Configure Integration">
+    In the integration setup form, enter the following details:
+    - **Name**: A friendly name for the integration (e.g., "My Zapier Workflow")
+    - Copy the provided webhook URL - you'll need this for configuring Zapier
+  </Step>
+  <Step title="Set up Zapier Workflow">
+    1. Go to [Zapier](https://zapier.com/) and sign in
+    2. Click "Make a Zap" to create a new workflow
+    3. Select "Webhooks by Zapier" as the trigger app
+    4. Choose "Catch Hook" as the event
+    5. Paste your Corgea webhook URL
+    6. Configure your desired action app and settings
+    7. Test the workflow and activate the Zap
+  </Step>
+</Steps>
+
+## Example Use Cases
+
+Here are some example use cases for integrating Corgea with Zapier:
+
+1. **Slack Notifications**: Receive notifications in a Slack channel whenever a new scan is completed or when new issues are found. You can already do this with our [native Slack](slack) integration.
+
+2. **Issue Tracking**: Create new issues or update existing ones in your project management tool (e.g., Trello, Jira, Asana) based on scan results. Jira is already supported with our [native integration](jira).
+
+3. **Email Notifications**: Send email notifications to team members when critical vulnerabilities are detected.
+
+4. **Custom Workflows**: Create custom workflows tailored to your needs, such as triggering CI/CD pipeline actions or updating documentation.
+
+By integrating Corgea with Zapier, you can automate various tasks and workflows, saving time and effort while improving collaboration and productivity within your team.
