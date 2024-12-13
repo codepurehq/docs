@@ -1,91 +1,87 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "Starter Kit",
+  "name": "Codepure Documentation",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/logo/codepure_dark.png",
+    "light": "/logo/codepure_light.png"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/logo/codepure_favicon.png",
   "colors": {
-    "primary": "#0D9373",
-    "light": "#07C983",
-    "dark": "#0D9373",
+    "primary": "#5E5ADB",
+    "light": "#F2F6FE",
+    "dark": "#151357",
     "anchors": {
-      "from": "#0D9373",
-      "to": "#07C983"
+      "from": "#5E5ADB",
+      "to": "#151357"
     }
   },
   "topbarLinks": [
     {
       "name": "Support",
-      "url": "mailto:hi@mintlify.com"
+      "url": "mailto:support@codepure.com"
     }
   ],
   "topbarCtaButton": {
-    "name": "Dashboard",
-    "url": "https://dashboard.mintlify.com"
+    "name": "Go to Codepure",
+    "url": "https://codepure.com"
   },
-  "tabs": [
-    {
-      "name": "API Reference",
-      "url": "api-reference"
-    }
-  ],
   "anchors": [
     {
-      "name": "Documentation",
-      "icon": "book-open-cover",
-      "url": "https://mintlify.com/docs"
+      "name": "Roadmap",
+      "icon": "road",
+      "url": "https://docs.codepure.com/roadmap"
     },
     {
-      "name": "Community",
-      "icon": "slack",
-      "url": "https://mintlify.com/community"
+      "name": "Service Status",
+      "icon": "check",
+      "url": "https://status.codepure.com/"
     },
     {
       "name": "Blog",
       "icon": "newspaper",
-      "url": "https://mintlify.com/blog"
+      "url": "https://blog.codepure.com"
+    },
+    {
+      "name": "API Reference",
+      "openapi": "/api-reference/openapi.json",
+      "url": "api-reference",
+      "icon": "square-terminal"
     }
   ],
   "navigation": [
     {
-      "group": "Get Started",
-      "pages": [
-        "introduction",
-        "quickstart",
-        "development"
-      ]
+      "group": "Getting Started",
+      "pages": ["introduction", "quickstart", "how_it_works", "install_cli"]
     },
     {
-      "group": "Essentials",
-      "pages": [
-        "essentials/markdown",
-        "essentials/code",
-        "essentials/images",
-        "essentials/settings",
-        "essentials/navigation",
-        "essentials/reusable-snippets"
-      ]
+      "group": "Core Features",
+      "pages": ["vulnerability_support", "language_support", "scanning", "fixes", "false_positive", "user_management", "ndmo_compliance", "pci_dss_support", "sama_compliance_support"]
     },
     {
-      "group": "API Documentation",
-      "pages": [
-        "api-reference/introduction"
-      ]
+      "group": "Integrations",
+      "pages": ["vsc_extension", "github", "gitlab", "jira", "slack", "webhooks"]
     },
     {
-      "group": "Endpoint Examples",
-      "pages": [
-        "api-reference/endpoint/get",
-        "api-reference/endpoint/create",
-        "api-reference/endpoint/delete"
-      ]
+      "group": "API Reference",
+      "pages": ["api-reference/introduction"]
+    },
+    {
+      "group": "Releases & Roadmap",
+      "pages": ["changelog", "roadmap"]
+    },
+    {
+      "group": "Trust & Compliance",
+      "pages": ["security", "legal", "privacy-policy"]
     }
   ],
   "footerSocials": {
-    "x": "https://x.com/mintlify",
-    "github": "https://github.com/mintlify",
-    "linkedin": "https://linkedin.com/company/mintlify"
+    "twitter": "https://twitter.com/codepurehq",
+    "github": "https://github.com/codepurehq",
+    "linkedin": "https://www.linkedin.com/company/codepurehq"
+  },
+  "analytics": {
+    "ga4": {
+      "measurementId": "G-CODEPURE123"
+    }
   }
 }
