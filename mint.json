@@ -45,7 +45,7 @@
   "navigation": [
     {
       "group": "Getting Started",
-      "pages": ["introduction", "quickstart", "how_it_works"]
+      "pages": ["introduction", "quickstart"]
     },
     {
       "group": "Core Features",
