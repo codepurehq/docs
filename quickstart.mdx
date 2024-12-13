@@ -1,84 +1,89 @@
 ---
 title: 'Quickstart'
-description: 'Setup Corgea in less than 5 mins.'
+description: 'Set up Codepure in just a few steps.'
 ---
 
-## 1. Register with Corgea
+# Quickstart  
 
-Go to [corgea.app](https://corgea.app/) and register for a free account with Corgea. 
+Follow these steps to quickly set up and use Codepure:
 
-You will be onboarded through our setup flow that'll help you set up everything you need.
+---
 
-## 2. Add Your Project
+## 1. Login  
 
-The first step is to add your project to Corgea. You can do this using the Corgea Dropsite, a web interface that allows you to easily upload your code and security reports.
-
-1. Navigate to the Dropsite page by clicking the "Add Project" button in the Corgea dashboard.
-<Frame>
-  <img src="/images/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
-</Frame>
-
-2. On the Dropsite page, you can choose from several options to add your project:
-   - **Connect Your Repository (Recommended)**: Connect your [GitHub](github) directly to Corgea.
-   - **Web Upload**: Upload a ZIP file containing your project's code.
-   - **Add a Public Repository**: If your repository is publicly accessible, provide the URL.
+Sign in to Codepure using GitHub, GitLab, LDAP, or a local user account (for on-premise setups).
 
 <Frame>
-  <img src="/images/dropsite_add_project.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-   <Tip>
-    Corgea is dedicated to maintaining the highest standards in privacy and security.
-    For more information about our security practices, please visit our [security documentation](security).
 
-    If you'd like to test Corgea using opensource projects first, here are some great example vulnerable apps:
-    - [JuiceShop](https://github.com/Corgea/juice-shop): Javascript & Typescript 
-    - [NodeGOAT](https://github.com/OWASP/NodeGoat): Node.js 
-    - [PyGoat](https://github.com/adeyosemanputra/pygoat): Python/Django 
-    - [GoVWA](https://github.com/0c34/govwa): Go 
-    - [RailGoat](https://github.com/smDahlgren/railgoat): Ruby on Rails 
-    - [WebGoat.NET](https://github.com/Nova-8/Damm-Vulnerable-dotNet-Application): .Net
+---
 
-   </Tip>
+## 2. Create a Project  
 
-## 3. Scan
-
-Once your project is added, you have two options for processing a scan:
-
-- **Option 1**: BLAST Enabled
-
-  If you have [**BLAST**](blast) enabled—Corgea’s AI-powered security scanner—you can initiate a scan directly within Corgea.
-  <Frame>
-    <img src="/images/blast-start-scan.png" style={{ borderRadius: '0.5rem' }} />
-  </Frame>
-  <Note>BLAST is currently in **private beta** and is **not enabled by default**. If you're interested in participating in the beta, please reach out to our support team for more details.</Note>
-
-- **Option 2**: Upload 3rd-party Report
-
-  If you are using another security tool, you can upload a scan report from that tool. Just select the report file (typically a JSON file) from your local machine and drop it into the upload box.
-
-  <Frame>
-    <img src="/images/upload_report.png" style={{ borderRadius: '0.5rem' }} />
-  </Frame>
-
-After uploading, Corgea will process your project and report, and you’ll be redirected to the dashboard to view the analysis results.
-
-## 4. Review Findings and Fixes
-
-Corgea uses AI to analyze potential vulnerabilities and determine if they are likely to be false positives. The false positive analysis considers various factors, such as the context of the code, the nature of the vulnerability, and relevant coding patterns or best practices.
+### Option 1: Manual Upload  
+- Create a project manually by uploading your code or a security report directly.  
 
 <Frame>
-  <img src="/images/false_positive.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-For valid vulnerabilities, Corgea provides a proposed fix, along with an explanation of the issue and the reasoning behind the fix.
 
-## 5. Apply Fixes
 
-You can apply the proposed fixes in several ways:
+### Option 2: Repository Integration  
+- Connect your project using GitHub, GitLab, or other supported repositories.  
+- You can also schedule scans to run at specific times for continuous monitoring.  
 
-- **Pull Request Integration**: Corgea can automatically create a pull request with the proposed fixes for your repository.
-- **IDE Integration**: Use the Corgea VS Code extension to apply fixes directly within your integrated development environment (IDE).
-- **Manual Application**: Download the proposed fixes as a Git diff or a full file and apply them manually to your codebase.
+<Frame>
+  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+</Frame>
 
-By following this workflow, you can seamlessly integrate Corgea into your development process, benefiting from AI-powered vulnerability detection, false positive reduction, and automated fix generation.
+
+---
+
+## 3. Start Scanning  
+
+- Select the project you want to scan.  
+- Choose the appropriate engine for your project (SAST, SCA, or SBOM).  
+
+
+<Frame>
+  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+
+
+---
+
+## 4. View Scan Results  
+
+- High-level results will appear in the right-hand sidebar, giving you an overview of the findings.  
+- You can drill down into detailed bug reports, including full audit logs and suggested fixes.  
+
+
+<Frame>
+  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+
+
+---
+
+## 5. Review Findings and Fixes  
+
+Codepure provides detailed information about each issue, including the vulnerability type, affected code, and proposed fixes. Use this information to better understand and resolve security issues.
+
+---
+
+## 6. Apply Fixes  
+
+You can apply fixes in the following ways:  
+
+- **Pull Request**: Codepure can create a pull request with the suggested fixes.  
+- **IDE Integration**: Use the Codepure IDE extensions to apply fixes directly within your development environment.  
+- **Manual Application**: Download the fixes as a Git patch or a full file and apply them manually.
+
+---
+
+By following this process, you can integrate Codepure into your development workflow, ensuring secure code and streamlined remediation of vulnerabilities.
