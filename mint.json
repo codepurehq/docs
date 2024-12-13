@@ -1,20 +1,5 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-<<<<<<< HEAD
-  "name": "Codepure Documentation",
-  "logo": {
-    "dark": "/logo/codepure_dark.png",
-    "light": "/logo/codepure_light.png"
-  },
-  "favicon": "/logo/codepure_favicon.png",
-  "colors": {
-    "primary": "#5E5ADB",
-    "light": "#F2F6FE",
-    "dark": "#151357",
-    "anchors": {
-      "from": "#5E5ADB",
-      "to": "#151357"
-=======
   "name": "Corgea Documentation",
   "logo": {
     "dark": "/logo/logo.png",
@@ -28,62 +13,35 @@
     "anchors": {
       "from": "#3b71ca",
       "to": "#69a9de"
->>>>>>> 0407567 ( up)
     }
   },
   "topbarLinks": [
     {
-      "name": "Support",
-<<<<<<< HEAD
+    "name": "Support",
       "url": "mailto:support@codepure.com"
     }
   ],
   "topbarCtaButton": {
     "name": "Go to Codepure",
     "url": "https://codepure.com"
-=======
-      "url": "mailto:help@corgea.com"
-    }
-  ],
-  "topbarCtaButton": {
-    "name": "Go to Corgea",
-    "url": "https://corgea.app"
->>>>>>> 0407567 ( up)
   },
   "anchors": [
     {
       "name": "Roadmap",
       "icon": "road",
-<<<<<<< HEAD
       "url": "https://docs.codepure.com/roadmap"
-=======
-      "url": "https://docs.corgea.app/roadmap"
->>>>>>> 0407567 ( up)
     },
     {
       "name": "Service Status",
       "icon": "check",
-<<<<<<< HEAD
       "url": "https://status.codepure.com/"
-=======
-      "url": "https://status.corgea.app/"
->>>>>>> 0407567 ( up)
     },
     {
       "name": "Blog",
       "icon": "newspaper",
-<<<<<<< HEAD
       "url": "https://blog.codepure.com"
-=======
-      "url": "https://corgea.com/blog"
->>>>>>> 0407567 ( up)
-    },
-    {
-      "name": "API Reference",
-      "openapi": "/api-reference/openapi.json",
-      "url": "api-reference",
-      "icon": "square-terminal"
     }
+
   ],
   "navigation": [
     {
@@ -92,19 +50,11 @@
     },
     {
       "group": "Core Features",
-<<<<<<< HEAD
-      "pages": ["vulnerability_support", "language_support", "scanning", "fixes", "false_positive", "user_management", "ndmo_compliance", "pci_dss_support", "sama_compliance_support"]
-    },
-    {
-      "group": "Integrations",
-      "pages": ["vsc_extension", "github", "gitlab", "jira", "slack", "webhooks"]
-=======
       "pages": ["vulnerability_support", "language_support", "blast", "scanning", "fixes", "false_positive", "user_management"]
     },
     {
       "group": "Integrations",
       "pages": ["vsc_extension", "vs2022_extension", "github", "gitlab", "azure_devops", "jira", "slack", "zapier", "webhooks"]
->>>>>>> 0407567 ( up)
     },
     {
       "group": "API Reference",
@@ -116,29 +66,13 @@
     },
     {
       "group": "Trust & Compliance",
-<<<<<<< HEAD
-      "pages": ["security", "legal", "privacy-policy"]
-    }
-  ],
-  "footerSocials": {
-    "twitter": "https://twitter.com/codepurehq",
-    "github": "https://github.com/codepurehq",
-    "linkedin": "https://www.linkedin.com/company/codepurehq"
-  },
-  "analytics": {
-    "ga4": {
-      "measurementId": "G-CODEPURE123"
-    }
-  }
-}
-=======
       "pages": ["security", "legal"]
     }
   ],
   "footerSocials": {
-    "twitter": "https://twitter.com/mintlify",
-    "github": "https://github.com/mintlify",
-    "linkedin": "https://www.linkedin.com/company/mintsearch"
+    "twitter": "https://twitter.com/codepure",
+    "github": "https://github.com/codepure",
+    "linkedin": "https://www.linkedin.com/company/codepure"
   },
   "analytics": {
     "ga4": {
@@ -146,4 +80,3 @@
     }
   }
 }
->>>>>>> 0407567 ( up)
