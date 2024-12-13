@@ -45,14 +45,18 @@
   "navigation": [
     {
       "group": "Getting Started",
-      "pages": ["introduction", "quickstart", "how_it_works", "install_cli"]
+      "pages": ["introduction", "quickstart", "how_it_works"]
     },
     {
       "group": "Core Features",
       "pages": ["vulnerability_support", "language_support", "blast", "scanning", "fixes", "false_positive", "user_management"]
     },
+        {
+      "group": "DevSecOps Pipelines",
+      "pages": ["intro","github", "gitlab"]
+    },
     {
-      "group": "Integrations",
+      "group": "plugins",
       "pages": ["github", "gitlab", "vsc_extension", "jira", "slack", "teams"]
     },
     {
@@ -61,9 +65,9 @@
     }
   ],
   "footerSocials": {
-    "twitter": "https://twitter.com/codepure",
-    "github": "https://github.com/codepure",
-    "linkedin": "https://www.linkedin.com/company/codepure"
+    "twitter": "https://twitter.com/codepurehq",
+    "github": "https://github.com/codepurehq",
+    "linkedin": "https://www.linkedin.com/company/codepurehq"
   },
   "analytics": {
     "ga4": {
