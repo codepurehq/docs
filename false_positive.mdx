@@ -1,48 +1,37 @@
 ---
-title: 'False Positive Detection'
-description: 'Corgea Auto-detects False Positives'
+title: 'AI-Powered False Positive Reduction'
+description: 'Codepure intelligently reduces false positives using AI and Machine Learning.'
 ---
-Corgea uses AI to analyze potential vulnerabilities and determine if they are likely to be false positives.
+
+Codepure leverages advanced AI and machine learning models to analyze potential vulnerabilities and determine their likelihood of being false positives.
 
 
 
-<Card>
-  <iframe
-    width="650"
-    height="400"
-    src="https://www.loom.com/embed/5c1e36fc8d0f4a0ebf114d25d47897d0"
-    title="YouTube video player"
-    frameborder="0"
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-    allowFullScreen
-  ></iframe>
-</Card>
+Our AI model evaluates factors such as code context, vulnerability patterns, and best practices to provide clear results: whether a vulnerability is "valid" or a "false positive." Additionally, it explains the reasoning behind its determination to help developers make informed decisions.
 
 
-The false positive analysis considers various factors, such as the context of the code, the nature of the vulnerability, and any relevant coding patterns or best practices. The model then provides a result indicating whether the vulnerability is likely to be "valid" or a "false positive", along with a reasoning explaining its assessment.
-Here's an example of how the false positive result is presented:
-    <Frame>
-      <img src="/images/false_positive.png" style={{ borderRadius: '0.5rem' }} />
-    </Frame>
+By combining false positive detection with vulnerability explanations and actionable fixes, Codepure helps developers focus on real security threats, saving time and effort.
 
-In this case, the model has determined that the vulnerability is a false positive, and the reasoning provides an explanation for this assessment.
+## Common False Positives Detected by Codepure
 
-By providing this false positive analysis alongside the vulnerability explanation and proposed fix, Corgea aims to help developers quickly identify and prioritize genuine vulnerabilities while avoiding unnecessary effort on false positives.
+Codepure is designed to identify and eliminate false positives across a wide range of security issues, including:
 
-## Popular examples of False Positives Corgea can detect
+- **Cross-Site Scripting (XSS)**: Determines if input is properly sanitized or encoded using secure libraries or frameworks.  
+- **SQL Injection**: Verifies the use of parameterized queries or prepared statements without exploitable input.  
+- **Information Exposure**: Identifies if sensitive information leaks are confined to development environments or contain non-critical data.  
+- **Uncaught Exceptions**: Detects if alternative handling mechanisms like logging or monitoring are in place.  
+- **Hard-Coded Passwords**: Ensures credentials are limited to test environments or automated pipelines.  
+- **Configuration File Passwords**: Confirms secure measures like encryption or access control for stored plaintext passwords.  
+- **Hard-Coded Cryptographic Keys**: Recognizes cryptographic keys used exclusively for testing purposes.  
+- **Cross-Site Request Forgery (CSRF)**: Validates the presence of anti-CSRF mechanisms or determines if the context (e.g., APIs) makes CSRF irrelevant.  
+- **Missing Integrity Checks**: Identifies alternative methods, such as digital signatures or hash validations, ensuring data integrity.  
+- **Hard-Coded Credentials**: Detects credentials intended for development or QA environments.  
+- **Code Injection**: Confirms if injection points are isolated to secure or controlled environments.  
 
-These are a sample of some of the false positives that Corgea can detect:
+Codepure’s ability to accurately distinguish between real vulnerabilities and false positives empowers development teams to prioritize their efforts and improve security efficiency.
 
-- Cross-Site Scripting: Checks if user input is properly sanitized or encoded before being reflected in the webpage using established libraries or frameworks.
-- SQL Injection: Checks if database queries use fully sanitized parameterized statements or prepared statements in a best-practice manner, without including any user-provided or external input that could be manipulated.
-- Information Exposure: Checks if the sensitive information disclosed is generic or occurs in a development environment.
-- Uncaught Exception: Checks if the unexpected condition or status is handled through alternative means like logging or monitoring in non-critical parts of the application.
-- Hard-Coded Password: Checks if the hard-coded password is intended for a non-production environment or used for automated testing.
-- Password in Configuration File: Checks if the storage of the plaintext password is protected through alternative security measures like encrypted storage or access controls.
-- Hard-Coded Cryptographic Key: Checks if the hard-coded cryptographic key is used for testing purposes only.
-- Cross-Site Request Forgery: Checks if anti-CSRF tokens are implemented and validated on the server-side, or if the code is an API where CSRF protection is not applicable.
-- Missing Support for Integrity Check: Checks if the integrity check is implemented through alternative means like digital signatures or hash validations.
-- Hard-Coded Credentials: Checks if the hard-coded credentials are used for testing purposes only.
-- Code Injection: Checks if the code injection point is limited to a controlled environment or if input validation and output encoding are applied.
+## Why Choose Codepure for False Positive Reduction?
 
-And many more...
+- **AI-Powered Precision**: Machine learning ensures highly accurate vulnerability assessments.  
+- **Actionable Insights**: Clear explanations help developers make confident security decisions.  
+- **Seamless Integration**: Works across popular frameworks, languages, and DevSecOps workflows.  

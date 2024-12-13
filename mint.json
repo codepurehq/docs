@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "Corgea Documentation",
+  "name": "Codepure Documentation",
   "logo": {
     "dark": "/logo/logo.png",
     "light": "/logo/logo.png"
@@ -54,20 +54,14 @@
     },
     {
       "group": "Integrations",
-      "pages": ["vsc_extension", "vs2022_extension", "github", "gitlab", "azure_devops", "jira", "slack", "zapier", "webhooks"]
+      "pages": [ "github", "gitlab", "vsc_extension", "jira", "slack","teams"]
     },
-    {
-      "group": "API Reference",
-      "pages": ["api-reference/introduction"]
-    },
+
     {
       "group": "Releases & Roadmap",
       "pages": ["changelog", "roadmap"]
     },
-    {
-      "group": "Trust & Compliance",
-      "pages": ["security", "legal"]
-    }
+ 
   ],
   "footerSocials": {
     "twitter": "https://twitter.com/codepure",
