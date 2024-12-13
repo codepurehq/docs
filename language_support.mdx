@@ -1,71 +1,99 @@
 ---
 title: 'Language & Framework Support'
-description: 'Comprehensive coverage of programming languages and frameworks in Corgea'
+description: 'Comprehensive code security coverage for programming languages and frameworks with Codepure, aligned with OWASP Top 10, SANS, and other standards.'
 ---
 
-## Overview
-Corgea is an AI-powered platform that revolutionizes code security across multiple programming languages and their popular frameworks. It offers comprehensive support for scanning, false positive detection, and auto-fixing, covering approximately 900 Common Weakness Enumerations (CWEs). This ensures your code remains secure, compliant, and efficient throughout your development lifecycle.
+# Language and Framework Compatibility  
 
-## Supported Languages and Frameworks
-Here's a detailed breakdown of the languages and frameworks currently supported by Corgea:
+**Ensuring comprehensive code security across various programming languages, frameworks, and compliance with OWASP Top 10, SANS, and industry standards.**  
 
-### **C#**
-- **Native Language Support**: Corgea provides robust support for C# language constructs, including LINQ, async/await patterns, and generics.
-- **Frameworks**: .NET, ASP.NET Core, Blazor
-- Corgea excels in securing enterprise-level .NET applications, addressing vulnerabilities like improper authentication, insecure deserialization, and CSRF.
+## Introduction  
 
-### **Python**
-- **Native Language Support**: Corgea analyzes Python-specific features such as decorators, context managers, and comprehensions.
-- **Frameworks**: Django, Flask, FastAPI
-- Focuses on both web applications and backend services, tackling issues such as SQL injections, XSS, and insecure direct object references.
+Codepure is an advanced platform designed to deliver robust code security tailored to modern development needs. Supporting a wide array of programming languages and frameworks, Codepure identifies, mitigates, and auto-fixes vulnerabilities based on industry standards such as **OWASP Top 10**, **SANS/CWE Top 25**, and **PCI DSS 4.0**. With over 900 Common Weakness Enumerations (CWEs) covered, Codepure seamlessly integrates into your development workflow, enhancing security, compliance, and efficiency.  
 
-### **Ruby**
-- **Native Language Support**: Corgea understands Ruby's dynamic nature, including metaprogramming features and blocks.
-- **Frameworks**: Ruby on Rails, Sinatra
-- Specializes in identifying and fixing Ruby-specific vulnerabilities, including mass assignment issues, unprotected routes, and insecure file uploads.
+## Supported Programming Languages and Frameworks  
 
-### **Go**
-- **Native Language Support**: Corgea analyzes Go-specific constructs like goroutines, channels, and interfaces.
-- **Frameworks**: Gin, Echo, Fiber
-- Targets Go-specific security concerns, such as race conditions, improper error handling, and insecure use of cryptographic functions.
+Codepure supports a diverse range of programming languages, enabling security scanning, false positive reduction, and automated issue resolution tailored to each ecosystem. Below are the currently supported languages and frameworks:  
 
-### **JavaScript & TypeScript**
-- **Native Language Support**: Corgea supports both JavaScript and TypeScript, including features like async/await, closures, and TypeScript's type system.
-- **Frameworks**: Node.js, Express.js, Next.js, NestJS, Angular, React, Vue.js
-- Covers both client-side and server-side security, addressing issues like prototype pollution, insecure dependencies, and DOM-based XSS.
+### **C#**  
 
-### **Java**
-- **Native Language Support**: Corgea analyzes Java-specific features such as generics, annotations, and lambda expressions.
-- **Frameworks**: Spring, Jakarta EE, Play Framework
-- Focuses on enterprise Java ecosystems, tackling vulnerabilities such as XML external entity (XXE) attacks, LDAP injection, and insecure object deserialization.
+- **Language Insights**: Handles core constructs like LINQ, asynchronous programming (`async/await`), and generics.  
+- **Frameworks**: .NET, ASP.NET Core, Blazor.  
+- **Security Highlights**: Identifies vulnerabilities such as insecure deserialization, authentication flaws, and CSRF attacks. Aligns findings with OWASP A2 (Broken Authentication) and A8 (Insecure Deserialization).  
 
-### **PHP**
-- **Native Language Support**: Corgea handles PHP's unique syntax and language constructs, including traits and attributes.
-- Addresses common web application vulnerabilities like remote code execution, file inclusion vulnerabilities, and SQL injection attacks.
+### **Python**  
 
-### **Kotlin**
-- **Native Language Support**: Corgea analyzes Kotlin-specific features including null safety, coroutines, and extension functions.
-- Specializes in Android and server-side application security, addressing issues like improper data exposure and insecure communication.
+- **Language Insights**: Supports Python-specific features, including decorators, context managers, and comprehensions.  
+- **Frameworks**: Django, Flask, FastAPI.  
+- **Security Highlights**: Addresses SQL injection (OWASP A1), XSS (A3), and insecure direct object references.  
 
-### **C & C++**
-- **Native Language Support**: Corgea handles low-level programming constructs including pointers, memory management, and templates.
-- Focuses on memory-related vulnerabilities, buffer overflows, and system-level security issues common in C/C++ applications.
+### **Ruby**  
 
-## Key Features Across All Supported Languages
+- **Language Insights**: Handles Ruby’s dynamic features, such as metaprogramming and blocks.  
+- **Frameworks**: Ruby on Rails, Sinatra.  
+- **Security Highlights**: Focuses on vulnerabilities like mass assignment (OWASP A4), unprotected routes, and insecure file uploads.  
 
-1. **Comprehensive Scanning**: Corgea's advanced algorithms scan your codebase to identify potential security vulnerabilities, covering a wide range of CWEs.
+### **Go (Golang)**  
 
-2. **Intelligent False Positive Detection**: Our AI-powered system accurately distinguishes between genuine vulnerabilities and false positives, saving your team valuable time and resources.
+- **Language Insights**: Analyzes Go-specific patterns like goroutines, channels, and interfaces.  
+- **Frameworks**: Gin, Echo, Fiber.  
+- **Security Highlights**: Identifies race conditions (SANS CWE-362), cryptographic misuse (SANS CWE-327), and improper error handling.  
 
-3. **Automated Fixing**: Corgea doesn't just identify issues—it provides actionable, context-aware fixes that can be applied automatically or reviewed before implementation.
+### **JavaScript & TypeScript**  
 
-4. **Framework-Specific Analysis**: Our tool understands the nuances of different frameworks within each language, providing targeted security insights.
+- **Language Insights**: Comprehensive support for modern JavaScript and TypeScript, including asynchronous programming and TypeScript’s type system.  
+- **Frameworks**: Node.js, Express.js, Next.js, NestJS, Angular, React, Vue.js.  
+- **Security Highlights**: Detects prototype pollution (OWASP A5), insecure dependencies, and DOM-based XSS (OWASP A7).  
 
-5. **Continuous Learning**: Corgea's AI model is constantly updated to address new security threats and CWEs as they emerge.
+### **Java**  
 
-## Roadmap
-We're committed to expanding our language and framework support. Our upcoming roadmap includes:
+- **Language Insights**: Supports features like annotations, generics, and lambda expressions.  
+- **Frameworks**: Spring, Jakarta EE, Play Framework.  
+- **Security Highlights**: Handles XXE attacks (OWASP A4), LDAP injection, and insecure deserialization (OWASP A8).  
 
-- **Swift**: To enhance security in iOS and macOS application development, including Swift-specific features like optionals and protocol extensions.
+### **PHP**  
 
-Stay tuned for updates as we continue to broaden our support, ensuring Corgea remains at the forefront of code security across diverse development environments.
+- **Language Insights**: Comprehensive coverage of PHP’s unique syntax, including traits and attributes.  
+- **Security Highlights**: Focuses on SQL injection (OWASP A1), remote code execution, and file inclusion vulnerabilities.  
+
+### **Kotlin**  
+
+- **Language Insights**: Tailored for Kotlin-specific features like null safety, coroutines, and extension functions.  
+- **Security Highlights**: Ideal for Android and server-side development, addressing improper data exposure (OWASP A6) and insecure communication (OWASP A9).  
+
+### **C & C++**  
+
+- **Language Insights**: Delivers analysis for low-level programming constructs like pointers, templates, and memory management.  
+- **Security Highlights**: Targets memory corruption vulnerabilities (SANS CWE-119), buffer overflows, and race conditions.  
+
+---
+
+## Industry Standards and Frameworks  
+
+Codepure aligns with industry standards to ensure your code meets compliance and security benchmarks:  
+
+1. **OWASP Top 10**: Identifies critical web application vulnerabilities, ensuring alignment with security priorities like SQL Injection (A1), Broken Authentication (A2), and Sensitive Data Exposure (A6).  
+2. **SANS/CWE Top 25**: Focuses on the most critical software vulnerabilities, including improper input validation (CWE-20) and buffer overflows (CWE-119).  
+3. **PCI DSS 4.0**: Provides compliance for payment applications, addressing secure cryptographic implementations and access controls.  
+4. **ISO/IEC 27001**: Assists in achieving security alignment with international standards for information security management.  
+
+---
+
+## Platform Features  
+
+1. **Comprehensive Scanning**: In-depth scans for vulnerabilities aligned with OWASP, SANS, and PCI DSS standards.  
+2. **False Positive Optimization**: AI-driven technology minimizes false positives, allowing teams to focus on actionable insights.  
+3. **Automated Fixes**: Offers auto-generated fixes tailored to the context of the detected issue.  
+4. **Framework-Specific Insights**: Delivers security recommendations unique to each framework.  
+5. **Continuous Updates**: Regular updates to address emerging threats and maintain top-tier security standards.  
+
+---
+
+## Roadmap  
+
+We're committed to expanding our capabilities and staying at the forefront of security innovation. Upcoming support includes:  
+
+- **Swift**: Enhanced security for iOS and macOS applications, incorporating features like protocol extensions and optionals.  
+- **Rust**: Expanding into memory-safe languages to secure modern development practices.  
+
+Stay connected as we continue to broaden our support and ensure Codepure remains your go-to platform for secure development.  
