@@ -3,87 +3,88 @@ title: 'Quickstart'
 description: 'Set up Codepure in just a few steps.'
 ---
 
-# Quickstart  
+# Quickstart
 
 Follow these steps to quickly set up and use Codepure:
 
----
+***
 
-## 1. Login  
+## 1. Login
 
 Sign in to Codepure using GitHub, GitLab, LDAP, or a local user account (for on-premise setups).
 
 <Frame>
-  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/login.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+***
 
----
+## 2. Create a Project
 
-## 2. Create a Project  
+### Option 1: Manual Upload
 
-### Option 1: Manual Upload  
-- Create a project manually by uploading your code or a security report directly.  
+* Create a project manually by uploading your code or a security report directly.
 
 <Frame>
-  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/create.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+### Option 2: Repository Integration
 
+* Connect your project using GitHub, GitLab, or other supported repositories.
 
-### Option 2: Repository Integration  
-- Connect your project using GitHub, GitLab, or other supported repositories.  
-- You can also schedule scans to run at specific times for continuous monitoring.  
+* You can also schedule scans to run at specific times for continuous monitoring.
 
 <Frame>
-  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/create2.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+***
 
----
+## 3. Start Scanning
 
-## 3. Start Scanning  
+* Select the project you want to scan.
 
-- Select the project you want to scan.  
-- Choose the appropriate engine for your project (SAST, SCA, or SBOM).  
-
+* Choose the appropriate engine for your project (SAST, SCA, or SBOM).
 
 <Frame>
-  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/scan.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+***
 
+## 4. View Scan Results
 
----
+* High-level results will appear in the right-hand sidebar, giving you an overview of the findings.
 
-## 4. View Scan Results  
-
-- High-level results will appear in the right-hand sidebar, giving you an overview of the findings.  
-- You can drill down into detailed bug reports, including full audit logs and suggested fixes.  
-
+* You can drill down into detailed bug reports, including full audit logs and suggested fixes.
 
 <Frame>
-  <img src="/assets/empty_projects.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/scan_res.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+***
 
-
----
-
-## 5. Review Findings and Fixes  
+## 5. Review Findings and Fixes
 
 Codepure provides detailed information about each issue, including the vulnerability type, affected code, and proposed fixes. Use this information to better understand and resolve security issues.
 
----
+<Frame>
+  <img src="/assets/scan_res2.png" style={{ borderRadius: '0.5rem' }} />
+</Frame>
 
-## 6. Apply Fixes  
+***
 
-You can apply fixes in the following ways:  
+## 6. Apply Fixes
 
-- **Pull Request**: Codepure can create a pull request with the suggested fixes.  
-- **IDE Integration**: Use the Codepure IDE extensions to apply fixes directly within your development environment.  
-- **Manual Application**: Download the fixes as a Git patch or a full file and apply them manually.
+You can apply fixes in the following ways:
 
----
+* **Pull Request**: Codepure can create a pull request with the suggested fixes.
+
+* **IDE Integration**: Use the Codepure IDE extensions to apply fixes directly within your development environment.
+
+* **Manual Application**: Download the fixes as a Git patch or a full file and apply them manually.
+
+***
 
 By following this process, you can integrate Codepure into your development workflow, ensuring secure code and streamlined remediation of vulnerabilities.
