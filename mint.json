@@ -17,7 +17,7 @@
   },
   "topbarLinks": [
     {
-    "name": "Support",
+      "name": "Support",
       "url": "mailto:support@codepure.com"
     }
   ],
@@ -41,7 +41,6 @@
       "icon": "newspaper",
       "url": "https://blog.codepure.com"
     }
-
   ],
   "navigation": [
     {
@@ -54,14 +53,12 @@
     },
     {
       "group": "Integrations",
-      "pages": [ "github", "gitlab", "vsc_extension", "jira", "slack","teams"]
+      "pages": ["github", "gitlab", "vsc_extension", "jira", "slack", "teams"]
     },
-
     {
       "group": "Releases & Roadmap",
       "pages": ["changelog", "roadmap"]
-    },
- 
+    }
   ],
   "footerSocials": {
     "twitter": "https://twitter.com/codepure",
