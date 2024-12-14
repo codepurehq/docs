@@ -2,8 +2,8 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Codepure Documentation",
   "logo": {
-    "dark": "/logo/logo.png",
-    "light": "/logo/"
+    "dark": "/logo/logo_black.png",
+    "light": "/logo/logo.png"
   },
   "favicon": "/logo/logo.png",
   "colors": {
