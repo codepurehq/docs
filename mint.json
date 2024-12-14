@@ -32,11 +32,6 @@
       "url": "https://docs.codepure.com/roadmap"
     },
     {
-      "name": "Service Status",
-      "icon": "check",
-      "url": "https://status.codepure.com/"
-    },
-    {
       "name": "Blog",
       "icon": "newspaper",
       "url": "https://blog.codepure.com"
@@ -49,15 +44,15 @@
     },
     {
       "group": "Core Features",
-      "pages": ["language_support","vulnerability_support", "scanning", "fixes", "false_positive", "user_management"]
+      "pages": ["language_support","vulnerability_support", "fixes", "false_positive", "user_management","SBOM Generation"]
     },
         {
-      "group": "DevSecOps Pipelines",
+      "group": "DevSecOps Integration ٍ",
       "pages": ["intro","github", "gitlab"]
     },
     {
       "group": "plugins",
-      "pages": ["github", "gitlab", "vsc_extension", "jira", "slack", "teams"]
+      "pages": [ "vsc_extension", "jira"]
     },
     {
       "group": "Releases & Roadmap",
