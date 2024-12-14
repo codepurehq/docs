@@ -43,10 +43,17 @@
       "pages": ["introduction", "quickstart"]
     },
     {
-      "group": "Core Features",
-      "pages": ["sast","sca","sbom","devsecops","language_support", "fixes", "false_positive", "user_management"]
+      "group": "Core Capabilities",
+      "pages": ["sast", "sca", "sbom", "devsecops"]
     },
-
+    {
+      "group": "User Management",
+      "pages": ["roles_permissions", "tenant_management", "admin_guide"]
+    },
+    {
+      "group": "Integrations",
+      "pages": ["github", "gitlab", "jira", "slack", "teams"]
+    },
     {
       "group": "Releases & Roadmap",
       "pages": ["changelog", "roadmap"]

@@ -1,0 +1,37 @@
+---
+title: 'Roles and Permissions'
+description: 'Learn about the roles and permissions in Codepure.'
+---
+
+# Roles and Permissions  
+
+Codepure uses a **Role-Based Access Control (RBAC)** system to manage user permissions. This ensures that users have the appropriate level of access for their responsibilities.
+
+| **Feature/Action**              | **Admin** | **AppSec** | **Developer** | **Tenant Admin** |
+|----------------------------------|:---------:|:----------:|:-------------:|:----------------:|
+| Manage users and roles           | ✅        | ❌         | ❌            | ✅               |
+| Configure system-wide settings   | ✅        | ❌         | ❌            | ❌               |
+| Create and manage tenants        | ✅        | ❌         | ❌            | ✅               |
+| Run scans                        | ✅        | ✅         | ❌            | ✅               |
+| View scan results                | ✅        | ✅         | ✅            | ✅               |
+| Assign fixes to developers       | ✅        | ✅         | ❌            | ✅               |
+| Apply fixes                      | ✅        | ✅         | ✅            | ✅               |
+| Configure integrations           | ✅        | ❌         | ❌            | ✅               |
+| Access detailed vulnerability reports | ✅   | ✅         | ❌            | ✅               |
+| Leave feedback on vulnerabilities| ✅        | ✅         | ✅            | ✅               |
+
+---
+
+### **How to Assign Roles**
+
+1. Navigate to the **User Management** section in the Codepure dashboard.
+2. Select the user you want to manage.
+3. Choose the desired role (Admin, AppSec, Developer, Tenant Admin).
+4. Save the changes to apply the role.
+
+---
+
+### **Best Practices**
+- Limit Admin roles to trusted team members.
+- Assign AppSec roles for security analysts managing vulnerabilities.
+- Regularly audit roles to maintain compliance with security policies.
