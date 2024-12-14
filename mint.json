@@ -44,16 +44,9 @@
     },
     {
       "group": "Core Features",
-      "pages": ["sast","sca","sbom","language_support", "fixes", "false_positive", "user_management"]
+      "pages": ["sast","sca","sbom","devsecops","language_support", "fixes", "false_positive", "user_management"]
     },
-        {
-      "group": "DevSecOps Integration ٍ",
-      "pages": ["intro","github", "gitlab"]
-    },
-    {
-      "group": "plugins",
-      "pages": [ "vsc_extension", "jira"]
-    },
+
     {
       "group": "Releases & Roadmap",
       "pages": ["changelog", "roadmap"]
