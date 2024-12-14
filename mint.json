@@ -3,7 +3,7 @@
   "name": "Codepure Documentation",
   "logo": {
     "dark": "/logo/logo.png",
-    "light": "/logo/logo.png"
+    "light": "/logo/"
   },
   "favicon": "/logo/logo.png",
   "colors": {
