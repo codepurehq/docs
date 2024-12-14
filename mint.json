@@ -44,7 +44,7 @@
     },
     {
       "group": "Core Features",
-      "pages": ["language_support", "fixes", "false_positive", "user_management","sbom","sast","sca"]
+      "pages": ["sast","sca","sbom","language_support", "fixes", "false_positive", "user_management"]
     },
         {
       "group": "DevSecOps Integration ٍ",
