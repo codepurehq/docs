@@ -19,29 +19,91 @@ Login to your account to access your dashboard.
 
 ***
 
-## 2. Create a Project
+## 2. Team Management
 
-### Option 1: Manual Upload
+Manage who can access your dashboard and what they can do.
 
-* Create a project manually by uploading your code or a security report directly.
+* Open Team Management from the side menu.
+
+* Click "Add New".
+
+* Enter the user’s name and email.
+
+* Choose a role: (Admin -  AppSec - Developer).
+
+* Set password.
+
+* Click "Add User".
 
 <Frame>
-  <img src="/assets/create.png" style={{ borderRadius: '0.5rem' }} />
-</Frame>
-
-### Option 2: Repository Integration
-
-* Connect your project using GitHub, GitLab, or other supported repositories.
-
-* You can also schedule scans to run at specific times for continuous monitoring.
-
-<Frame>
-  <img src="/assets/create2.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/team_management.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
 ***
 
-## 3. Start Scanning
+## 3. Configure Integrations
+
+You need to connect your account with GitHub, GitLab, or Bitbucket before you can import your projects.
+
+* In the side menu, click Integrations.
+
+* Choose the service you want to connect: GitHub, GitLab, or Bitbucket.
+
+* Enter the Configuration Info.
+
+* Click "Submit Configuration".
+
+<Frame>
+  <img src="/assets/gitlab_config.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+***
+
+## 4. Create a Project
+
+Add your project so you can scan it.
+
+### Option 1: Manual Upload
+
+Create a project manually by uploading your .zip project's file.
+
+* Go to Projects → Create Project.
+
+* Enter the project name and select project language.
+
+* Upload project files.
+
+* Click "Upload File".
+
+<Frame>
+  <img src="/assets/manual_project.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+### Option 2: Repository Integration
+
+Import your project directly from GitHub, GitLab, or Bitbucket. (You must configure integrations first — see Configure Integrations)
+
+* Go to Projects → Import Project.
+
+* Choose your code host: GitHub, GitLab, or Bitbucket.
+
+* Choose the project which you want to import.
+
+* Select project language.
+
+* Click "Clone".
+
+<Frame>
+  <img src="/assets/import_project1.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+<Frame>
+  <img src="/assets/import_project2.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+***
+
+## 5. Start Scanning
 
 * Select the project you want to scan.
 
@@ -53,7 +115,7 @@ Login to your account to access your dashboard.
 
 ***
 
-## 4. View Scan Results
+## 6. View Scan Results
 
 * High-level results will appear in the right-hand sidebar, giving you an overview of the findings.
 
@@ -65,7 +127,7 @@ Login to your account to access your dashboard.
 
 ***
 
-## 5. Review Findings and Fixes
+## 7. Review Findings and Fixes
 
 Codepure provides detailed information about each issue, including the vulnerability type, affected code, and proposed fixes. Use this information to better understand and resolve security issues.
 
