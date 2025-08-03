@@ -1,0 +1,30 @@
+---
+title: 'Container Security'
+description: 'Understand how Codepure’s Container Security scans Docker images and containers for vulnerabilities and misconfigurations.'
+---
+
+# What it is
+Codepure’s Container Security feature scans your Docker images and containerized applications for vulnerabilities, misconfigurations, and outdated software packages. This ensures that your containers are secure before they are deployed to production.
+
+# How it works
+When you run a Container Security scan, Codepure analyzes:
+
+* Base images – checks if the underlying OS or framework has known vulnerabilities.
+
+* Installed packages – scans all packages and dependencies inside the container.
+
+* Configuration files – detects risky settings like running as root or exposing unnecessary ports.
+
+* Secrets in images – flags any hardcoded passwords, API keys, or tokens.
+
+# Why it’s important
+Containers are lightweight and portable, but they can also introduce security risks if not regularly scanned. Container Security helps you:
+
+* Prevent vulnerabilities from reaching production.
+
+* Detect misconfigurations that could be exploited by attackers.
+
+* Ensure compliance with security standards like CIS Docker Benchmark, OWASP, and ISO 27001.
+
+# Example
+You import your project from GitHub, GitLab, or Bitbucket into Codepure. Then, you select the project and run a Container Security scan. Codepure detects that your base image is using an outdated Linux distribution with critical vulnerabilities, and it flags that the container is running as root. It then provides step-by-step guidance to fix these issues before deployment.

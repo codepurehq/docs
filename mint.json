@@ -44,7 +44,7 @@
     },
     {
       "group": "Core Capabilities",
-      "pages": ["sast", "sca", "sbom", "devsecops"]
+      "pages": ["sast", "sca", "container_security", "secret_scanning", "devsecops"]
     },
     {
       "group": "User Management",
