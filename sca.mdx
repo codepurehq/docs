@@ -3,12 +3,41 @@ title: 'SCA'
 description: 'Understand Software Composition Analysis (SCA) with Codepure.'
 ---
 
-Codepure's SCA feature scans dependencies in your project to identify vulnerabilities in open-source libraries. It provides real-time alerts for outdated or insecure components, helping you maintain compliance with security standards.
+# What it is
+Codepure’s Software Composition Analysis (SCA) scans your project’s dependencies to find vulnerabilities in open-source libraries and third-party components. Many modern applications rely heavily on external packages, and if these contain security flaws, your application can be at risk.
 
-Key benefits:
+# How it works
+When you run an SCA scan, Codepure analyzes your project’s dependency files (such as package.json, requirements.txt, pom.xml, etc.) and compares them against vulnerability databases. It identifies:
 
-* Identifies vulnerable dependencies.
+* Vulnerable dependencies – packages with known security issues.
 
-* Real-time alerts for outdated libraries.
+* Outdated libraries – older versions that may no longer receive security patches.
 
-* Ensures compliance with standards like OWASP and PCI DSS.
+* License risks – open-source licenses that might cause legal compliance issues.
+
+# Why it’s important
+Vulnerabilities in third-party libraries are one of the top causes of security breaches. SCA helps you:
+
+* Reduce supply chain risks by identifying and updating unsafe dependencies.
+
+* Stay compliant with security standards like OWASP, PCI DSS, NIST, and ISO 27001.
+
+* Save time by getting direct recommendations for safe versions.
+
+# SBOM – Software Bill of Materials
+# What it is
+Every time you run an SCA scan, Codepure automatically generates a Software Bill of Materials (SBOM). An SBOM is a detailed list of every software component in your project — including open-source libraries, frameworks, and their versions.
+
+# Why it matters
+An SBOM gives you full visibility into your project’s software supply chain, making it easier to:
+
+* Track all dependencies and their versions.
+
+* Monitor vulnerabilities over time.
+
+* Prove compliance with regulations such as NIST and ISO 27001.
+
+* Respond quickly to new security advisories affecting your components.
+
+# Example
+You import your project from GitHub, GitLab, or Bitbucket into Codepure. Then, you select the project and run an SCA scan. Codepure detects that one of your dependencies has a known remote code execution vulnerability and is outdated. It shows you the affected package, the severity of the risk, and the recommended secure version. Alongside, it generates an SBOM listing every component in your project, helping you track and manage your dependencies effectively.
