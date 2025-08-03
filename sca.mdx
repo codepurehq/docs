@@ -39,5 +39,38 @@ An SBOM gives you full visibility into your project’s software supply chain, m
 
 * Respond quickly to new security advisories affecting your components.
 
-# Example
-You import your project from GitHub, GitLab, or Bitbucket into Codepure. Then, you select the project and run an SCA scan. Codepure detects that one of your dependencies has a known remote code execution vulnerability and is outdated. It shows you the affected package, the severity of the risk, and the recommended secure version. Alongside, it generates an SBOM listing every component in your project, helping you track and manage your dependencies effectively.
+# Example: Running an SCA Scan
+
+1. Select and Scan
+
+* From the dashboard, select the project you want to scan.
+
+* Choose SCA and click Start Scanning.
+
+<Frame>
+  <img src="/assets/sca1.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+2. View Results
+
+* When the scan finishes, click the project name.
+
+* The results will appear in the right-hand sidebar.
+
+* Click Full Result to see all detected vulnerabilities in dependencies.
+
+<Frame>
+  <img src="/assets/sca2.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+3. Download SBOM
+
+* In the results page, locate the Download SBOM option.
+
+* Click it to download a detailed Software Bill of Materials for your project.
+
+* The SBOM lists all dependencies, their versions, and any known vulnerabilities.
+
+<Frame>
+  <img src="/assets/sca3.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
