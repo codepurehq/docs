@@ -34,5 +34,43 @@ By integrating SAST early in your development lifecycle (Shift Left), you ensure
 
 * Helps meet compliance requirements and security standards.
 
-# Example
-You import your project from GitHub, GitLab, or Bitbucket into Codepure. Then, you select the project and run a SAST scan. The SAST engine analyzes your code and detects vulnerabilities such as SQL injection, Cross-Site Scripting (XSS), and Path Traversal. It then provides clear, actionable steps to fix these issues, allowing you to address them before your code is deployed.
+# Example: Running a SAST Scan
+1. Select a project – From your dashboard, choose the project you want to scan.
+
+<Frame>
+  <img src="/assets/sast1.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+2. Start the scan – Select the SAST engine, then click Start Scanning.
+
+<Frame>
+  <img src="/assets/sast2.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+3. View scan results – When the scan finishes, click the project name. The right-hand sidebar will display the results.
+
+<Frame>
+  <img src="/assets/sast3.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+4. Open full results – Click Full Result to see detailed findings. You can filter results by your preferred security framework: CWE, OWASP, or PCI.
+
+<Frame>
+  <img src="/assets/sast4.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+5. Inspect a vulnerability – Click Open next to a finding to view the affected code and details.
+
+<Frame>
+  <img src="/assets/sast5.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+<Frame>
+  <img src="/assets/sast6.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
+
+6. Fix and update status – Correct the issue in your code, then change its status to Fixed in the platform.
+
+<Frame>
+  <img src="/assets/sast7.PNG" style={{ borderRadius: '0.5rem' }} />
+</Frame>
