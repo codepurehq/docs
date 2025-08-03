@@ -3,12 +3,36 @@ title: 'SAST'
 description: 'Learn about Codepure’s Static Application Security Testing (SAST).'
 ---
 
-Codepure's SAST engine helps detect security vulnerabilities in your code during development. By integrating early in the lifecycle, it identifies issues like SQL injection, XSS, and insecure configurations. This ensures secure and reliable software before deployment.
+What it is:
+Codepure’s Static Application Security Testing (SAST) scans your source code to find security issues before your application is deployed. It works during development, helping your team fix problems early when they are easier and cheaper to resolve.
 
-Key benefits:
+How it works:
+SAST analyzes your code without running the application. It checks for dangerous coding patterns and insecure practices. This helps you catch vulnerabilities like:
 
-* Early vulnerability detection.
+* SQL Injection – attackers inserting harmful database queries.
 
-* Supports multiple programming languages and frameworks.
+* Cross-Site Scripting (XSS) – injecting malicious scripts into web pages.
 
-* Provides actionable insights for secure development.
+* Path Traversal – attackers accessing files or directories outside the intended folder.
+
+Why it’s important:
+By integrating SAST early in your development lifecycle (Shift Left), you ensure that security is built into your code from the start. This means:
+
+* Early detection – find vulnerabilities before they reach production.
+
+* Lower cost to fix – address issues during coding instead of after release.
+
+* Improved security – reduce the risk of breaches and data leaks.
+
+Key benefits of Codepure’s SAST:
+
+* Works with multiple programming languages and frameworks.
+
+* Provides clear, actionable guidance for fixing vulnerabilities.
+
+* Supports integration with CI/CD pipelines for automated scanning.
+
+* Helps meet compliance requirements and security standards.
+
+Example:
+You import your project from GitHub, GitLab, or Bitbucket into Codepure. Then, you select the project and run a SAST scan. The SAST engine analyzes your code and detects vulnerabilities such as SQL injection, Cross-Site Scripting (XSS), and Path Traversal. It then provides clear, actionable steps to fix these issues, allowing you to address them before your code is deployed.
