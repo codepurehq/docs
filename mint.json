@@ -48,7 +48,7 @@
     },
     {
       "group": "User Management",
-      "pages": ["role_perm", "tenant_management", "admin_guide"]
+      "pages": ["role_perm"]
     },
     {
       "group": "Integrations",
