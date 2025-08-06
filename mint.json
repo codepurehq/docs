@@ -52,7 +52,7 @@
     },
     {
       "group": "Integrations",
-      "pages": ["github", "gitlab", "jira", "slack", "teams"]
+      "pages": ["github", "gitlab", "teams"]
     },
     {
       "group": "Releases & Roadmap",
