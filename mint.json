@@ -60,7 +60,13 @@
   "icon": "shield-virus",
   "pages": [
     {
-      "group": "Injection Flaws",
+      "group": "A01:2021 – Broken Access Control",
+      "pages": [
+        "vulnerabilities/path-traversal"
+      ]
+    },
+    {
+      "group": "A03:2021 – Injection",
       "pages": [
         "vulnerabilities/sql-injection",
         "vulnerabilities/xss",
@@ -69,12 +75,21 @@
       ]
     },
     {
-      "group": "Data & Server Flaws",
+      "group": "A05:2021 – Security Misconfiguration",
       "pages": [
-        "vulnerabilities/xxe",
-        "vulnerabilities/ssrf",
-        "vulnerabilities/deserialization",
-        "vulnerabilities/path-traversal"
+        "vulnerabilities/xxe"
+      ]
+    },
+    {
+      "group": "A08:2021 – Software and Data Integrity Failures",
+      "pages": [
+        "vulnerabilities/deserialization"
+      ]
+    },
+    {
+      "group": "A10:2021 – Server-Side Request Forgery (SSRF)",
+      "pages": [
+        "vulnerabilities/ssrf"
       ]
     }
   ]
