@@ -22,7 +22,7 @@ XXE can be a critical vulnerability, leading to the complete disclosure of serve
 Most modern XML parsers have been made secure by default against XXE. Vulnerabilities typically exist in older applications or when a developer explicitly enables risky features like DTD (Document Type Definition) processing to support legacy formats. The universal fix is to ensure all XML parsers are configured to disable DTDs and disallow the resolution of external entities.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Python's standard library `xml.etree.ElementTree` is not vulnerable to XXE. However, the more powerful and commonly used third-party library `lxml` **is vulnerable by default**. Django applications that parse XML must ensure `lxml` is configured securely.
 
@@ -111,7 +111,7 @@ Most modern XML parsers have been made secure by default against XXE. Vulnerabil
             self.assertNotContains(response, "root:x:0:0")
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Modern versions of JAX-B and other standard Java XML parsers included with Spring Boot are generally configured to be safe by default. However, vulnerabilities can be introduced if developers manually configure a parser with insecure features or use older, vulnerable libraries.
 
@@ -192,7 +192,7 @@ Most modern XML parsers have been made secure by default against XXE. Vulnerabil
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     Modern versions of the .NET framework have made their XML parsers (like `XmlDocument` and `XDocument`) safe from XXE by default. `DtdProcessing` is set to `Prohibit` and `XmlResolver` is null. A vulnerability can only be introduced if a developer intentionally changes these settings to a less secure value.
 
@@ -278,7 +278,7 @@ Most modern XML parsers have been made secure by default against XXE. Vulnerabil
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     PHP's security relies on the configuration of the underlying `libxml2` library. Since PHP 8.0, external entity loading is **disabled by default**, making applications much safer. Vulnerabilities are common in older codebases (PHP < 8.0) or if a developer manually enables entity loading.
 
@@ -358,7 +358,7 @@ Most modern XML parsers have been made secure by default against XXE. Vulnerabil
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     The security of XML parsing in Node.js depends entirely on the chosen third-party library. Some libraries are safe by default, while others can be made vulnerable through specific configuration options. A common vulnerable library is `libxmljs` when used with the `noent` option.
 
@@ -439,7 +439,7 @@ Most modern XML parsers have been made secure by default against XXE. Vulnerabil
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Rails' default XML parser, Nokogiri, is vulnerable to XXE by default in some versions if it can resolve external entities. Securing it requires explicit configuration.
 

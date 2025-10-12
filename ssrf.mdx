@@ -22,7 +22,7 @@ A successful SSRF attack can lead to the complete compromise of the server's clo
 No web framework provides built-in protection against SSRF because making outbound HTTP requests is a fundamental feature. The responsibility lies entirely with the developer to validate and sanitize any user-supplied data that is used to construct the URL for an outbound request. The most robust defense is a strict allow-list of permitted hosts.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Django applications commonly use the `requests` library to make outbound HTTP calls. The vulnerability arises when a URL, or part of a URL, is constructed from user input without proper validation.
 
@@ -115,7 +115,7 @@ No web framework provides built-in protection against SSRF because making outbou
         self.assertEqual(len(responses.calls), 0)
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Java applications typically use `HttpClient`, `RestTemplate`, or `WebClient` for outbound requests. The vulnerability is language-agnostic and depends on the developer's failure to validate URLs before passing them to these clients.
 
@@ -215,7 +215,7 @@ No web framework provides built-in protection against SSRF because making outbou
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     SSRF vulnerabilities in ASP.NET Core applications are common when using `HttpClient` or the legacy `WebClient` with user-controlled URLs. The remediation pattern is consistent: robust URL parsing and hostname validation.
 
@@ -312,7 +312,7 @@ No web framework provides built-in protection against SSRF because making outbou
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     Laravel's `Http` client (a wrapper around Guzzle) makes outbound requests easy. The vulnerability lies in the business logic that constructs the URL, not the client itself.
 
@@ -403,7 +403,7 @@ No web framework provides built-in protection against SSRF because making outbou
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     In the Node.js ecosystem, libraries like `axios` or the built-in `https` module are used for requests. The principles remain the same: validate URLs before use. The built-in `URL` class is the standard tool for parsing.
 
@@ -499,7 +499,7 @@ No web framework provides built-in protection against SSRF because making outbou
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Outbound requests in Rails are typically made with the built-in `Net::HTTP` library or higher-level gems like `HTTParty` or `Faraday`. As with other frameworks, the vulnerability lies in the logic that constructs and validates the URL before the request is made.
 

@@ -22,7 +22,7 @@ This is one of the most critical vulnerabilities, as it can lead to a full compr
 The only truly safe way to prevent command injection is to **avoid calling out to OS commands with user-supplied data**. Almost every language provides safe, built-in libraries for functionality that developers might otherwise try to achieve via shell commands (e.g., file operations, network requests). If executing a command is absolutely unavoidable, the application must use APIs that execute processes directly without invoking a shell, passing each user-controlled input as a separate, distinct argument.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Python's standard `os.system()` function is a direct conduit to the system shell and is extremely dangerous. The `subprocess` module is the modern, secure alternative, but it can still be made vulnerable if `shell=True` is used with untrusted input.
 
@@ -100,7 +100,7 @@ The only truly safe way to prevent command injection is to **avoid calling out t
         self.assertNotIn("drwx", response.content.decode().lower())
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Java's `Runtime.getRuntime().exec(String command)` is dangerous because it can be influenced by shell metacharacters. The secure alternative is to use `ProcessBuilder` or the `exec(String[] cmdarray)` overload, which treats arguments safely.
 
@@ -178,7 +178,7 @@ The only truly safe way to prevent command injection is to **avoid calling out t
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     In .NET, calling `Process.Start("cmd.exe", "/c " + command)` is the classic vulnerable pattern. The secure approach is to use the `ProcessStartInfo` class, specifying the executable directly and passing arguments without involving a shell.
 
@@ -272,7 +272,7 @@ The only truly safe way to prevent command injection is to **avoid calling out t
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     PHP's execution operators are notoriously dangerous. `exec()`, `shell_exec()`, `system()`, `passthru()`, and the backtick operator (` `` `) all invoke a system shell and are prime candidates for injection.
 
@@ -357,7 +357,7 @@ The only truly safe way to prevent command injection is to **avoid calling out t
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     Node.js's `child_process` module is the standard way to run external commands. The `exec()` function is dangerous because it spawns `/bin/sh` and interprets the command string. The `execFile()` and `spawn()` functions are the secure alternatives.
 
@@ -443,7 +443,7 @@ The only truly safe way to prevent command injection is to **avoid calling out t
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Ruby's kernel methods like `system`, `exec`, and backticks (` `` `) are dangerous when used with a single string argument, as they invoke a shell. The secure practice is to use the multi-argument form of these methods.
 

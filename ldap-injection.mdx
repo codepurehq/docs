@@ -22,7 +22,7 @@ Since LDAP directories are often the central source of truth for user authentica
 The core of LDAP Injection is identical to SQL Injection: mixing untrusted data with code (in this case, the LDAP filter syntax). The universal defense is to **always escape or sanitize user-supplied input** before it is placed within an LDAP filter. All special characters in the input must be properly escaped so they are treated as literal values, not as operators.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Django applications typically use the `python-ldap` library for LDAP integration. This library provides a utility for escaping, but developers often forget to use it when building filters manually.
 
@@ -101,7 +101,7 @@ The core of LDAP Injection is identical to SQL Injection: mixing untrusted data 
             self.assertEqual(called_filter, "(cn=\\2a)") # `*` is escaped to `\2a`
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Applications using Spring LDAP need to be careful when constructing `LdapQuery` objects. While the query builder is generally safe, manual filter construction is a common source of vulnerabilities.
 
@@ -183,7 +183,7 @@ The core of LDAP Injection is identical to SQL Injection: mixing untrusted data 
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     When using `System.DirectoryServices.Protocols`, developers are responsible for constructing LDAP filters. This manual construction is where injection vulnerabilities can occur.
 
@@ -263,7 +263,7 @@ The core of LDAP Injection is identical to SQL Injection: mixing untrusted data 
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     When using PHP's built-in LDAP functions or a library like `LdapRecord-Laravel`, the key to security is sanitizing input before it becomes part of a filter.
 
@@ -348,7 +348,7 @@ The core of LDAP Injection is identical to SQL Injection: mixing untrusted data 
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     Node.js applications typically use libraries like `ldapjs` or `activedirectory2`. The security depends on whether the developer builds filters manually or uses safe, built-in methods.
 
@@ -426,7 +426,7 @@ The core of LDAP Injection is identical to SQL Injection: mixing untrusted data 
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Rails applications often use the `net-ldap` gem for LDAP communication. The gem itself does not provide automatic escaping, so the developer is responsible for sanitizing input before building filter strings.
 
