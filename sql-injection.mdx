@@ -1,0 +1,94 @@
+---
+title: "SQL Injection (SQLi)"
+sidebarTitle: "SQL Injection"
+description: "Learn to prevent SQL Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "database"
+---
+
+## Overview
+SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. It generally allows an attacker to view data that they are not normally able to retrieve.
+
+## Business Impact
+A successful SQLi attack can result in the complete compromise of the database, including unauthorized access to sensitive data, data modification or deletion, and potentially shell access to the server.
+
+<Card title="Reference Details" icon="book-open">
+  **CWE ID:** [CWE-89](https://cwe.mitre.org/data/definitions/89.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Critical
+</Card>
+
+## Remediation by Language
+The primary defense against SQL Injection is the use of parameterized queries (prepared statements). Below are examples of how to implement this control in various languages.
+
+<Tabs>
+  <Tab title="Java">
+    **Insecure (Bad Practice):**
+    ```java Vulnerable.java
+    String query = "SELECT * FROM users WHERE username = '" + username + "'";
+    Statement statement = connection.createStatement();
+    ResultSet rs = statement.executeQuery(query);
+    ```
+    **Secure (Remediation):**
+    ```java Secure.java
+    String query = "SELECT * FROM users WHERE username = ?";
+    PreparedStatement statement = connection.prepareStatement(query);
+    statement.setString(1, username);
+    ResultSet rs = statement.executeQuery();
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    **Insecure (Bad Practice):**
+    ```csharp
+    var command = new SqlCommand("SELECT * FROM Users WHERE UserId = " + userId);
+    ```
+    **Secure (Remediation):**
+    ```csharp
+    var command = new SqlCommand("SELECT * FROM Users WHERE UserId = @UserId");
+    command.Parameters.AddWithValue("@UserId", userId);
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    **Insecure (Bad Practice):**
+    ```javascript
+    const query = "SELECT * FROM users WHERE id = " + userId;
+    db.query(query);
+    ```
+    **Secure (Remediation):**
+    ```javascript
+    db.query("SELECT * FROM users WHERE id = ?", [userId]);
+    ```
+  </Tab>
+  <Tab title="PHP">
+    **Insecure (Bad Practice):**
+    ```php
+    $query = "SELECT * FROM users WHERE username = '" . $username . "'";
+    $result = mysqli_query($conn, $query);
+    ```
+    **Secure (Remediation):**
+    ```php
+    $stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    ```
+  </Tab>
+  <Tab title="Python">
+    **Insecure (Bad Practice):**
+    ```python
+    cursor.execute(f"SELECT * FROM users WHERE username = '{username}'")
+    ```
+    **Secure (Remediation):**
+    ```python
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    **Insecure (Bad Practice):**
+    ```ruby
+    User.where("name = '#{params[:name]}'")
+    ```
+    **Secure (Remediation):**
+    ```ruby
+    User.where("name = ?", params[:name])
+    ```
+  </Tab>
+</Tabs>

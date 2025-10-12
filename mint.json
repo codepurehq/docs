@@ -66,6 +66,30 @@
     "pages": ["role_perm"]
   },
   {
+  "group": "Vulnerability Reference",
+  "icon": "shield-virus",
+  "pages": [
+    {
+      "group": "Injection Flaws",
+      "pages": [
+        "sql-injection",
+        "vulnerabilities/xss",
+        "vulnerabilities/command-injection",
+        "vulnerabilities/ldap-injection"
+      ]
+    },
+    {
+      "group": "Data & Server Flaws",
+      "pages": [
+        "vulnerabilities/xxe",
+        "vulnerabilities/ssrf",
+        "vulnerabilities/deserialization",
+        "vulnerabilities/path-traversal"
+      ]
+    }
+  ]
+},
+  {
     "group": "Integrations",
     "icon": "plug",
     "pages": ["github", "gitlab", "bitbucket", "teams"]
