@@ -86,7 +86,7 @@
   {
     "group": "Integrations",
     "icon": "plug",
-    "pages": ["github", "gitlab", "bitbucket", "teams"]
+    "pages": ["github", "gitlab", "bitbucket"]
   },
   {
     "group": "Releases & Roadmap",
