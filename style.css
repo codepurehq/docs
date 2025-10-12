@@ -1,0 +1,62 @@
+/* --- Global Font and Sidebar Styles --- */
+/* (We are keeping these styles in case you need them later) */
+body {
+  background-color: #FFFFFF; /* Default light background */
+}
+
+html.dark body {
+  background-color: #0D1117; /* Default dark background */
+}
+
+/* --- Sidebar Animation --- */
+/* This is the new code for the smooth slide effect */
+.sidebar-links {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-in-out;
+}
+
+.group-active .sidebar-links,
+.group-open .sidebar-links {
+  max-height: 1000px; /* A large enough value to allow the menu to expand fully */
+}
+
+
+/* --- Sidebar Structure & Active Line --- */
+/* Creates the main grey "track" line for each navigation group */
+.sidebar-links {
+  border-left: 1px solid #374151; /* A dark grey for better visibility on a dark background */
+  margin-left: 12px;
+  padding-left: 24px;
+}
+
+/* Creates the colored "active" bar on the current page's link */
+a[href^="/"].active {
+  border-left: 2px solid #38bdf8; /* A bright blue for the active indicator */
+  
+  /* This pulls the active bar over the grey line */
+  margin-left: -25px;
+  padding-left: 23px;
+}
+
+
+/* --- Custom Dark Sidebar Theme --- */
+/* Main sidebar container */
+nav[role="navigation"].dark {
+  background-color: #111827 !important; /* A very dark grey. !important ensures this overrides default styles. */
+}
+
+/* Sidebar group titles (e.g., "Core Capabilities") */
+nav[role="navigation"].dark .text-slate-900 {
+  color: #e5e7eb; /* A light grey for better contrast */
+}
+
+/* Default sidebar links */
+nav[role="navigation"].dark a {
+  color: #9ca3af; /* A medium grey for inactive links */
+}
+
+/* Active sidebar link text */
+nav[role="navigation"].dark a.active {
+  color: #38bdf8; /* A bright blue to match the active indicator */
+}
