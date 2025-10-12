@@ -1,0 +1,196 @@
+---
+title: "Deserialization of Untrusted Data"
+sidebarTitle: "Insecure Deserialization"
+description: "Learn to prevent Insecure Deserialization in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "cube"
+iconType: "solid"
+---
+
+## Overview
+Insecure Deserialization is a vulnerability that occurs when an application deserializes untrusted data without sufficient validation. Deserialization is the process of taking data from a serialized format (like a byte stream, JSON, or XML) and reconstructing it into a live object in memory. Attackers can manipulate the serialized data to create malicious objects, leading to remote code execution, denial of service, or access control bypasses.
+
+## Business Impact
+This vulnerability is often critical, as it can lead directly to remote code execution on the application server. Even when not leading to RCE, it can be used to cause application crashes (denial of service) or bypass business logic by creating objects in unexpected states.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-502](https://cwe.mitre.org/data/definitions/502.html)
+  **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
+  **Severity:** Critical
+</Card>
+
+## Remediation by Language
+The primary defense is to **avoid deserializing data from untrusted sources**. If deserialization is unavoidable, use a safe, data-only format like JSON and avoid formats that support arbitrary object creation. If a native serialization format must be used, implement strict type checking during deserialization to ensure only expected object types are created. Additionally, run the deserialization code in a low-privilege environment.
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: Deserializing a Cookie**
+    ```java
+    // A "remember me" cookie contains a serialized UserProfile object
+    Cookie cookie = request.getCookies()[0];
+    byte[] decoded = Base64.getDecoder().decode(cookie.getValue());
+    ByteArrayInputStream bis = new ByteArrayInputStream(decoded);
+    ObjectInputStream ois = new ObjectInputStream(bis);
+    UserProfile profile = (UserProfile) ois.readObject(); // Vulnerable
+    ```
+    **Example 2: Processing data from a Message Queue**
+    ```java
+    // Data received from a remote service is deserialized directly
+    byte[] messageData = message.getBody();
+    ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(messageData));
+    Task task = (Task) ois.readObject();
+    ```
+    ##### Secure Code (Remediation)
+    Use a look-ahead deserialization library like Apache Commons IO's `ValidatingObjectInputStream` to restrict which classes can be deserialized.
+    ```java
+    // Restrict to only the allowed class
+    ValidatingObjectInputStream vois = new ValidatingObjectInputStream(bis);
+    vois.accept(UserProfile.class);
+    UserProfile profile = (UserProfile) vois.readObject();
+
+    // The best solution is to avoid native serialization. Use JSON with a library like Jackson instead.
+    ObjectMapper mapper = new ObjectMapper();
+    UserProfile profile = mapper.readValue(jsonData, UserProfile.class);
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `BinaryFormatter`**
+    ```csharp
+    // BinaryFormatter is inherently unsafe and should not be used with untrusted data
+    byte[] data = Convert.FromBase64String(Request.Form["data"]);
+    var stream = new MemoryStream(data);
+    var formatter = new BinaryFormatter();
+    var obj = formatter.Deserialize(stream); // Highly dangerous
+    ```
+    **Example 2: Using `Json.NET` with `TypeNameHandling.All`**
+    ```csharp
+    // This setting allows the JSON to specify which .NET type to create, which is unsafe
+    var settings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All };
+    var obj = JsonConvert.DeserializeObject(jsonString, settings);
+    ```
+    ##### Secure Code (Remediation)
+    Avoid `BinaryFormatter`. Use a safe serializer like `JsonConvert` with default settings and specify the expected type.
+    ```csharp
+    // Use a safe JSON serializer and explicitly define the target type
+    try
+    {
+        var settings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None }; // Safe default
+        MyExpectedType obj = JsonConvert.DeserializeObject<MyExpectedType>(jsonString, settings);
+    }
+    catch (JsonSerializationException ex)
+    {
+        // Handle malformed data
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `node-serialize`**
+    ```javascript
+    // Libraries like node-serialize are known to be insecure as they can execute functions
+    const serialize = require('node-serialize');
+    const data = Buffer.from(req.cookies.profile, 'base64').toString();
+    const obj = serialize.unserialize(data); // Can lead to RCE
+    ```
+    **Example 2: Using `js-yaml` with `!!js/function` tag**
+    ```javascript
+    // The `!!js/function` tag in YAML can execute arbitrary JavaScript
+    const yaml = require('js-yaml');
+    const doc = yaml.load(req.body.yamlData);
+    ```
+    ##### Secure Code (Remediation)
+    Stick to the standard `JSON.parse()` for deserializing data, as it only creates simple data structures (objects, arrays, strings, etc.) and cannot execute code.
+    ```javascript
+    // JSON.parse is safe from this type of vulnerability
+    try {
+        const obj = JSON.parse(req.body.jsonData);
+        // Process the safe object
+    } catch (e) {
+        // Handle invalid JSON
+    }
+
+    // If using js-yaml, use the safeLoad method
+    const doc = yaml.safeLoad(req.body.yamlData);
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `unserialize()` on User Input**
+    ```php
+    // The `unserialize` function can instantiate objects of any class available to the application
+    $data = $_COOKIE['user_prefs'];
+    $prefs = unserialize(base64_decode($data)); // Very dangerous
+    ```
+    **Example 2: Processing Data from a Cache**
+    ```php
+    // If an attacker can poison the cache, this becomes a vector
+    $cached_obj = $cache->get('user_session_' . $userId);
+    $session = unserialize($cached_obj);
+    ```
+    ##### Secure Code (Remediation)
+    Avoid `unserialize()` with any untrusted input. Use JSON with `json_decode()` instead. If you must use `unserialize`, specify the allowed classes (PHP 7+).
+    ```php
+    // The best approach: use JSON
+    $prefs = json_decode($data, true);
+
+    // If you MUST use unserialize (PHP 7+):
+    $prefs = unserialize(base64_decode($data), ['allowed_classes' => [UserProfile::class, Prefs::class]]);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `pickle`**
+    ```python
+    # The pickle module is not secure against erroneous or maliciously constructed data
+    import pickle
+    pickled_data = request.cookies.get('session')
+    session_obj = pickle.loads(base64.b64decode(pickled_data))
+    ```
+    **Example 2: Using `PyYAML`'s `load()` function**
+    ```python
+    # The default `yaml.load()` can construct any Python object
+    import yaml
+    data = yaml.load(request.data, Loader=yaml.Loader)
+    ```
+    ##### Secure Code (Remediation)
+    Never use `pickle` with untrusted data. Use a safe data format like JSON. For YAML, always use `yaml.safe_load()`.
+    ```python
+    import json
+    # Use JSON for data interchange
+    json_data = request.cookies.get('session')
+    session_obj = json.loads(json_data)
+
+    import yaml
+    # Use safe_load for YAML
+    data = yaml.safe_load(request.data)
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `Marshal.load`**
+    ```ruby
+    # Marshal.load can deserialize almost any Ruby object, leading to RCE
+    data = Base64.decode64(cookies[:session])
+    session = Marshal.load(data)
+    ```
+    **Example 2: Using YAML's `load()`**
+    ```ruby
+    # Similar to Python, Ruby's default YAML parser is unsafe
+    require 'yaml'
+    config = YAML.load(params[:config_file])
+    ```
+    ##### Secure Code (Remediation)
+    Avoid `Marshal.load` with user input. Use JSON. For YAML, use `YAML.safe_load`.
+    ```ruby
+    require 'json'
+    # Use JSON instead of Marshal
+    data = cookies[:session]
+    session = JSON.parse(data)
+
+    require 'yaml'
+    # Use safe_load for YAML
+    config = YAML.safe_load(params[:config_file])
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,195 @@
+---
+title: "Command Injection"
+sidebarTitle: "Command Injection"
+description: "Learn to prevent Command Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "terminal"
+iconType: "solid"
+---
+
+## Overview
+Command Injection (or OS Command Injection) is a web security vulnerability that allows an attacker to execute arbitrary operating system (OS) commands on the server that is running an application. This vulnerability occurs when an application passes unsafe user-supplied data (forms, cookies, HTTP headers, etc.) to a system shell. The attacker can inject OS command separators (like `;`, `&&`, `|`, `||`) to append their own malicious commands.
+
+## Business Impact
+A successful command injection attack can result in the complete compromise of the host server. Attackers can leverage this to access or exfiltrate data, install malware, pivot to other internal systems, or disrupt services.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-78](https://cwe.mitre.org/data/definitions/78.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Critical
+</Card>
+
+## Remediation by Language
+The primary defense against command injection is to **never** call out to OS commands with user-supplied data. Most languages provide built-in library functions to achieve the desired functionality without invoking a shell. If it is absolutely unavoidable, the input must be rigorously sanitized using a strict allow-list, and the command should be executed using APIs that do not invoke a shell (e.g., passing arguments as an array).
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `Runtime.exec()` with String Concatenation**
+    ```java
+    // A DNS lookup tool that uses the 'nslookup' command
+    String domain = request.getParameter("domain");
+    // Attacker can inject commands: "example.com; ls -la"
+    Process process = Runtime.getRuntime().exec("nslookup " + domain);
+    ```
+    **Example 2: Image Conversion with ImageMagick**
+    ```java
+    // A service that resizes an image using a command-line tool
+    String options = request.getParameter("options");
+    String command = "convert input.jpg " + options + " output.jpg";
+    Runtime.getRuntime().exec(command);
+    ```
+    ##### Secure Code (Remediation)
+    Use `ProcessBuilder` and pass arguments as separate elements in an array. This avoids invoking a shell and prevents command chaining.
+    ```java
+    String domain = request.getParameter("domain");
+    ProcessBuilder pb = new ProcessBuilder("nslookup", domain);
+    Process process = pb.start();
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: Running a Process with User Input**
+    ```csharp
+    // A utility to list directory contents
+    string dir = Request.QueryString["dir"];
+    // The '/c' switch tells cmd.exe to execute the string and terminate
+    Process.Start("cmd.exe", "/c dir " + dir);
+    ```
+    **Example 2: Compressing Files**
+    ```csharp
+    // A script to zip a user-specified folder
+    string folderName = Request.Form["folder"];
+    var process = new Process
+    {
+        StartInfo = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = "/c zip -r archive.zip " + folderName,
+            RedirectStandardOutput = true,
+            UseShellExecute = false // Misleadingly, cmd.exe is still a shell
+        }
+    };
+    ```
+    ##### Secure Code (Remediation)
+    Use the `ProcessStartInfo` class to pass arguments separately, and avoid calling a shell like `cmd.exe` or `/bin/sh`.
+    ```csharp
+    string dir = Request.QueryString["dir"];
+    var process = new Process
+    {
+        StartInfo = new ProcessStartInfo
+        {
+            FileName = "dir.exe", // Call the executable directly
+            Arguments = dir, // Pass the user input as a single argument
+            UseShellExecute = false
+        }
+    };
+    process.Start();
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `child_process.exec()`**
+    ```javascript
+    // The `exec` function spawns a shell by default, which is dangerous
+    const { exec } = require('child_process');
+    const filename = req.query.filename;
+    // Attacker can use "file.txt; rm -rf /"
+    exec('ls -l ' + filename, (err, stdout, stderr) => { /* ... */ });
+    ```
+    **Example 2: Getting Video Metadata with `ffmpeg`**
+    ```javascript
+    // Another example of concatenating user input into a shell command
+    const videoFile = req.query.video;
+    exec(`ffmpeg -i ${videoFile} -f ffmetadata metadata.txt`);
+    ```
+    ##### Secure Code (Remediation)
+    Use `child_process.execFile()` or `spawn()`, which do not invoke a shell and accept arguments as an array.
+    ```javascript
+    const { execFile } = require('child_process');
+    const filename = req.query.filename;
+    
+    // The command and arguments are separate. The shell will not interpret `filename`.
+    execFile('ls', ['-l', filename], (err, stdout, stderr) => { /* ... */ });
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `system()` or `exec()`**
+    ```php
+    // These functions execute a command via the system's shell
+    $host = $_GET['host'];
+    system('ping -c 4 ' . $host);
+    ```
+    **Example 2: Using Backticks (` `` `)**
+    ```php
+    // The backtick operator is an alias for shell_exec()
+    $file = $_GET['file'];
+    $output = `grep 'error' /var/log/${file}`;
+    ```
+    ##### Secure Code (Remediation)
+    Use `escapeshellarg()` to ensure the user input is treated as a single, safe argument.
+    ```php
+    $host = $_GET['host'];
+    // escapeshellarg() wraps the string in quotes and escapes existing quotes
+    $safearg = escapeshellarg($host);
+    system('ping -c 4 ' . $safearg);
+
+    // Better: Avoid the shell altogether if a native PHP function exists
+    // (e.g., use a networking library instead of the ping command)
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `os.system()`**
+    ```python
+    # os.system() executes the command in a subshell
+    import os
+    filename = request.args.get('filename')
+    os.system("cat " + filename)
+    ```
+    **Example 2: Using `subprocess.call()` with `shell=True`**
+    ```python
+    # Explicitly setting shell=True creates the vulnerability
+    import subprocess
+    ip_address = request.json.get('ip')
+    subprocess.call("dig " + ip_address, shell=True)
+    ```
+    ##### Secure Code (Remediation)
+    Use the `subprocess` module and pass arguments as a list (with `shell=False`, which is the default).
+    ```python
+    import subprocess
+    filename = request.args.get('filename')
+    
+    # Arguments are passed as a list, no shell is invoked
+    subprocess.run(["cat", filename])
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `system()` or Backticks**
+    ```ruby
+    # The system command and backticks both invoke a shell
+    file = params[:file]
+    system("ls #{file}")
+    output = `ls #{file}`
+    ```
+    **Example 2: Using `open()` with a Pipe**
+    ```ruby
+    # Starting a command with a pipe `|` opens a shell process
+    filename = params[:filename]
+    io = open("| tar -xzf #{filename}") # Dangerous
+    ```
+    ##### Secure Code (Remediation)
+    Pass arguments as separate elements to `system()` or `Open3.capture3`. This avoids shell interpretation.
+    ```ruby
+    file = params[:file]
+    
+    # Pass arguments separately to the system command
+    system("ls", file)
+
+    # Use a library like Open3 for more control
+    require 'open3'
+    stdout, stderr, status = Open3.capture3("ls", file)
+    ```
+  </Tab>
+</Tabs>

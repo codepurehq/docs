@@ -1,16 +1,16 @@
 ---
 title: "SQL Injection (SQLi)"
 sidebarTitle: "SQL Injection"
-description: "Learn to prevent SQL Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
+description: "Architectural examples and mitigation for SQL Injection in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "database"
 iconType: "solid"
 ---
 
 ## Overview
-SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. By inserting malicious SQL statements into an entry field, an attacker can bypass authentication, view, modify, or delete data, and in some cases, gain full control of the database server.
+SQL Injection is a code injection technique that allows an attacker to interfere with the queries that an application makes to its database. This is typically caused by the application incorporating unsanitized user input directly into an SQL statement.
 
 ## Business Impact
-A successful SQLi attack can result in the complete compromise of the database, leading to unauthorized access to sensitive data (passwords, PII, financial records), data modification or deletion, and potentially remote code execution on the database server.
+A successful SQLi attack can result in the complete compromise of the database, leading to unauthorized access to all user data, intellectual property, and credentials. It can also be used to modify or delete data, and in some cases, achieve remote code execution on the server, making it one of the most critical web application vulnerabilities.
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-89](https://cwe.mitre.org/data/definitions/89.html)
@@ -18,151 +18,522 @@ A successful SQLi attack can result in the complete compromise of the database, 
   **Severity:** Critical
 </Card>
 
-## Remediation by Language
-The primary defense against SQL Injection is the use of parameterized queries (also known as prepared statements). This practice separates the SQL query structure from the data, ensuring that user-supplied input is always treated as data and never as executable code.
+## Framework-Specific Analysis and Remediation
+The primary defense against SQL Injection is to strictly separate code from data by using parameterized queries or Object-Relational Mapping (ORM) features that build them automatically.
 
 <Tabs>
-  <Tab title="Java">
-    ##### Vulnerable Code Examples
-    **Example 1: Authentication Bypass**
-    ```java
-    // User input from a login form is directly concatenated into the query
-    String query = "SELECT * FROM users WHERE username = '" + username + "' AND password = '" + password + "'";
-    Statement statement = connection.createStatement();
-    ResultSet rs = statement.executeQuery(query);
+  <Tab title="Python">
+    #### Framework Context
+    Django's built-in ORM is the primary defense against SQLi. Its querysets automatically parameterize inputs, effectively eliminating the risk for most database operations. Vulnerabilities typically arise when developers bypass the ORM and write raw SQL queries without proper parameterization.
+
+    #### Vulnerable Scenario 1: Raw SQL in a Search Endpoint
+    A product search feature uses `Manager.raw()` to accommodate a complex query, but formats the user's search term directly into the query string.
+    ```python
+    # products/views.py
+    from django.db import connection
+    from rest_framework.views import APIView
+    from rest_framework.response import Response
+
+    class ProductSearchView(APIView):
+        def get(self, request):
+            query = request.query_params.get('q', '')
+            # DANGEROUS: User input is formatted directly into the raw SQL query.
+            # An attacker could provide: "' OR 1=1; --" to list all products.
+            sql_query = f"SELECT * FROM products_product WHERE name LIKE '%{query}%' AND is_active = true"
+            
+            # While Manager.raw() can be safe with params, direct execution is not.
+            with connection.cursor() as cursor:
+                cursor.execute(sql_query)
+                # ... process results ...
+            return Response({"message": "Search results for: " + query})
     ```
-    **Example 2: Data Retrieval from URL Parameter**
-    ```java
-    // A product ID from a GET request is used to build the query
-    String productId = request.getParameter("productId");
-    String query = "SELECT * FROM products WHERE id = " + productId; // Numeric input is still vulnerable
-    Statement statement = connection.createStatement();
-    ResultSet rs = statement.executeQuery(query);
+
+    #### Vulnerable Scenario 2: Dynamic Sorting in a Reporting API
+    An internal reporting API allows sorting by a column name provided in the URL, which is then concatenated into the `ORDER BY` clause.
+    ```python
+    # reports/views.py
+    def generate_sales_report(request):
+        sort_column = request.GET.get('sort', 'sale_date')
+        # DANGEROUS: The column name is not validated. An attacker could inject
+        # a complex SQL statement here, for example:
+        # "(CASE WHEN (SELECT password FROM auth_user WHERE username = 'admin') = 'abc' THEN id ELSE name END)"
+        # This allows for blind, time-based SQL injection to extract data.
+        query = f"SELECT * FROM sales_report ORDER BY {sort_column}"
+        # ... execute raw query ...
+        return HttpResponse("Report generated.")
     ```
-    ##### Secure Code (Remediation)
-    Use `PreparedStatement` to parameterize all user-supplied input.
-    ```java
-    String query = "SELECT * FROM users WHERE username = ? AND password = ?";
-    PreparedStatement statement = connection.prepareStatement(query);
-    statement.setString(1, username);
-    statement.setString(2, password);
-    ResultSet rs = statement.executeQuery();
+
+    #### Mitigation and Best Practices
+    Always prefer the Django ORM over raw SQL. If raw SQL is necessary, use the `params` argument to let the database driver handle parameterization. For dynamic elements like column names, always validate the user input against a strict allow-list of valid values.
+
+    #### Secure Code Example
+    ```python
+    # products/views.py (Secure Version)
+    from .models import Product
+    from .serializers import ProductSerializer
+
+    class ProductSearchView(APIView):
+        def get(self, request):
+            query = request.query_params.get('q', '')
+            
+            # SAFE: The Django ORM handles sanitization and parameterization automatically.
+            products = Product.objects.filter(name__icontains=query, is_active=true)
+            
+            serializer = ProductSerializer(products, many=True)
+            return Response(serializer.data)
+    ```
+
+    #### Testing Strategy
+    Write integration tests using Django's `APITestCase` that attempt to inject malicious SQL payloads into the search parameter. Assert that the API returns an expected (non-vulnerable) response and does not leak unintended data.
+    ```python
+    # products/tests.py
+    from rest_framework.test import APITestCase
+    
+    class ProductSearchTests(APITestCase):
+        def test_search_with_sql_injection_payload(self):
+            # Create some products...
+            injection_payload = "' OR 1=1; --"
+            response = self.client.get(f'/api/products/search?q={injection_payload}')
+            
+            # A vulnerable endpoint might return all products.
+            # A secure endpoint should return an empty list for this literal query.
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(len(response.data), 0)
     ```
   </Tab>
-  <Tab title=".NET (C#)">
-    ##### Vulnerable Code Examples
-    **Example 1: User Profile Search**
-    ```csharp
-    // User-supplied search term is concatenated
-    string searchTerm = Request.QueryString["search"];
-    var command = new SqlCommand("SELECT * FROM UserProfiles WHERE bio LIKE '%" + searchTerm + "%'");
+  <Tab title="Java">
+    #### Framework Context
+    Spring Data JPA, built on top of Hibernate, strongly encourages the use of repositories and derived queries or JPQL with named/positional parameters. This provides robust protection against SQLi. Vulnerabilities typically occur when developers fall back to using raw `JdbcTemplate` or construct JPQL strings with unsafe concatenation.
+
+    #### Vulnerable Scenario 1: Using `JdbcTemplate` with String Concatenation
+    A service method for finding users by status constructs the query string manually.
+    ```java
+    // service/UserService.java
+    @Service
+    public class UserServiceImpl implements UserService {
+        @Autowired
+        private JdbcTemplate jdbcTemplate;
+
+        public List<User> findUsersByStatus(String status) {
+            // DANGEROUS: The 'status' parameter is concatenated.
+            // An attacker can use 'active' OR 1=1' to dump all users.
+            String sql = "SELECT * FROM users WHERE status = '" + status + "'";
+            return jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(User.class));
+        }
+    }
     ```
-    **Example 2: Ordering Results**
-    ```csharp
-    // Column name for sorting is taken directly from user input
-    string sortBy = Request.QueryString["sort"];
-    var command = new SqlCommand("SELECT * FROM products ORDER BY " + sortBy); // Also vulnerable
+
+    #### Vulnerable Scenario 2: Concatenating JPQL in a Repository
+    A custom repository implementation builds a Java Persistence Query Language (JPQL) query string to allow for flexible searching.
+    ```java
+    // repository/CustomProductRepositoryImpl.java
+    public class CustomProductRepositoryImpl implements CustomProductRepository {
+        @PersistenceContext
+        private EntityManager entityManager;
+
+        public List<Product> findProductByName(String productName) {
+            // DANGEROUS: Even though this is JPQL, not raw SQL, it's still vulnerable
+            // to the same injection attacks if concatenated.
+            String jpql = "SELECT p FROM Product p WHERE p.name = '" + productName + "'";
+            return entityManager.createQuery(jpql, Product.class).getResultList();
+        }
+    }
     ```
-    ##### Secure Code (Remediation)
-    Use parameterized queries with `SqlCommand` and `SqlParameter`. For dynamic ordering, validate the input against an allow-list of valid column names.
+
+    #### Mitigation and Best Practices
+    Use Spring Data JPA repositories with derived query methods (e.g., `findByStatus(String status)`) or use the `@Query` annotation with named or positional parameters. If using `JdbcTemplate`, always use `?` placeholders and pass arguments as a separate array.
+
+    #### Secure Code Example
+    ```java
+    // repository/UserRepository.java (Spring Data JPA Interface)
+    public interface UserRepository extends JpaRepository<User, Long> {
+        // SAFE: Spring Data JPA automatically creates a parameterized query from the method name.
+        List<User> findByStatus(String status);
+        
+        // SAFE: Alternatively, use @Query with named parameters for complex queries.
+        @Query("SELECT p FROM Product p WHERE p.name = :productName")
+        List<Product> findProductByNameSafe(@Param("productName") String productName);
+    }
+    ```
+
+    #### Testing Strategy
+    Write integration tests with `@SpringBootTest` and `MockMvc`. The test should call the vulnerable endpoint with a malicious payload and assert that the application throws an exception or returns a controlled response, rather than executing the injected query.
+    ```java
+    // src/test/java/com/example/UserServiceTest.java
+    @SpringBootTest
+    class UserServiceTest {
+        @Autowired private UserService userService;
+        
+        @Test
+        void findUsersByStatus_withInjection_shouldNotReturnAllUsers() {
+            String payload = "' OR 1=1";
+            // In a real test, you'd verify the number of users returned
+            // is 0, not the total number of users in the test database.
+            List<User> result = userService.findUsersByStatus(payload); 
+            // This test would fail on the vulnerable code but pass on a secure version.
+            assertTrue(result.isEmpty());
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="C#">
+    #### Framework Context
+    Entity Framework (EF) Core is the standard ORM and provides excellent protection against SQLi through LINQ queries, which are translated into parameterized SQL. Vulnerabilities typically arise from using raw SQL execution features like `FromSqlRaw` without proper parameterization.
+
+    #### Vulnerable Scenario 1: `FromSqlRaw` with String Interpolation
+    An endpoint for fetching blog posts for a specific author uses an interpolated string to build the raw SQL query.
     ```csharp
-    // For data parameters
-    var command = new SqlCommand("SELECT * FROM UserProfiles WHERE Bio LIKE @SearchTerm");
-    command.Parameters.AddWithValue("@SearchTerm", "%" + searchTerm + "%");
+    // Controllers/PostsController.cs
+    [ApiController]
+    [Route("api/[controller]")]
+    public class PostsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+        public PostsController(AppDbContext context) { _context = context; }
+
+        [HttpGet("author/{authorName}")]
+        public async Task<ActionResult<IEnumerable<Post>>> GetPostsByAuthor(string authorName)
+        {
+            // DANGEROUS: C# string interpolation ($"") puts the value directly into the query.
+            // An attacker can use "admin' OR 1=1 --" to see all posts.
+            var posts = await _context.Posts
+                .FromSqlRaw($"SELECT * FROM Posts WHERE AuthorName = '{authorName}'")
+                .ToListAsync();
+            return posts;
+        }
+    }
+    ```
     
-    // For sorting (allow-list approach)
-    string[] allowedColumns = { "price", "name", "category" };
-    if (allowedColumns.Contains(sortBy)) {
-        var sortCommand = new SqlCommand("SELECT * FROM products ORDER BY " + sortBy);
+    #### Vulnerable Scenario 2: Building a Query with `DbCommand`
+    A data access layer constructs a command text by concatenating strings.
+    ```csharp
+    public List<Product> SearchProducts(string category)
+    {
+        using var command = _context.Database.GetDbConnection().CreateCommand();
+        // DANGEROUS: Manually building the command text.
+        command.CommandText = "SELECT * FROM Products WHERE Category = '" + category + "'";
+        // ... execute command ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always prefer LINQ to SQL queries. If raw SQL is required, use `FromSqlInterpolated` or pass `SqlParameter` objects to `FromSqlRaw`. EF Core's string interpolation in `FromSqlInterpolated` is specifically designed to be safe and create parameters.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/PostsController.cs (Secure Version)
+    [HttpGet("author/{authorName}")]
+    public async Task<ActionResult<IEnumerable<Post>>> GetPostsByAuthor(string authorName)
+    {
+        // SAFE: FromSqlInterpolated converts the interpolated value into a DbParameter.
+        var posts = await _context.Posts
+            .FromSqlInterpolated($"SELECT * FROM Posts WHERE AuthorName = {authorName}")
+            .ToListAsync();
+        
+        // SAFER (Best Practice): Use LINQ whenever possible.
+        // var postsLinq = await _context.Posts
+        //     .Where(p => p.AuthorName == authorName)
+        //     .ToListAsync();
+            
+        return posts;
+    }
+    ```
+
+    #### Testing Strategy
+    Using `WebApplicationFactory` for integration tests, send a request to the API endpoint with a malicious `authorName`. Assert that the response is either an empty list or a `400 Bad Request`, and not a list of all posts from the test database.
+    ```csharp
+    // Tests/PostControllerIntegrationTests.cs
+    public class PostControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+    {
+        private readonly HttpClient _client;
+        public PostControllerIntegrationTests(WebApplicationFactory<Program> factory) {
+            _client = factory.CreateClient();
+        }
+
+        [Fact]
+        public async Task GetPostsByAuthor_WithSqlInjection_ShouldNotReturnAllPosts()
+        {
+            var injectionPayload = "admin' OR 1=1 --";
+            var response = await _client.GetAsync($"/api/posts/author/{injectionPayload}");
+            
+            response.EnsureSuccessStatusCode();
+            var posts = await response.Content.ReadFromJsonAsync<List<Post>>();
+            
+            // Assert that the injection did not succeed in returning all data.
+            Assert.Empty(posts);
+        }
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel's Eloquent ORM and Query Builder are secure by default, as they use PDO parameter binding for all operations. Vulnerabilities are introduced when developers use raw database expressions (`DB::raw`, `whereRaw`) and fail to properly bind user-provided data.
+
+    #### Vulnerable Scenario 1: Using `whereRaw` with Concatenation
+    A filter functionality concatenates a user-provided value directly into a `whereRaw` condition.
+    ```php
+    // app/Http/Controllers/OrderController.php
+    namespace App\Http\Controllers;
+    use Illuminate\Http\Request;
+    use App\Models\Order;
+
+    class OrderController extends Controller
+    {
+        public function index(Request $request)
+        {
+            $status = $request->input('status'); // e.g., 'shipped'
+            
+            // DANGEROUS: The status is directly embedded in the raw expression.
+            // Attacker can provide: "shipped' OR 1=1 --" to view all orders.
+            $orders = Order::whereRaw("status = '" . $status . "'")
+                ->get();
+
+            return view('orders.index', ['orders' => $orders]);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe `DB::select`
+    A dashboard component uses a raw `DB::select` call to fetch statistics.
+    ```php
+    // app/Http/View/Composers/DashboardComposer.php
+    use Illuminate\Support\Facades\DB;
+    
+    class DashboardComposer
+    {
+        public function compose(View $view)
+        {
+            $userId = auth()->id();
+            // DANGEROUS: Even if the ID is from auth, if any part of a raw
+            // query is built this way, it's a bad practice that can be exploited elsewhere.
+            $stats = DB::select("SELECT * FROM user_stats WHERE user_id = " . $userId);
+            $view->with('stats', $stats);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use the standard Eloquent/Query Builder methods, which handle parameter binding automatically. If a raw expression is absolutely necessary, use the `?` bindings to safely pass data into it.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/OrderController.php (Secure Version)
+    class OrderController extends Controller
+    {
+        public function index(Request $request)
+        {
+            $status = $request->input('status');
+            
+            // SAFE: The standard `where` method uses parameter binding.
+            $orders = Order::where('status', $status)->get();
+            
+            // SAFE (for raw queries): Use bindings for user input.
+            // $orders = Order::whereRaw("status = ?", [$status])->get();
+
+            return view('orders.index', ['orders' => $orders]);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Use Laravel's built-in HTTP testing capabilities. Create a test that calls the endpoint with an injection payload and asserts that the response does not contain data that should have been filtered out.
+    ```php
+    // tests/Feature/OrderSecurityTest.php
+    namespace Tests\Feature;
+    use Tests\TestCase;
+    
+    class OrderSecurityTest extends TestCase
+    {
+        public function test_order_index_is_not_vulnerable_to_sql_injection(): void
+        {
+            // Assume we have orders with 'shipped' and 'pending' statuses.
+            $user = \App\Models\User::factory()->create();
+            \App\Models\Order::factory()->create(['status' => 'pending', 'user_id' => $user->id]);
+
+            $injectionPayload = "' OR 1=1 --";
+            
+            $response = $this->actingAs($user)
+                ->get('/orders?status=' . $injectionPayload);
+
+            $response->assertStatus(200);
+            // The vulnerable code would show all orders, including 'pending'.
+            // The secure code will show none for the literal query "' OR 1=1 --".
+            $response->assertDontSee('pending');
+        }
     }
     ```
   </Tab>
   <Tab title="Node.js">
-    ##### Vulnerable Code Examples
-    **Example 1: Direct String Interpolation**
-    ```javascript
-    // User input is directly placed in a template literal
-    const query = `SELECT * FROM invoices WHERE user_id = '${req.user.id}' AND invoice_num = '${req.params.invoiceNum}'`;
-    db.query(query);
-    ```
-    **Example 2: Insecure Library Usage**
-    ```javascript
-    // Some libraries might offer insecure convenience methods
-    const query = "SELECT * FROM users WHERE id = " + req.params.id;
-    db.query(query);
-    ```
-    ##### Secure Code (Remediation)
-    Use the placeholder syntax (`?`) provided by your database driver (e.g., `mysql`, `pg`).
-    ```javascript
-    db.query("SELECT * FROM invoices WHERE user_id = ? AND invoice_num = ?", [req.user.id, req.params.invoiceNum]);
-    ```
-  </Tab>
-  <Tab title="PHP">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `$_GET` Directly**
-    ```php
-    // The 'id' parameter from the URL is used directly
-    $query = "SELECT * FROM articles WHERE id = " . $_GET['id'];
-    $result = mysqli_query($conn, $query);
-    ```
-    **Example 2: Concatenating `$_POST` Variables**
-    ```php
-    // Login credentials from a form are concatenated
-    $query = "SELECT id FROM users WHERE username = '" . $_POST['username'] . "' AND password = '" . $_POST['password'] . "'";
-    $result = mysqli_query($conn, $query);
-    ```
-    ##### Secure Code (Remediation)
-    Use prepared statements with PDO or MySQLi.
-    ```php
-    // Using PDO
-    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = :id");
-    $stmt->execute(['id' => $_GET['id']]);
-    $article = $stmt->fetch();
-    
-    // Using MySQLi
-    $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? AND password = ?");
-    $stmt->bind_param("ss", $_POST['username'], $_POST['password']);
-    $stmt->execute();
-    ```
-  </Tab>
-  <Tab title="Python">
-    ##### Vulnerable Code Examples
-    **Example 1: F-String Formatting**
-    ```python
-    # Using an f-string to build the query is unsafe
-    cursor.execute(f"SELECT * FROM accounts WHERE owner_id = '{owner_id}'")
-    ```
-    **Example 2: Percent (`%`) Formatting**
-    ```python
-    # Using the old % formatting is also unsafe
-    cursor.execute("SELECT * FROM products WHERE category = '%s'" % category)
-    ```
-    ##### Secure Code (Remediation)
-    Pass parameters as a separate tuple to the `execute` method. The database driver will safely handle the substitution.
-    ```python
-    cursor.execute("SELECT * FROM accounts WHERE owner_id = %s", (owner_id,))
-    ```
-  </Tab>
-  <Tab title="Ruby on Rails">
-    ##### Vulnerable Code Examples
-    **Example 1: String Interpolation in `where` Clause**
-    ```ruby
-    # Interpolating parameters directly into the where clause is dangerous
-    User.where("email = '#{params[:email]}'")
-    ```
-    **Example 2: Unsafe `find_by_sql`**
-    ```ruby
-    # find_by_sql is powerful but unsafe if not used with parameterization
-    User.find_by_sql("SELECT * FROM users WHERE name = '#{params[:name]}' AND admin = true")
-    ```
-    ##### Secure Code (Remediation)
-    Use the array or hash syntax for conditions in ActiveRecord. This automatically creates parameterized queries.
-    ```ruby
-    # Array syntax (placeholder `?`)
-    User.where("email = ?", params[:email])
+    #### Framework Context
+    Express itself is unopinionated about database access. Vulnerabilities depend entirely on the chosen database driver or ORM (e.g., Sequelize, Prisma, `node-postgres`). The most common mistake is manual string construction for queries, which all reputable drivers discourage.
 
-    # Hash syntax
-    User.where(email: params[:email])
+    #### Vulnerable Scenario 1: Using `node-postgres` without Parameterization
+    A data access layer constructs a query by concatenating user input for a user profile endpoint.
+    ```javascript
+    // routes/users.js
+    const express = require('express');
+    const router = express.Router();
+    const { Pool } = require('pg');
+    const pool = new Pool(); // Assumes configuration via environment variables
+
+    router.get('/:id', async (req, res) => {
+        const { id } = req.params;
+        try {
+            // DANGEROUS: The ID is placed directly in the query string.
+            // Attacker can use "1; DROP TABLE users"
+            const queryText = `SELECT * FROM users WHERE id = ${id}`;
+            const { rows } = await pool.query(queryText);
+            if (rows.length === 0) {
+                return res.status(404).send('User not found');
+            }
+            res.json(rows[0]);
+        } catch (err) {
+            res.status(500).send('Server Error');
+        }
+    });
+    module.exports = router;
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Sequelize `literal` usage
+    Sequelize is generally safe, but provides an "escape hatch" (`Sequelize.literal`) that can be misused.
+    ```javascript
+    // services/productService.js
+    const { Op, Sequelize } = require('sequelize');
+    
+    async function findProducts(filter) {
+        // DANGEROUS: The filter value is injected directly into a literal.
+        // This bypasses all of Sequelize's sanitization.
+        const products = await Product.findAll({
+            where: {
+                // An attacker can break out of the string and inject commands.
+                category: { [Op.eq]: Sequelize.literal(`'${filter.category}'`) }
+            }
+        });
+        return products;
+    }
+    ```
+    
+    #### Mitigation and Best Practices
+    Always use the parameterized query features of your database driver (e.g., the `values` array in `node-postgres`) or the abstractions provided by your ORM (e.g., the `where` clause object in Sequelize). Never use `Sequelize.literal` with user-provided data.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/users.js (Secure Version)
+    router.get('/:id', async (req, res) => {
+        const { id } = req.params;
+        // SAFE: The query text uses a placeholder ($1), and the value is passed separately.
+        // The driver ensures the value is treated as data, not code.
+        const queryText = 'SELECT * FROM users WHERE id = $1';
+        try {
+            const { rows } = await pool.query(queryText, [id]);
+            if (rows.length === 0) {
+                return res.status(404).send('User not found');
+            }
+            res.json(rows[0]);
+        } catch (err) {
+            res.status(500).send('Server Error');
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Use a testing framework like Jest with an HTTP client library like `supertest` to make requests to the running application. The test should attempt to inject SQL through the URL parameter and verify that the API returns a predictable error or empty result.
+    ```javascript
+    // tests/users.test.js
+    const request = require('supertest');
+    const app = require('../app'); // Your main Express app file
+
+    describe('GET /api/users/:id', () => {
+        it('should not be vulnerable to SQL injection', async () => {
+            const injectionPayload = '1 OR 1=1';
+            const response = await request(app).get(`/api/users/${injectionPayload}`);
+            
+            // A vulnerable app might return a user or throw a 500 error.
+            // A secure app should correctly interpret '1 OR 1=1' as a non-numeric ID
+            // and return a 404 Not Found or a validation error.
+            expect(response.statusCode).toBe(404);
+        });
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Ruby on Rails' ActiveRecord ORM provides strong, built-in protection against SQLi. Its convention-based approach makes it difficult to write insecure code by accident. Vulnerabilities are almost always introduced when developers deliberately bypass ActiveRecord's abstractions and construct raw SQL fragments.
+
+    #### Vulnerable Scenario 1: Unsafe `find_by_sql`
+    A developer uses `find_by_sql` for a complex query and interpolates user input directly.
+    ```ruby
+    # app/controllers/search_controller.rb
+    class SearchController < ApplicationController
+      def advanced_search
+        query = params[:q]
+        # DANGEROUS: The query is directly embedded into the SQL string.
+        # This is a classic SQL injection vector.
+        @results = Product.find_by_sql("SELECT * FROM products WHERE MATCH(name) AGAINST ('#{query}' IN BOOLEAN MODE)")
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: String Interpolation in a `where` clause
+    A common mistake is to interpolate variables into the `where` clause string instead of using parameter binding.
+    ```ruby
+    # app/models/user.rb
+    class User < ApplicationRecord
+      def self.find_by_login(username)
+        # DANGEROUS: Although it's in a `where` clause, the interpolation
+        # makes it vulnerable before ActiveRecord can parameterize it.
+        where("username = '#{username}'").first
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Always use ActiveRecord's built-in methods for finding and filtering records. Use the placeholder (`?`) or named-placeholder (`:name`) syntax to safely pass parameters into query fragments.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/search_controller.rb (Secure Version)
+    class SearchController < ApplicationController
+      def advanced_search
+        query = params[:q]
+        
+        # SAFE: ActiveRecord sanitizes and parameterizes the input.
+        # This uses the array placeholder syntax.
+        @results = Product.where("MATCH(name) AGAINST (? IN BOOLEAN MODE)", query)
+      end
+    end
+    
+    # app/models/user.rb (Secure Version)
+    class User < ApplicationRecord
+      def self.find_by_login(username)
+        # SAFE: Using the hash syntax, which is the most common and readable.
+        where(username: username).first
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Use RSpec for request specs to simulate a web request. The test should pass a malicious query and check that the application does not execute the injected logic, for example, by ensuring that only expected results are returned.
+    ```ruby
+    # spec/requests/search_spec.rb
+    require 'rails_helper'
+
+    RSpec.describe "Search", type: :request do
+      it "is not vulnerable to SQL injection" do
+        product1 = Product.create!(name: 'Safe Product')
+        product2 = Product.create!(name: 'Another Product')
+        
+        # This payload would return all products in a vulnerable system
+        injection_payload = "' OR 1=1 --"
+        
+        get "/search/advanced", params: { q: injection_payload }
+        
+        expect(response).to have_http_status(:ok)
+        # The secure implementation should literally search for the string "' OR 1=1 --"
+        # and find nothing, so the response body should not contain other products.
+        expect(response.body).not_to include('Another Product')
+      end
+    end
     ```
   </Tab>
 </Tabs>

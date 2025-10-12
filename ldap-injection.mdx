@@ -1,0 +1,184 @@
+---
+title: "LDAP Injection"
+sidebarTitle: "LDAP Injection"
+description: "Learn to prevent LDAP Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "address-book"
+iconType: "solid"
+---
+
+## Overview
+LDAP Injection is an attack technique used to exploit web applications that construct LDAP (Lightweight Directory Access Protocol) statements from user-supplied input. When an application fails to properly sanitize user input, an attacker can modify the LDAP statement, potentially leading to unauthorized access, information disclosure, or modification of data stored in the LDAP directory.
+
+## Business Impact
+A successful LDAP Injection attack can allow attackers to bypass authentication, gain elevated privileges, and view or modify sensitive user information (like usernames, passwords, and permissions) within the directory, which often serves as a central authentication system for an organization.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-90](https://cwe.mitre.org/data/definitions/90.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** High
+</Card>
+
+## Remediation by Language
+The primary defense against LDAP Injection is to **never** build LDAP queries by concatenating user-supplied input. Instead, use a framework or library that provides a mechanism to safely escape LDAP special characters in user input or supports parameterized LDAP queries.
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: User Authentication**
+    ```java
+    // The username is directly concatenated into the LDAP filter
+    String filter = "(&(uid=" + username + ")(userPassword=" + password + "))";
+    ctx.search("ou=users,dc=example,dc=com", filter, new SearchControls());
+    // Attacker can use username: "admin)(uid=*" to bypass password check
+    ```
+    **Example 2: User Search Feature**
+    ```java
+    // A search filter is built from user input
+    String search = request.getParameter("userSearch");
+    String filter = "(cn=" + search + ")";
+    ctx.search("ou=people,dc=example,dc=com", filter, new SearchControls());
+    ```
+    ##### Secure Code (Remediation)
+    Escape all user-supplied input before including it in an LDAP filter.
+    ```java
+    import org.owasp.esapi.ESAPI;
+    
+    // Use a library to escape special LDAP characters
+    String safeUsername = ESAPI.encoder().encodeForLDAP(username);
+    String filter = "(&(uid=" + safeUsername + ")(userPassword=" + password + "))";
+    // Or even better, use parameterized queries if the framework supports it.
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: Login Check**
+    ```csharp
+    // Building the filter string manually
+    string filter = "(&(sAMAccountName=" + username + ")(userPassword=" + password + "))";
+    var searcher = new DirectorySearcher(entry, filter);
+    SearchResult result = searcher.FindOne();
+    ```
+    **Example 2: Finding a User's Manager**
+    ```csharp
+    // The 'user' parameter is not escaped
+    string user = Request.QueryString["user"];
+    string filter = "(member=" + user + ")";
+    var searcher = new DirectorySearcher(entry, filter);
+    ```
+    ##### Secure Code (Remediation)
+    Sanitize the input to escape LDAP special characters: `\`, `*`, `(`, `)`, and the null character.
+    ```csharp
+    public static string SanitizeLdapSearchFilter(string filter)
+    {
+        return filter.Replace("\\", "\\5c")
+                     .Replace("*", "\\2a")
+                     .Replace("(", "\\28")
+                     .Replace(")", "\\29")
+                     .Replace("\0", "\\00");
+    }
+
+    string safeUsername = SanitizeLdapSearchFilter(username);
+    string filter = "(&(sAMAccountName=" + safeUsername + ")(userPassword=" + password + "))";
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Authenticating with `ldapjs`**
+    ```javascript
+    // The search filter is created via string concatenation
+    const opts = {
+      filter: '(&(cn=' + req.body.username + ')(password=' + req.body.password + '))',
+      scope: 'sub'
+    };
+    client.search('ou=users, o=myhost', opts, (err, res) => { /* ... */ });
+    ```
+    **Example 2: Looking up a User by Email**
+    ```javascript
+    const email = req.query.email;
+    const searchOptions = { filter: `(mail=${email})`, scope: 'sub' };
+    ```
+    ##### Secure Code (Remediation)
+    Use a library that provides escaping functionality, or manually escape the input.
+    ```javascript
+    const ldap_escape = require('ldap-escape'); // Using a third-party library
+
+    const opts = {
+      filter: `(&(cn=${ldap_escape.filter(req.body.username)})(password=${req.body.password}))`,
+      scope: 'sub'
+    };
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `ldap_search`**
+    ```php
+    // The username from a form is directly included in the filter
+    $filter = "(uid=" . $_POST['username'] . ")";
+    $result = ldap_search($ds, "ou=people, dc=example, dc=com", $filter);
+    ```
+    **Example 2: Group Membership Check**
+    ```php
+    // The group name is not escaped
+    $group = $_GET['group'];
+    $filter = "(&(objectClass=groupOfNames)(cn=" . $group . "))";
+    ```
+    ##### Secure Code (Remediation)
+    Use `ldap_escape()` to sanitize the input before building the filter.
+    ```php
+    // The LDAP_ESCAPE_FILTER flag is for filter strings
+    $safe_username = ldap_escape($_POST['username'], "", LDAP_ESCAPE_FILTER);
+    $filter = "(uid=" . $safe_username . ")";
+    $result = ldap_search($ds, "ou=people, dc=example, dc=com", $filter);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `python-ldap` to search**
+    ```python
+    # The filter is built with f-string formatting
+    username = request.form.get('username')
+    search_filter = f"(uid={username})"
+    ldap_conn.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter)
+    ```
+    **Example 2: Authenticating a User**
+    ```python
+    password = request.form.get('password')
+    search_filter = f"(&(uid={username})(userPassword={password}))"
+    ```
+    ##### Secure Code (Remediation)
+    Use the built-in `ldap.filter.escape_filter_chars()` function to sanitize all user input.
+    ```python
+    import ldap.filter
+
+    username = request.form.get('username')
+    safe_username = ldap.filter.escape_filter_chars(username)
+    search_filter = f"(uid={safe_username})"
+    ldap_conn.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter)
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `net-ldap`**
+    ```ruby
+    # The filter is constructed with string interpolation
+    filter = Net::LDAP::Filter.construct("(&(uid=#{params[:username]})(userPassword=#{params[:password]}))")
+    ldap.search(base: base_dn, filter: filter)
+    ```
+    **Example 2: User Lookup**
+    ```ruby
+    email = params[:email]
+    filter_str = "(mail=#{email})"
+    ```
+    ##### Secure Code (Remediation)
+    Manually escape the special characters according to RFC 4515.
+    ```ruby
+    def escape_ldap_filter(str)
+      str.gsub(/([\(\)\*\\])/) { |char| "\\#{char.unpack('H2').first}" }
+    end
+
+    safe_username = escape_ldap_filter(params[:username])
+    filter = Net::LDAP::Filter.construct("(&(uid=#{safe_username})(userPassword=#{params[:password]}))")
+    ldap.search(base: base_dn, filter: filter)
+    ```
+  </Tab>
+</Tabs>

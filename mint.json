@@ -73,18 +73,18 @@
       "group": "Injection Flaws",
       "pages": [
         "sql-injection",
-        "vulnerabilities/xss",
-        "vulnerabilities/command-injection",
-        "vulnerabilities/ldap-injection"
+        "xss",
+        "command-injection",
+        "ldap-injection"
       ]
     },
     {
       "group": "Data & Server Flaws",
       "pages": [
-        "vulnerabilities/xxe",
-        "vulnerabilities/ssrf",
-        "vulnerabilities/deserialization",
-        "vulnerabilities/path-traversal"
+        "xxe",
+        "ssrf",
+        "deserialization",
+        "path-traversal"
       ]
     }
   ]

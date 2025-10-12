@@ -1,0 +1,240 @@
+---
+title: "Path Traversal"
+sidebarTitle: "Path Traversal"
+description: "Learn to prevent Path Traversal in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "folder-open"
+iconType: "solid"
+---
+
+## Overview
+Path Traversal (also known as Directory Traversal) is a web security vulnerability that allows an attacker to read arbitrary files on the server that is running an application. The attacker exploits insufficient security validation of user-supplied input that is used in file paths, allowing them to access files outside of the intended directory, such as configuration files, source code, or system files.
+
+## Business Impact
+This vulnerability can lead to the disclosure of sensitive information, including application source code, credentials, and critical system files. This information can then be used to mount further attacks on the web server.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-22](https://cwe.mitre.org/data/definitions/22.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** High
+</Card>
+
+## Remediation by Language
+The primary defense is to avoid writing code that uses user-supplied input to form file paths. If this is unavoidable, the input must be rigorously validated. A common technique is to ensure the user-supplied filename is alphanumeric and does not contain any path-related characters (`/`, `\`, `..`). The application should then append this sanitized filename to a hard-coded base directory and use a platform API to canonicalize the path, ensuring it still resides within the intended directory.
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: File Download Servlet**
+    ```java
+    // The 'filename' parameter is used to read a file from a directory
+    String filename = request.getParameter("filename");
+    File file = new File("/var/www/uploads/" + filename);
+    // An attacker can use 'filename=../../../../etc/passwd'
+    ```
+    **Example 2: Displaying Static Content**
+    ```java
+    // An application serves static help files based on a query parameter
+    String page = request.getParameter("page");
+    File file = new File("/opt/app/help-files/" + page + ".html");
+    ```
+    ##### Secure Code (Remediation)
+    Canonicalize the path and verify it starts with the intended base directory.
+    ```java
+    String filename = request.getParameter("filename");
+    File baseDir = new File("/var/www/uploads/");
+    File requestedFile = new File(baseDir, filename);
+
+    // Get the canonical path to resolve '..' sequences
+    String canonicalPath = requestedFile.getCanonicalPath();
+
+    if (canonicalPath.startsWith(baseDir.getCanonicalPath())) {
+        // Path is safe, proceed with file operation
+    } else {
+        // Path traversal attempt, reject request
+    }
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: Reading a User's Profile Picture**
+    ```csharp
+    // The username is used to construct a path to an image file
+    string username = Request.QueryString["user"];
+    string imagePath = "C:\\UserData\\Images\\" + username + ".jpg";
+    return File.ReadAllBytes(imagePath);
+    ```
+    **Example 2: Loading a Theme Template**
+    ```csharp
+    // A theme name is passed in and used to load a CSS file
+    string theme = Request.Cookies["theme"].Value;
+    string cssPath = Server.MapPath("/themes/" + theme + "/style.css");
+    ```
+    ##### Secure Code (Remediation)
+    Combine paths using `Path.Combine` and get the full path to validate it.
+    ```csharp
+    string baseDir = "C:\\UserData\\Images\\";
+    string filename = Path.GetFileName(userInput); // Extracts just the filename part
+    string fullPath = Path.Combine(baseDir, filename);
+    
+    // Normalize the path and check if it's within the intended directory
+    string normalizedBaseDir = Path.GetFullPath(baseDir);
+    string normalizedFullPath = Path.GetFullPath(fullPath);
+
+    if (normalizedFullPath.StartsWith(normalizedBaseDir)) {
+        // Safe to proceed
+    } else {
+        // Traversal attempt
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Serving Static Files**
+    ```javascript
+    // The URL path is directly appended to the base directory
+    const fs = require('fs');
+    const path = require('path');
+    const requestedFile = path.join(__dirname, '/public', req.url);
+    fs.readFile(requestedFile, (err, data) => { /* ... */ });
+    // Attacker can use a URL like /../../package.json
+    ```
+    **Example 2: Log File Viewer**
+    ```javascript
+    // An admin panel allows viewing log files by name
+    const logFile = req.query.log;
+    const logContent = fs.readFileSync(`/var/logs/app/${logFile}`);
+    ```
+    ##### Secure Code (Remediation)
+    Normalize the path and verify it is within the base directory.
+    ```javascript
+    const path = require('path');
+    const fs = require('fs');
+    
+    const publicDir = path.resolve(__dirname, '/public');
+    const requestedPath = path.join(publicDir, req.query.file);
+    const normalizedPath = path.normalize(requestedPath);
+
+    if (normalizedPath.startsWith(publicDir)) {
+        fs.readFile(normalizedPath, (err, data) => { /* ... */ });
+    } else {
+        // Directory traversal attempt detected
+        res.status(403).send("Forbidden");
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Including a Page Template**
+    ```php
+    // The 'page' parameter is used in an include statement
+    $template = $_GET['page'];
+    include($template . '.php'); // Can lead to LFI/RFI
+    ```
+    **Example 2: Reading a File for Download**
+    ```php
+    // A filename is taken from the URL to serve a download
+    $file = $_GET['file'];
+    readfile('/home/user/downloads/' . $file);
+    ```
+    ##### Secure Code (Remediation)
+    Use `basename()` to strip directory information and validate against an allow-list if possible.
+    ```php
+    // For file downloads
+    $baseDir = '/home/user/downloads/';
+    $filename = basename($_GET['file']); // Strips all directory info
+    $filePath = $baseDir . $filename;
+    
+    // Additional check with realpath
+    if (file_exists($filePath) && realpath($filePath) && strpos(realpath($filePath), $baseDir) === 0) {
+        readfile($filePath);
+    } else {
+        // File not found or traversal attempt
+    }
+
+    // For includes, use an allow-list
+    $allowed_pages = ['home', 'about', 'contact'];
+    if (in_array($_GET['page'], $allowed_pages)) {
+        include($_GET['page'] . '.php');
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Flask Static File Serving**
+    ```python
+    # A custom route to serve user-uploaded images
+    from flask import send_from_directory
+    @app.route('/uploads/<filename>')
+    def uploaded_file(filename):
+        # Filename is not sanitized
+        return send_from_directory('/app/uploads', filename)
+    ```
+    **Example 2: Reading a Configuration File**
+    ```python
+    # A script that reads a config file based on user input
+    config_name = request.args.get('config')
+    with open(f'configs/{config_name}.json', 'r') as f:
+        data = f.read()
+    ```
+    ##### Secure Code (Remediation)
+    Use `os.path.basename` to strip directory parts and `os.path.abspath` to resolve the path for validation.
+    ```python
+    import os
+    
+    base_dir = os.path.abspath('configs')
+    filename = os.path.basename(request.args.get('config')) # Strip path
+    full_path = os.path.join(base_dir, filename + '.json')
+    
+    # Check that the resolved path is still inside the base directory
+    if os.path.abspath(full_path).startswith(base_dir):
+        with open(full_path, 'r') as f:
+            data = f.read()
+    else:
+        # Traversal attempt
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    ##### Vulnerable Code Examples
+    **Example 1: Rendering a Template by Name**
+    ```ruby
+    # The application renders a template based on a URL parameter
+    def show
+      render params[:page]
+    end
+    ```
+    **Example 2: Sending a File**
+    ```ruby
+    # Sending a file from a directory using user input
+    def download
+      send_file Rails.root.join('public', 'invoices', params[:filename])
+    end
+    ```
+    ##### Secure Code (Remediation)
+    Validate the input against a list of allowed templates or sanitize the filename.
+    ```ruby
+    # For rendering, use an allow-list
+    def show
+      allowed_pages = %w[about contact privacy]
+      if allowed_pages.include?(params[:page])
+        render params[:page]
+      else
+        render 'not_found', status: 404
+      end
+    end
+
+    # For sending files, sanitize the filename
+    def download
+      base_dir = Rails.root.join('public', 'invoices')
+      filename = File.basename(params[:filename]) # Strip directory info
+      path = base_dir.join(filename)
+      
+      # Verify the path is within the intended directory
+      if File.exist?(path) && path.to_s.start_with?(base_dir.to_s)
+        send_file path
+      else
+        render 'not_found', status: 404
+      end
+    end
+    ```
+  </Tab>
+</Tabs>

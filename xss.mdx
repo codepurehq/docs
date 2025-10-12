@@ -1,0 +1,180 @@
+---
+title: "Cross-Site Scripting (XSS)"
+sidebarTitle: "Cross-Site Scripting"
+description: "Learn to prevent XSS in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "code"
+iconType: "solid"
+---
+
+## Overview
+Cross-Site Scripting (XSS) is a vulnerability that allows an attacker to inject malicious scripts (usually JavaScript) into web pages viewed by other users. These scripts can bypass access controls and perform actions on behalf of the user, such as stealing session cookies, defacing websites, or redirecting the user to malicious sites.
+
+## Business Impact
+XSS can lead to compromised user accounts, data theft (including session tokens and cookies), unauthorized transactions, and significant reputational damage. It breaks the trust between the user and the web application.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-79](https://cwe.mitre.org/data/definitions/79.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** High
+</Card>
+
+## Remediation by Language
+The primary defense against XSS is **context-aware output encoding**. This means properly escaping user-supplied data before it is rendered in the HTML to ensure it is treated as text, not as active content. The specific encoding method depends on where in the page the data is being placed (e.g., inside an HTML tag, an attribute, a JavaScript block, etc.).
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: Reflecting User Input in a JSP**
+    ```jsp
+    // A search term is directly printed to the page
+    <p>You searched for: <%= request.getParameter("query") %></p>
+    ```
+    **Example 2: Storing and Displaying a User Profile Bio**
+    ```java
+    // User bio is fetched from the DB and written to the response
+    String bio = user.getBio(); // bio contains "<script>alert(1)</script>"
+    out.println("<div>" + bio + "</div>");
+    ```
+    ##### Secure Code (Remediation)
+    Use a library like OWASP Java Encoder to perform context-specific encoding.
+    ```jsp
+    <%@ page import="org.owasp.encoder.Encode" %>
+    <p>You searched for: <%= Encode.forHtml(request.getParameter("query")) %></p>
+    ```
+    ```java
+    // In a Servlet
+    String bio = user.getBio();
+    out.println("<div>" + Encode.forHtml(bio) + "</div>");
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `Html.Raw` in Razor Pages**
+    ```csharp
+    // The developer explicitly bypasses Razor's built-in encoding
+    @Html.Raw(Model.UserComment)
+    ```
+    **Example 2: Writing to `Response.Write` in Web Forms**
+    ```csharp
+    // Old ASP.NET Web Forms code writing directly to the output stream
+    Response.Write("<h2>Welcome, " + Request.QueryString["name"] + "</h2>");
+    ```
+    ##### Secure Code (Remediation)
+    Trust the default behavior of Razor (`@Model.UserComment`), which automatically encodes output. If you must use `Response.Write`, manually encode the data with `HttpUtility.HtmlEncode`.
+    ```csharp
+    // In Razor, simply do this:
+    <p>@Model.UserComment</p>
+
+    // In Web Forms, encode manually:
+    Response.Write("<h2>Welcome, " + HttpUtility.HtmlEncode(Request.QueryString["name"]) + "</h2>");
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Unsafe Template Engine Usage**
+    ```javascript
+    // Some template engines have unsafe methods for raw HTML (e.g., EJS)
+    res.send('<h1>' + req.query.message + '</h1>');
+    ```
+    **Example 2: Setting `innerHTML` in Client-Side JS**
+    ```javascript
+    // A classic client-side DOM XSS vulnerability
+    const urlParams = new URLSearchParams(window.location.search);
+    document.getElementById('greeting').innerHTML = 'Welcome, ' + urlParams.get('name');
+    ```
+    ##### Secure Code (Remediation)
+    Use template engines that encode by default (like Pug or EJS's `<%= %>`). On the client side, set text content using `.textContent` instead of `.innerHTML`.
+    ```javascript
+    // Server-side with EJS
+    res.render('template', { message: req.query.message });
+    // In template.ejs: <p><%= message %></p>
+
+    // Client-side
+    document.getElementById('greeting').textContent = 'Welcome, ' + urlParams.get('name');
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Echoing a URL Parameter**
+    ```php
+    // The 'name' parameter is directly echoed into the HTML body
+    echo "Welcome, " . $_GET['name'];
+    ```
+    **Example 2: Populating a Form Field Value**
+    ```php
+    // A previous search term is put back into a form field without encoding
+    $searchTerm = $_GET['q'];
+    echo "<input type='text' value='" . $searchTerm . "'>";
+    ```
+    ##### Secure Code (Remediation)
+    Use `htmlspecialchars()` to escape HTML entities. For attributes, it's critical to also use `ENT_QUOTES` to handle single and double quotes.
+    ```php
+    // For HTML body
+    echo "Welcome, " . htmlspecialchars($_GET['name']);
+
+    // For attributes
+    $searchTerm = $_GET['q'];
+    echo "<input type='text' value='" . htmlspecialchars($searchTerm, ENT_QUOTES, 'UTF-8') . "'>";
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `markupsafe.Markup` incorrectly in Flask/Jinja2**
+    ```python
+    # The developer explicitly marks a user-supplied string as safe
+    from markupsafe import Markup
+    @app.route('/user')
+    def user_profile():
+        bio = request.args.get('bio')
+        return render_template_string(f"<div>{Markup(bio)}</div>")
+    ```
+    **Example 2: Manually building HTML**
+    ```python
+    # A simple CGI script building HTML manually
+    message = form.getvalue("message")
+    print("Content-Type: text/html")
+    print()
+    print(f"<html><body><h1>{message}</h1></body></html>")
+    ```
+    ##### Secure Code (Remediation)
+    Trust the default auto-escaping behavior of modern template engines like Jinja2 or Django Templates. If building HTML manually, use `html.escape()`.
+    ```python
+    # In Flask/Jinja2, let the engine handle it
+    @app.route('/user')
+    def user_profile():
+        bio = request.args.get('bio')
+        return render_template_string("<div>{{ user_bio }}</div>", user_bio=bio)
+
+    # Manual HTML building
+    import html
+    message = form.getvalue("message")
+    print("Content-Type: text/html")
+    print()
+    print(f"<html><body><h1>{html.escape(message)}</h1></body></html>")
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `html_safe` or `raw`**
+    ```ruby
+    # The developer explicitly tells Rails a string is safe to render as HTML
+    <%= raw(params[:user_input]) %>
+    <%== params[:user_input] %>
+    <%= params[:user_input].html_safe %>
+    ```
+    **Example 2: Unsafe Content Tag**
+    ```ruby
+    # Building a tag with user-controlled content without escaping
+    <%= content_tag(:h1, params[:greeting]) %>
+    ```
+    ##### Secure Code (Remediation)
+    Trust the default behavior of ERB (`<%= %>`), which automatically escapes HTML content. Avoid `raw` and `html_safe` with user input. The `content_tag` helper is safe by default.
+    ```ruby
+    # Default ERB is safe
+    <%= params[:user_input] %>
+
+    # content_tag is also safe
+    <%= content_tag(:h1, params[:greeting]) %>
+    ```
+  </Tab>
+</Tabs>

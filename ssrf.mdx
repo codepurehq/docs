@@ -1,0 +1,232 @@
+---
+title: "Server-Side Request Forgery (SSRF)"
+sidebarTitle: "SSRF"
+description: "Learn to prevent SSRF in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "server"
+iconType: "solid"
+---
+
+## Overview
+Server-Side Request Forgery (SSRF) is a web security vulnerability that allows an attacker to induce the server-side application to make HTTP requests to an arbitrary domain of the attacker's choosing. This allows the attacker to use the vulnerable server as a proxy to perform actions such as accessing internal services, scanning internal networks, or interacting with cloud provider metadata endpoints.
+
+## Business Impact
+SSRF can lead to the exposure of internal services and sensitive data (like cloud credentials from metadata services), enable network reconnaissance of the internal corporate network, and can be a pivot point for further attacks.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-918](https://cwe.mitre.org/data/definitions/918.html)
+  **OWASP Top 10 (2021):** A10:2021 - Server-Side Request Forgery
+  **Severity:** High
+</Card>
+
+## Remediation by Language
+The primary defense against SSRF is to validate all user-supplied URLs. The best approach is to maintain an **allow-list** of permitted domains and protocols. If that is not possible, a deny-list can be used as a weaker defense, but it is prone to bypasses. All requests should also be made from a proxy or server with limited network access.
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: Fetching an Image from a URL**
+    ```java
+    // The application fetches an image from a user-provided URL to display it
+    String imageUrl = request.getParameter("imageUrl");
+    URL url = new URL(imageUrl);
+    URLConnection connection = url.openConnection();
+    InputStream is = connection.getInputStream();
+    // ... code to process the image
+    ```
+    **Example 2: Calling a Webhook**
+    ```java
+    // A user can configure a webhook URL that the server will call
+    String webhookUrl = user.getWebhookUrl();
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest request = HttpRequest.newBuilder().uri(URI.create(webhookUrl)).build();
+    client.send(request, HttpResponse.BodyHandlers.ofString());
+    ```
+    ##### Secure Code (Remediation)
+    Validate the host against a strict allow-list before making the request.
+    ```java
+    String imageUrl = request.getParameter("imageUrl");
+    URI uri = new URI(imageUrl);
+    String host = uri.getHost();
+
+    List<String> allowedHosts = Arrays.asList("images.example.com", "static.example.com");
+
+    if (allowedHosts.contains(host)) {
+        URL url = uri.toURL();
+        // Proceed with the request
+    } else {
+        // Reject the request
+    }
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: PDF Generation from a URL**
+    ```csharp
+    // The server fetches content from a URL to include in a PDF report
+    string reportUrl = Request.QueryString["url"];
+    using (var client = new WebClient())
+    {
+        string content = client.DownloadString(reportUrl);
+        // ... code to generate PDF
+    }
+    ```
+    **Example 2: Checking a Site's Status**
+    ```csharp
+    // An uptime checker tool that makes a request to a user-supplied domain
+    string site = Request.Form["site"];
+    var request = (HttpWebRequest)WebRequest.Create(site);
+    var response = (HttpWebResponse)request.GetResponse();
+    ```
+    ##### Secure Code (Remediation)
+    Parse the URL and validate the hostname against an allow-list.
+    ```csharp
+    string reportUrl = Request.QueryString["url"];
+    var uri = new Uri(reportUrl);
+    
+    string[] allowedDomains = { "reports.example.com", "internal.example.com" };
+
+    if (allowedDomains.Contains(uri.Host))
+    {
+        using (var client = new HttpClient())
+        {
+            // Proceed with request
+        }
+    }
+    else
+    {
+        // Handle error
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Image Resizing Service**
+    ```javascript
+    // The server downloads an image from a URL to resize it
+    const request = require('request');
+    const imageUrl = req.query.url;
+    request.get(imageUrl).pipe(res);
+    ```
+    **Example 2: API Data Proxy**
+    ```javascript
+    // The app acts as a proxy to another API, with the URL provided by the client
+    const axios = require('axios');
+    const apiUrl = req.body.apiUrl;
+    axios.post(apiUrl, req.body.data).then(response => res.json(response.data));
+    ```
+    ##### Secure Code (Remediation)
+    Use a URL parsing library and check the hostname against an allow-list.
+    ```javascript
+    const { URL } = require('url');
+    const allowedHosts = ['media.example.com', 'api.thirdparty.com'];
+    
+    try {
+        const url = new URL(req.query.url);
+        if (allowedHosts.includes(url.hostname)) {
+            // Proceed with request
+        } else {
+            res.status(400).send("Invalid host.");
+        }
+    } catch (err) {
+        res.status(400).send("Invalid URL.");
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `file_get_contents` with a URL**
+    ```php
+    // The application reads data from a user-provided URL
+    $url = $_GET['url'];
+    $data = file_get_contents($url);
+    echo $data;
+    ```
+    **Example 2: Using cURL to fetch remote data**
+    ```php
+    // The cURL library is used to fetch data for display
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $_POST['feed_url']);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $output = curl_exec($ch);
+    curl_close($ch);
+    ```
+    ##### Secure Code (Remediation)
+    Parse the URL with `parse_url()` and validate the host.
+    ```php
+    $url = $_GET['url'];
+    $components = parse_url($url);
+    $host = $components['host'];
+    
+    $allowed_hosts = ['data.example.com', 'api.example.com'];
+    
+    if (in_array($host, $allowed_hosts)) {
+        // Proceed with cURL request
+    } else {
+        die("Error: Host not allowed.");
+    }
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using the `requests` library**
+    ```python
+    # A request is made to a URL supplied in a JSON body
+    import requests
+    url = request.json.get('url')
+    response = requests.get(url)
+    ```
+    **Example 2: Using `urllib` to open a URL**
+    ```python
+    # An older way to fetch data, still vulnerable
+    import urllib.request
+    url = request.args.get('url')
+    with urllib.request.urlopen(url) as response:
+        html = response.read()
+    ```
+    ##### Secure Code (Remediation)
+    Use `urllib.parse` to extract the hostname and validate it.
+    ```python
+    from urllib.parse import urlparse
+    
+    url = request.json.get('url')
+    parsed_url = urlparse(url)
+    
+    allowed_hosts = ['example.com', 'api.example.org']
+    
+    if parsed_url.hostname in allowed_hosts:
+        # Proceed with request
+    else:
+        # Return an error
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `Net::HTTP`**
+    ```ruby
+    # The application makes a request to a user-supplied URL
+    require 'net/http'
+    uri = URI(params[:url])
+    response = Net::HTTP.get(uri)
+    ```
+    **Example 2: Using `open-uri`**
+    ```ruby
+    # A common but dangerous library if used with untrusted input
+    require 'open-uri'
+    data = URI.open(params[:url]).read
+    ```
+    ##### Secure Code (Remediation)
+    Parse the URI and validate its host against an allow-list.
+    ```ruby
+    require 'uri'
+    
+    allowed_hosts = ['assets.example.com', 'api.service.com']
+    uri = URI.parse(params[:url])
+    
+    if allowed_hosts.include?(uri.host)
+      # Proceed with the HTTP request
+    else
+      # Render an error
+    end
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,181 @@
+---
+title: "XML External Entity (XXE)"
+sidebarTitle: "XXE"
+description: "Learn to prevent XXE in Java, .NET, Node.js, PHP, Python, and Ruby."
+icon: "file-code"
+iconType: "solid"
+---
+
+## Overview
+XML External Entity (XXE) is a web security vulnerability that allows an attacker to interfere with an application's processing of XML data. It occurs when a weakly configured XML parser processes an XML input containing a reference to an external entity. This can lead to the disclosure of confidential data, denial of service, server-side request forgery (SSRF), and other system impacts.
+
+## Business Impact
+XXE can lead to the disclosure of local files on the server, which may contain sensitive data such as passwords or private keys. It can also be used to perform network scanning of the internal network and can cause a denial of service by triggering resource-intensive parsing operations.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-611](https://cwe.mitre.org/data/definitions/611.html)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** High
+</Card>
+
+## Remediation by Language
+The primary defense against XXE is to disable Document Type Definitions (DTDs) and external entities in your application's XML parser. Most modern XML parsers provide options to disable these features.
+
+<Tabs>
+  <Tab title="Java">
+    ##### Vulnerable Code Examples
+    **Example 1: Using a Default `DocumentBuilderFactory`**
+    ```java
+    // Default settings in many older JDKs are vulnerable
+    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+    DocumentBuilder db = dbf.newDocumentBuilder();
+    Document doc = db.parse(new InputSource(new StringReader(xmlInput)));
+    ```
+    **Example 2: Using `XMLReader` without disabling features**
+    ```java
+    // A default XMLReader can also be vulnerable
+    XMLReader xmlReader = XMLReaderFactory.createXMLReader();
+    xmlReader.parse(new InputSource(new StringReader(xmlInput)));
+    ```
+    ##### Secure Code (Remediation)
+    Explicitly disable DTDs and external entities.
+    ```java
+    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+    // Disable DTDs completely
+    dbf.setFeature("[http://apache.org/xml/features/disallow-doctype-decl](http://apache.org/xml/features/disallow-doctype-decl)", true);
+    // Disable external entities
+    dbf.setFeature("[http://xml.org/sax/features/external-general-entities](http://xml.org/sax/features/external-general-entities)", false);
+    dbf.setFeature("[http://xml.org/sax/features/external-parameter-entities](http://xml.org/sax/features/external-parameter-entities)", false);
+    DocumentBuilder db = dbf.newDocumentBuilder();
+    Document doc = db.parse(new InputSource(new StringReader(xmlInput)));
+    ```
+  </Tab>
+  <Tab title=".NET (C#)">
+    ##### Vulnerable Code Examples
+    **Example 1: `XmlDocument` with default settings**
+    ```csharp
+    // Older .NET versions might be vulnerable by default
+    var doc = new XmlDocument();
+    doc.LoadXml(xmlInput);
+    ```
+    **Example 2: `XmlTextReader` with DTD parsing enabled**
+    ```csharp
+    // Explicitly enabling DTD parsing creates the vulnerability
+    var reader = new XmlTextReader(new StringReader(xmlInput));
+    reader.DtdProcessing = DtdProcessing.Parse; // Vulnerable setting
+    var doc = new XmlDocument();
+    doc.Load(reader);
+    ```
+    ##### Secure Code (Remediation)
+    Set the `XmlResolver` to `null` or use `DtdProcessing.Prohibit`.
+    ```csharp
+    var settings = new XmlReaderSettings();
+    settings.DtdProcessing = DtdProcessing.Prohibit; // Prohibit DTDs
+    settings.XmlResolver = null; // Do not resolve external resources
+    
+    using (var reader = XmlReader.Create(new StringReader(xmlInput), settings))
+    {
+        var doc = new XmlDocument();
+        doc.Load(reader);
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `libxmljs` with `noent` option**
+    ```javascript
+    // The `noent` option enables entity substitution, creating the vulnerability
+    const libxmljs = require("libxmljs");
+    let doc = libxmljs.parseXml(xmlInput, { noent: true });
+    ```
+    **Example 2: Using `xml2js` with a vulnerable `sax-js` backend**
+    ```javascript
+    // Older versions of xml2js could be vulnerable depending on the underlying SAX parser
+    const xml2js = require('xml2js');
+    xml2js.parseString(xmlInput, (err, result) => { /* ... */ });
+    ```
+    ##### Secure Code (Remediation)
+    Ensure that entity parsing is disabled. For `libxmljs`, avoid the `noent` option.
+    ```javascript
+    const libxmljs = require("libxmljs");
+    // By default (without `noent: true`), it is safe from external entities
+    let doc = libxmljs.parseXml(xmlInput);
+
+    // For other libraries, ensure they are up-to-date and check their documentation
+    // on how to disable entity parsing.
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `simplexml_load_string` with default settings**
+    ```php
+    // In older PHP versions, libxml2 had entities enabled by default
+    $xml = simplexml_load_string($xmlInput);
+    ```
+    **Example 2: Using `DOMDocument` insecurely**
+    ```php
+    // Loading XML without disabling external entities
+    $doc = new DOMDocument();
+    $doc->loadXML($xmlInput);
+    ```
+    ##### Secure Code (Remediation)
+    Disable external entity loading before parsing the XML.
+    ```php
+    // Before PHP 8.0
+    libxml_disable_entity_loader(true);
+    $xml = simplexml_load_string($xmlInput);
+    
+    // In PHP 8.0+, external entity loading is disabled by default.
+    // However, it's good practice to be explicit if you need to support older versions.
+    $doc = new DOMDocument();
+    $doc->loadXML($xmlInput, LIBXML_NOENT | LIBXML_DTDLOAD); // This is vulnerable
+    // Safe version:
+    $doc->loadXML($xmlInput, LIBXML_NONET);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ##### Vulnerable Code Examples
+    **Example 1: Using the default `xml.etree.ElementTree` parser**
+    ```python
+    # The default parser in Python is NOT vulnerable to XXE, but this is a common misconception.
+    # The real danger comes from using other, more powerful libraries with default settings.
+    import xml.etree.ElementTree as ET
+    ET.fromstring(xml_input) // This is safe
+    ```
+    **Example 2: Using `lxml` with default settings (Real Vulnerability)**
+    ```python
+    # lxml is a powerful library, and its default parser can resolve external entities
+    from lxml import etree
+    root = etree.fromstring(xml_input)
+    ```
+    ##### Secure Code (Remediation)
+    When using `lxml` or other powerful libraries, create a parser and explicitly disable entity resolution.
+    ```python
+    from lxml import etree
+    # Create a secure parser
+    parser = etree.XMLParser(resolve_entities=False)
+    root = etree.fromstring(xml_input, parser)
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    ##### Vulnerable Code Examples
+    **Example 1: Using `Nokogiri` with default settings**
+    ```ruby
+    # Nokogiri's default parser can resolve external entities
+    doc = Nokogiri::XML(xml_input)
+    ```
+    **Example 2: Another `Nokogiri` parsing method**
+    ```ruby
+    # Parsing with a block, still vulnerable by default
+    reader = Nokogiri::XML::Reader(xml_input)
+    ```
+    ##### Secure Code (Remediation)
+    Use the `nonet` option when parsing to disable network access for DTDs and entities.
+    ```ruby
+    # Call .nonet on the configuration block
+    doc = Nokogiri::XML(xml_input) do |config|
+      config.nonet
+    end
+    ```
+  </Tab>
+</Tabs>
