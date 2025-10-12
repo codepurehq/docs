@@ -1,0 +1,522 @@
+---
+title: "Command Injection"
+sidebarTitle: "Command Injection"
+description: "Architectural examples and mitigation for Command Injection in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "terminal"
+iconType: "solid"
+---
+
+## Overview
+Command Injection (or OS Command Injection) allows an attacker to execute arbitrary commands on the host operating system via a vulnerable application. This flaw occurs when an application passes unsanitized user-supplied data to a system shell. By injecting command separators like `;`, `&&`, or `|`, an attacker can append their own commands to the legitimate one, which are then executed with the privileges of the application.
+
+## Business Impact
+This is one of the most critical vulnerabilities, as it can lead to a full compromise of the application server. An attacker can read/write any file, install malware or ransomware, exfiltrate all data, and use the compromised server as a pivot point to attack the internal network.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-78](https'://cwe.mitre.org/data/definitions/78.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Critical
+</Card>
+
+## Framework-Specific Analysis and Remediation
+The only truly safe way to prevent command injection is to **avoid calling out to OS commands with user-supplied data**. Almost every language provides safe, built-in libraries for functionality that developers might otherwise try to achieve via shell commands (e.g., file operations, network requests). If executing a command is absolutely unavoidable, the application must use APIs that execute processes directly without invoking a shell, passing each user-controlled input as a separate, distinct argument.
+
+<Tabs>
+  <Tab title="Django (Python)">
+    #### Framework Context
+    Python's standard `os.system()` function is a direct conduit to the system shell and is extremely dangerous. The `subprocess` module is the modern, secure alternative, but it can still be made vulnerable if `shell=True` is used with untrusted input.
+
+    #### Vulnerable Scenario 1: A Video Conversion Service
+    A service uses the `ffmpeg` command-line tool to convert uploaded video files, taking conversion options from the user.
+    ```python
+    # video/services.py
+    import os
+
+    def convert_video(input_path, output_path, user_options):
+        # DANGEROUS: The user's options are directly formatted into the command string.
+        # An attacker could provide options like "; rm -rf /"
+        command = f"ffmpeg -i {input_path} {user_options} {output_path}"
+        os.system(command)
+    ```
+
+    #### Vulnerable Scenario 2: Network Diagnostic Tool
+    An admin panel includes a tool to ping a user-supplied IP address.
+    ```python
+    # diagnostics/views.py
+    import subprocess
+
+    def ping_host(request):
+        host = request.GET.get('host')
+        # DANGEROUS: Using subprocess is good, but `shell=True` with formatted
+        # strings reintroduces the vulnerability.
+        output = subprocess.check_output(f"ping -c 4 {host}", shell=True)
+        return HttpResponse(output, content_type="text/plain")
+    ```
+
+    #### Mitigation and Best Practices
+    Use the `subprocess` module and pass the command and its arguments as a **list of strings** (e.g., `['ping', '-c', '4', host]`). This invokes the program directly without a shell, ensuring that the user's input is treated as a single, safe argument and cannot be interpreted by the shell.
+
+    #### Secure Code Example
+    ```python
+    # diagnostics/views.py (Secure Version)
+    import subprocess
+
+    def ping_host(request):
+        host = request.GET.get('host')
+        
+        # A simple allow-list validation is also good practice
+        if not is_valid_ip(host): # Assume is_valid_ip is a validation function
+            return HttpResponse("Invalid host format.", status=400)
+            
+        try:
+            # SAFE: The command and its arguments are passed as a list.
+            # The host variable is treated as a single argument, even if it contains
+            # shell metacharacters like ';' or '&&'.
+            output = subprocess.check_output(
+                ['ping', '-c', '4', host],
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=10
+            )
+            return HttpResponse(output, content_type="text/plain")
+        except subprocess.CalledProcessError as e:
+            return HttpResponse(f"Error executing command:\n{e.output}", status=500)
+        except subprocess.TimeoutExpired:
+            return HttpResponse("Command timed out.", status=500)
+    ```
+
+    #### Testing Strategy
+    Write tests that pass payloads containing shell metacharacters as input. For the ping example, a payload could be `8.8.8.8; ls`. The test should assert that the command output does not contain the results of the injected `ls` command and that the program likely exited with an error because "8.8.8.8; ls" is not a valid hostname.
+    ```python
+    # diagnostics/tests.py
+    def test_ping_host_command_injection(self):
+        injection_payload = "8.8.8.8; ls -la /"
+        
+        response = self.client.get(reverse('ping-host'), {'host': injection_payload})
+        
+        self.assertEqual(response.status_code, 500) # The ping command will fail
+        # The crucial check: the output of the malicious 'ls' command is not present.
+        self.assertNotIn("total", response.content.decode().lower())
+        self.assertNotIn("drwx", response.content.decode().lower())
+    ```
+  </Tab>
+  <Tab title="Spring Boot (Java)">
+    #### Framework Context
+    Java's `Runtime.getRuntime().exec(String command)` is dangerous because it can be influenced by shell metacharacters. The secure alternative is to use `ProcessBuilder` or the `exec(String[] cmdarray)` overload, which treats arguments safely.
+
+    #### Vulnerable Scenario 1: Generating a System Report
+    A service that uses a shell script to gather system diagnostics.
+    ```java
+    // service/DiagnosticsService.java
+    public String getReport(String format) throws IOException {
+        // DANGEROUS: The 'format' parameter is concatenated into the command.
+        // An attacker could set format to "json; cat /etc/shadow".
+        String command = "/opt/scripts/generate_report.sh --format=" + format;
+        Process process = Runtime.getRuntime().exec(command);
+        // ... read output from process ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Git Clone Service
+    A tool that clones a Git repository from a user-provided URL into a specific branch.
+    ```java
+    // service/GitService.java
+    public void cloneRepository(String repoUrl, String branch) {
+        // DANGEROUS: The branch name is not sanitized. An attacker could use a branch name like
+        // "; git checkout -b malicious; echo pwned > pwned.txt;". Some git commands can
+        // execute scripts, making this very risky.
+        String command = "git clone --branch " + branch + " " + repoUrl;
+        Runtime.getRuntime().exec(command);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `ProcessBuilder` to construct and execute commands. It allows you to pass the command and its arguments as a list of strings, which completely avoids shell interpretation.
+
+    #### Secure Code Example
+    ```java
+    // service/DiagnosticsService.java (Secure Version)
+    public String getReport(String format) throws IOException, InterruptedException {
+        // Simple allow-list validation for the format parameter
+        if (!Set.of("json", "xml", "csv").contains(format)) {
+            throw new IllegalArgumentException("Invalid format specified.");
+        }
+        
+        // SAFE: Each part of the command is a separate string in the list.
+        // The OS executes the script directly and passes "--format=json" as a single,
+        // uninterpreted argument. No shell is invoked.
+        ProcessBuilder pb = new ProcessBuilder(
+            "/opt/scripts/generate_report.sh",
+            "--format=" + format
+        );
+        
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        
+        String output = new String(process.getInputStream().readAllBytes());
+        process.waitFor();
+        return output;
+    }
+    ```
+
+    #### Testing Strategy
+    Write JUnit tests that pass a malicious payload to the service method. The test should assert that the expected behavior occurs (e.g., an exception is thrown due to an invalid argument) and that the injected command was not executed. This can be verified by checking for the absence of files or output that the malicious command would have created.
+    ```java
+    // src/test/java/com/example/DiagnosticsServiceTest.java
+    @Test
+    void getReport_withCommandInjection_shouldThrowException() {
+        String payload = "json; touch /tmp/pwned";
+        
+        // A secure implementation with an allow-list should throw an exception here.
+        assertThrows(IllegalArgumentException.class, () -> {
+            diagnosticsService.getReport(payload);
+        });
+        
+        // Additionally, verify the side-effect of the injected command did not happen.
+        File pwnedFile = new File("/tmp/pwned");
+        assertFalse(pwnedFile.exists(), "Malicious command was executed!");
+    }
+    ```
+  </Tab>
+  <Tab title="ASP.NET Core (C#)">
+    #### Framework Context
+    In .NET, calling `Process.Start("cmd.exe", "/c " + command)` is the classic vulnerable pattern. The secure approach is to use the `ProcessStartInfo` class, specifying the executable directly and passing arguments without involving a shell.
+
+    #### Vulnerable Scenario 1: A File Archiving Utility
+    An API endpoint that compresses a user-specified directory using a command-line tool.
+    ```csharp
+    // Controllers/ArchiveController.cs
+    [HttpPost("create")]
+    public IActionResult CreateArchive([FromQuery] string directoryName)
+    {
+        // DANGEROUS: The directory name is concatenated into a command string
+        // that is executed by cmd.exe.
+        string command = $"7z a -tzip archive.zip {directoryName}";
+        Process.Start("cmd.exe", "/c " + command);
+        return Ok("Archive created.");
+    }
+    ```
+    
+    #### Vulnerable Scenario 2: Database Backup Script
+    An admin feature that triggers a database backup script, passing a user-provided backup name.
+    ```csharp
+    // Services/BackupService.cs
+    public void CreateBackup(string backupName)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            // DANGEROUS: Passing a whole script string to PowerShell is risky.
+            // An attacker can use 'backup1; Invoke-Expression "..."'
+            Arguments = $"-File C:\\scripts\\backup.ps1 -BackupName {backupName}"
+        };
+        Process.Start(startInfo);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Set `UseShellExecute` to `false` in `ProcessStartInfo` and provide the executable name directly in `FileName`. Pass all user-controlled data in the `Arguments` property or, even better, in the `ArgumentList` collection (available in newer .NET versions), which handles escaping correctly.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/ArchiveController.cs (Secure Version)
+    [HttpPost("create")]
+    public IActionResult CreateArchive([FromQuery] string directoryName)
+    {
+        // Add validation to ensure directoryName doesn't contain path characters.
+        if (directoryName.Contains("..") || directoryName.Contains("/") || directoryName.Contains("\\"))
+        {
+            return BadRequest("Invalid directory name.");
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            // SAFE: Call the executable directly.
+            FileName = "7z.exe", 
+            UseShellExecute = false,
+            RedirectStandardOutput = true
+        };
+        
+        // SAFE: Pass arguments as separate items in the list.
+        // The OS handles quoting and escaping, preventing shell interpretation.
+        startInfo.ArgumentList.Add("a");
+        startInfo.ArgumentList.Add("-tzip");
+        startInfo.ArgumentList.Add("archive.zip");
+        startInfo.ArgumentList.Add(directoryName);
+
+        using var process = Process.Start(startInfo);
+        process.WaitForExit();
+        
+        return Ok($"Archive created with exit code {process.ExitCode}");
+    }
+    ```
+    
+    #### Testing Strategy
+    Write a test that calls the method with a malicious `directoryName` like `mydir && whoami`. With the vulnerable code, the `whoami` command would execute. In the test, you can check the process's standard output (if redirected) to ensure it does not contain the output of the injected command.
+    ```csharp
+    // Tests/ArchiveControllerTests.cs
+    [Fact]
+    public void CreateArchive_WithInjectionPayload_ShouldNotExecuteCommand()
+    {
+        // This test requires a more complex setup to monitor process creation
+        // or check for side-effects (e.g., creation of a file by the injected command).
+        // A conceptual test:
+        
+        string payload = "safe_dir && echo pwned > pwned.txt";
+        
+        // Call the vulnerable method
+        // ...
+        
+        // Assert that the file was NOT created.
+        Assert.False(File.Exists("pwned.txt"));
+    }
+    ```
+  </Tab>
+  <Tab title="Laravel (PHP)">
+    #### Framework Context
+    PHP's execution operators are notoriously dangerous. `exec()`, `shell_exec()`, `system()`, `passthru()`, and the backtick operator (` `` `) all invoke a system shell and are prime candidates for injection.
+
+    #### Vulnerable Scenario 1: File Details Viewer
+    A simple tool that uses the `ls -l` command to show details about a user-provided filename.
+    ```php
+    // app/Http/Controllers/FileController.php
+    class FileController extends Controller
+    {
+        public function show(Request $request)
+        {
+            $filename = $request->input('file');
+            // DANGEROUS: The filename is passed directly to the shell.
+            // Payload: 'test.txt; id'
+            $output = shell_exec('ls -l /var/www/uploads/' . $filename);
+            return response($output, 200, ['Content-Type' => 'text/plain']);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Image Resizing with `convert`
+    A service that uses the ImageMagick `convert` command to resize an image.
+    ```php
+    // app/Services/ImageService.php
+    public function resize($filePath, $dimensions)
+    {
+        // DANGEROUS: The dimensions string (e.g., "100x100") is not validated
+        // and could contain malicious commands.
+        system("convert {$filePath} -resize {$dimensions} {$filePath}_thumb.jpg");
+    }
+    ```
+    
+    #### Mitigation and Best Practices
+    If you must execute a command, use `escapeshellarg()` for any user-supplied value that should be treated as a single argument, and `escapeshellcmd()` for the command itself if it's dynamic. The best approach is to find a native PHP library (e.g., a file info library instead of `ls`, an image library instead of `convert`) to avoid shelling out entirely.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/FileController.php (Secure Version)
+    use Symfony\Component\Process\Process;
+    use Symfony\Component\Process\Exception\ProcessFailedException;
+
+    class FileController extends Controller
+    {
+        public function show(Request $request)
+        {
+            $filename = $request->input('file');
+            
+            // It's better to use PHP's native file functions to get details.
+            // But if a command is required, use a library like Symfony Process.
+            
+            // The Process component handles escaping and does not use a shell wrapper by default.
+            $process = new Process(['ls', '-l', '/var/www/uploads/' . $filename]);
+            
+            // To be even safer, sanitize the filename first
+            if (strpos($filename, '..') !== false) {
+                abort(400, 'Invalid filename.');
+            }
+
+            try {
+                $process->mustRun();
+                return response($process->getOutput(), 200, ['Content-Type' => 'text/plain']);
+            } catch (ProcessFailedException $exception) {
+                return response($exception->getMessage(), 500);
+            }
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a feature test that sends a request with a payload designed to execute a secondary command. The test should assert that the response body does not contain the output of the injected command.
+    ```php
+    // tests/Feature/FileControllerTest.php
+    public function test_file_details_endpoint_prevents_command_injection()
+    {
+        $payload = 'test.txt; id';
+        
+        $response = $this->get('/files/show?file=' . urlencode($payload));
+        
+        $response->assertStatus(500); // The `ls` command will fail with that filename
+        // The key is that the output of the `id` command (e.g., "uid=...") should not be present.
+        $response->assertDontSee('uid=');
+    }
+    ```
+  </Tab>
+  <Tab title="Express.js (Node.js)">
+    #### Framework Context
+    Node.js's `child_process` module is the standard way to run external commands. The `exec()` function is dangerous because it spawns `/bin/sh` and interprets the command string. The `execFile()` and `spawn()` functions are the secure alternatives.
+
+    #### Vulnerable Scenario 1: A Code Linter API
+    An API that takes a filename and runs a linter on it.
+    ```javascript
+    // routes/linter.js
+    const { exec } = require('child_process');
+    
+    router.post('/lint', (req, res) => {
+        const { file } = req.body;
+        // DANGEROUS: The file path is concatenated into the command string for exec.
+        // A file named "; rm -rf /" would be disastrous.
+        exec(`eslint ${file}`, (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({ error: stderr });
+            }
+            res.send(stdout);
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: A PDF Report Generator
+    A service that uses a command-line utility like `wkhtmltopdf` to generate a PDF.
+    ```javascript
+    // services/pdfGenerator.js
+    const { exec } = require('child_process');
+    
+    function generatePdf(url, title) {
+        // DANGEROUS: The title is not escaped and is passed to the shell.
+        // A title like `"My Report"; sleep 5'` would cause a delay.
+        const command = `wkhtmltopdf --title "${title}" ${url} report.pdf`;
+        exec(command);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `execFile()` or `spawn()` instead of `exec()`. These functions take the command and arguments as an array of strings, which prevents the shell from interpreting any of the arguments as separate commands.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/linter.js (Secure Version)
+    const { execFile } = require('child_process');
+    const path = require('path');
+
+    router.post('/lint', (req, res) => {
+        const { file } = req.body;
+        
+        // Add path validation as a defense-in-depth measure
+        const safePath = path.join('/app/uploads', path.basename(file));
+        // ... verify safePath is still within the uploads directory ...
+        
+        // SAFE: `execFile` does not spawn a shell. The `safePath` variable
+        // is passed as a single, uninterpreted argument to the eslint command.
+        execFile('eslint', [safePath], (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({ error: stderr });
+            }
+            res.send(stdout);
+        });
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest and Supertest to make a request to the endpoint with a malicious filename. The test should assert that the server returns an error (because the command fails on the weird filename) and not the output of the injected command.
+    ```javascript
+    // tests/linter.test.js
+    const { execFile } = require('child_process');
+    jest.mock('child_process'); // Mock the module
+
+    it('should call execFile with sanitized arguments', () => {
+        const file = 'test.js; id';
+        
+        // This is a unit test that checks if the secure function is called correctly.
+        // An integration test would check the HTTP response.
+        
+        // ... code to call the linting service ...
+        
+        // Assert that the secure `execFile` was called, not `exec`.
+        expect(execFile).toHaveBeenCalled();
+        // Assert that the arguments were passed as an array, not a single string.
+        expect(execFile.mock.calls[0][1]).toEqual(['/app/uploads/test.js; id']);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    #### Framework Context
+    Ruby's kernel methods like `system`, `exec`, and backticks (` `` `) are dangerous when used with a single string argument, as they invoke a shell. The secure practice is to use the multi-argument form of these methods.
+
+    #### Vulnerable Scenario 1: A `whois` Lookup Tool
+    An admin tool that performs a `whois` lookup on a domain provided by the user.
+    ```ruby
+    # app/controllers/admin/whois_controller.rb
+    class Admin::WhoisController < ApplicationController
+      def lookup
+        domain = params[:domain]
+        # DANGEROUS: Using backticks with string interpolation invokes a shell.
+        # A domain like "example.com; date" would execute the date command.
+        @result = `whois #{domain}`
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: File Type Detection
+    A file upload service uses the `file` command to determine the MIME type of an uploaded file.
+    ```ruby
+    # app/models/upload.rb
+    class Upload < ApplicationRecord
+      def determine_mime_type(file_path)
+        # DANGEROUS: The file_path is not sanitized before being passed to the shell.
+        # While it might come from the server, if any part is user-influenced, it's a risk.
+        `file --mime-type -b #{file_path}`.strip
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    When calling an external command, always use the method variant that accepts the command and arguments as separate strings. This bypasses shell interpretation entirely. For more complex interactions (e.g., needing stdin/stdout), use the `Open3` standard library.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/admin/whois_controller.rb (Secure Version)
+    require 'open3'
+
+    class Admin::WhoisController < ApplicationController
+      def lookup
+        domain = params[:domain]
+        # Add input validation for domain format
+        
+        begin
+          # SAFE: Open3.capture3 takes arguments separately and does not use a shell.
+          # It safely executes the `whois` command with the domain as a single argument.
+          stdout_str, stderr_str, status = Open3.capture3("whois", domain)
+          if status.success?
+            @result = stdout_str
+          else
+            @result = "Error: #{stderr_str}"
+          end
+        rescue Errno::ENOENT
+            @result = "Error: 'whois' command not found."
+        end
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec that provides a domain with an injected command. Use mocking to assert that the secure, multi-argument version of `Open3.capture3` is called, rather than a shell command.
+    ```ruby
+    # spec/requests/admin_whois_spec.rb
+    it "does not execute injected shell commands" do
+      # Expect that the secure Open3.capture3 method is called with separate arguments.
+      # This prevents the shell from ever being invoked.
+      expect(Open3).to receive(:capture3).with("whois", "example.com; ls").and_return(["", "whois: 'example.com; ls': nodename nor servname provided, or not known", double(success?: false)])
+      
+      get admin_whois_lookup_path, params: { domain: "example.com; ls" }
+      
+      expect(response.body).to include("Error: whois")
+      expect(response.body).not_to include("total") # Output from 'ls'
+    end
+    ```
+  </Tab>
+</Tabs>
