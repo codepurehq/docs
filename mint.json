@@ -52,13 +52,7 @@
     "group": "Core Capabilities",
     "icon": "shield-alt",
     "pages": [
-      {
-        "group": "SAST",
-        "pages": [
-          "sast/overview",
-          "sast/supported-languages"
-        ]
-      },
+      "sast",
       "sca",
       "container_security",
       "secret_scanning",
