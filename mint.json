@@ -46,7 +46,19 @@
   {
     "group": "Core Capabilities",
     "icon": "shield-alt",
-    "pages": ["sast", "sca", "container_security", "secret_scanning", "devsecops"]
+    "pages": [
+      {
+        "group": "SAST",
+        "pages": [
+          "sast/overview",
+          "sast/supported-languages"
+        ]
+      },
+      "sca",
+      "container_security",
+      "secret_scanning",
+      "devsecops"
+    ]
   },
   {
     "group": "User Management",
