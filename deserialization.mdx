@@ -1,16 +1,16 @@
 ---
 title: "Deserialization of Untrusted Data"
 sidebarTitle: "Insecure Deserialization"
-description: "Learn to prevent Insecure Deserialization in Java, .NET, Node.js, PHP, Python, and Ruby."
+description: "Architectural examples and mitigation for Insecure Deserialization in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "cube"
 iconType: "solid"
 ---
 
 ## Overview
-Insecure Deserialization is a vulnerability that occurs when an application deserializes untrusted data without sufficient validation. Deserialization is the process of taking data from a serialized format (like a byte stream, JSON, or XML) and reconstructing it into a live object in memory. Attackers can manipulate the serialized data to create malicious objects, leading to remote code execution, denial of service, or access control bypasses.
+Insecure Deserialization occurs when an application deserializes data from an untrusted source without proper validation. Deserialization is the process of converting a byte stream or structured text (like XML/YAML) back into a live object in memory. If an attacker can control this serialized data, they can craft a malicious object that, when instantiated, can execute arbitrary code, bypass logic, or cause a denial of service.
 
 ## Business Impact
-This vulnerability is often critical, as it can lead directly to remote code execution on the application server. Even when not leading to RCE, it can be used to cause application crashes (denial of service) or bypass business logic by creating objects in unexpected states.
+This is often one of the most critical vulnerabilities, frequently leading directly to Remote Code Execution (RCE) on the application server. Exploitation involves "gadget chains"—leveraging pieces of existing, legitimate code in the application in unexpected ways to perform malicious actions during the deserialization process.
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-502](https://cwe.mitre.org/data/definitions/502.html)
@@ -18,179 +18,466 @@ This vulnerability is often critical, as it can lead directly to remote code exe
   **Severity:** Critical
 </Card>
 
-## Remediation by Language
-The primary defense is to **avoid deserializing data from untrusted sources**. If deserialization is unavoidable, use a safe, data-only format like JSON and avoid formats that support arbitrary object creation. If a native serialization format must be used, implement strict type checking during deserialization to ensure only expected object types are created. Additionally, run the deserialization code in a low-privilege environment.
+## Framework-Specific Analysis and Remediation
+The universal and most effective mitigation is to **never deserialize data from untrusted sources using native, object-oriented serialization formats**. Instead, use safe, data-only formats like JSON for all data interchange. If a native format is absolutely required, use features that restrict which classes can be instantiated or use a digital signature to verify the integrity and authenticity of the serialized data before processing.
 
 <Tabs>
-  <Tab title="Java">
-    ##### Vulnerable Code Examples
-    **Example 1: Deserializing a Cookie**
-    ```java
-    // A "remember me" cookie contains a serialized UserProfile object
-    Cookie cookie = request.getCookies()[0];
-    byte[] decoded = Base64.getDecoder().decode(cookie.getValue());
-    ByteArrayInputStream bis = new ByteArrayInputStream(decoded);
-    ObjectInputStream ois = new ObjectInputStream(bis);
-    UserProfile profile = (UserProfile) ois.readObject(); // Vulnerable
-    ```
-    **Example 2: Processing data from a Message Queue**
-    ```java
-    // Data received from a remote service is deserialized directly
-    byte[] messageData = message.getBody();
-    ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(messageData));
-    Task task = (Task) ois.readObject();
-    ```
-    ##### Secure Code (Remediation)
-    Use a look-ahead deserialization library like Apache Commons IO's `ValidatingObjectInputStream` to restrict which classes can be deserialized.
-    ```java
-    // Restrict to only the allowed class
-    ValidatingObjectInputStream vois = new ValidatingObjectInputStream(bis);
-    vois.accept(UserProfile.class);
-    UserProfile profile = (UserProfile) vois.readObject();
+  <Tab title="Django (Python)">
+    #### Framework Context
+    Python's `pickle` module is the primary mechanism for native object serialization, and it is notoriously insecure. The official documentation explicitly warns against unpickling data from untrusted sources. `PyYAML`'s `load()` function is also unsafe.
 
-    // The best solution is to avoid native serialization. Use JSON with a library like Jackson instead.
-    ObjectMapper mapper = new ObjectMapper();
-    UserProfile profile = mapper.readValue(jsonData, UserProfile.class);
-    ```
-  </Tab>
-  <Tab title=".NET (C#)">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `BinaryFormatter`**
-    ```csharp
-    // BinaryFormatter is inherently unsafe and should not be used with untrusted data
-    byte[] data = Convert.FromBase64String(Request.Form["data"]);
-    var stream = new MemoryStream(data);
-    var formatter = new BinaryFormatter();
-    var obj = formatter.Deserialize(stream); // Highly dangerous
-    ```
-    **Example 2: Using `Json.NET` with `TypeNameHandling.All`**
-    ```csharp
-    // This setting allows the JSON to specify which .NET type to create, which is unsafe
-    var settings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All };
-    var obj = JsonConvert.DeserializeObject(jsonString, settings);
-    ```
-    ##### Secure Code (Remediation)
-    Avoid `BinaryFormatter`. Use a safe serializer like `JsonConvert` with default settings and specify the expected type.
-    ```csharp
-    // Use a safe JSON serializer and explicitly define the target type
-    try
-    {
-        var settings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None }; // Safe default
-        MyExpectedType obj = JsonConvert.DeserializeObject<MyExpectedType>(jsonString, settings);
-    }
-    catch (JsonSerializationException ex)
-    {
-        // Handle malformed data
-    }
-    ```
-  </Tab>
-  <Tab title="Node.js">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `node-serialize`**
-    ```javascript
-    // Libraries like node-serialize are known to be insecure as they can execute functions
-    const serialize = require('node-serialize');
-    const data = Buffer.from(req.cookies.profile, 'base64').toString();
-    const obj = serialize.unserialize(data); // Can lead to RCE
-    ```
-    **Example 2: Using `js-yaml` with `!!js/function` tag**
-    ```javascript
-    // The `!!js/function` tag in YAML can execute arbitrary JavaScript
-    const yaml = require('js-yaml');
-    const doc = yaml.load(req.body.yamlData);
-    ```
-    ##### Secure Code (Remediation)
-    Stick to the standard `JSON.parse()` for deserializing data, as it only creates simple data structures (objects, arrays, strings, etc.) and cannot execute code.
-    ```javascript
-    // JSON.parse is safe from this type of vulnerability
-    try {
-        const obj = JSON.parse(req.body.jsonData);
-        // Process the safe object
-    } catch (e) {
-        // Handle invalid JSON
-    }
-
-    // If using js-yaml, use the safeLoad method
-    const doc = yaml.safeLoad(req.body.yamlData);
-    ```
-  </Tab>
-  <Tab title="PHP">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `unserialize()` on User Input**
-    ```php
-    // The `unserialize` function can instantiate objects of any class available to the application
-    $data = $_COOKIE['user_prefs'];
-    $prefs = unserialize(base64_decode($data)); // Very dangerous
-    ```
-    **Example 2: Processing Data from a Cache**
-    ```php
-    // If an attacker can poison the cache, this becomes a vector
-    $cached_obj = $cache->get('user_session_' . $userId);
-    $session = unserialize($cached_obj);
-    ```
-    ##### Secure Code (Remediation)
-    Avoid `unserialize()` with any untrusted input. Use JSON with `json_decode()` instead. If you must use `unserialize`, specify the allowed classes (PHP 7+).
-    ```php
-    // The best approach: use JSON
-    $prefs = json_decode($data, true);
-
-    // If you MUST use unserialize (PHP 7+):
-    $prefs = unserialize(base64_decode($data), ['allowed_classes' => [UserProfile::class, Prefs::class]]);
-    ```
-  </Tab>
-  <Tab title="Python">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `pickle`**
+    #### Vulnerable Scenario 1: Unpickling a Session Cookie
+    A web application stores a user's session object as a pickled, base64-encoded string in a cookie.
     ```python
-    # The pickle module is not secure against erroneous or maliciously constructed data
+    # middleware/session.py
     import pickle
-    pickled_data = request.cookies.get('session')
-    session_obj = pickle.loads(base64.b64decode(pickled_data))
-    ```
-    **Example 2: Using `PyYAML`'s `load()` function**
-    ```python
-    # The default `yaml.load()` can construct any Python object
-    import yaml
-    data = yaml.load(request.data, Loader=yaml.Loader)
-    ```
-    ##### Secure Code (Remediation)
-    Never use `pickle` with untrusted data. Use a safe data format like JSON. For YAML, always use `yaml.safe_load()`.
-    ```python
-    import json
-    # Use JSON for data interchange
-    json_data = request.cookies.get('session')
-    session_obj = json.loads(json_data)
+    import base64
 
+    class PickleSessionMiddleware:
+        def process_request(self, request):
+            session_data = request.COOKIES.get('session')
+            if session_data:
+                # DANGEROUS: An attacker can replace their cookie with a malicious
+                # pickled object that executes code upon deserialization.
+                request.session = pickle.loads(base64.b64decode(session_data))
+    ```
+    
+    #### Vulnerable Scenario 2: Processing Data from a Task Queue
+    A Celery worker receives a task whose arguments include a YAML-serialized object.
+    ```python
+    # tasks.py
     import yaml
-    # Use safe_load for YAML
-    data = yaml.safe_load(request.data)
+
+    @shared_task
+    def process_report(report_data_yaml):
+        # DANGEROUS: The default yaml.load() can construct any Python object
+        # and even execute arbitrary functions.
+        report = yaml.load(report_data_yaml, Loader=yaml.Loader)
+        # ... process report ...
+    ```
+
+    #### Mitigation and Best Practices
+    Never use `pickle` or `yaml.load()` for data that has passed through an untrusted environment. Use `json` for all data interchange. For YAML, always use `yaml.safe_load()`. Django's built-in session framework is secure and uses a signed JSON-based backend by default; rely on it instead of rolling your own.
+
+    #### Secure Code Example
+    ```python
+    # middleware/session.py (Secure Version)
+    import json
+    from django.core.signing import Signer, BadSignature
+
+    class JsonSessionMiddleware:
+        def process_request(self, request):
+            session_data = request.COOKIES.get('session')
+            signer = Signer()
+            if session_data:
+                try:
+                    # SAFE: 1. Verify the signature to prevent tampering.
+                    #       2. Use json.loads(), which only creates simple data types.
+                    unsigned_data = signer.unsign(session_data)
+                    request.session = json.loads(unsigned_data)
+                except (BadSignature, json.JSONDecodeError):
+                    request.session = {} # Handle tampered/invalid data
+    ```
+    
+    #### Testing Strategy
+    Testing for this is complex. It involves creating a known RCE payload for `pickle` (using a tool like `ysoserial.net`) and submitting it to the vulnerable endpoint. The test would then check for the side-effect of the code execution (e.g., a file being created on the server, or a network callback).
+    ```python
+    # A conceptual test
+    def test_session_deserialization_rce(self):
+        # 1. Generate a malicious pickle payload that creates a file '/tmp/pwned'
+        malicious_payload = generate_pickle_rce_payload("touch /tmp/pwned")
+        encoded_payload = base64.b64encode(malicious_payload).decode()
+        
+        # 2. Set the cookie and make a request
+        self.client.cookies['session'] = encoded_payload
+        self.client.get('/')
+        
+        # 3. Assert that the file was NOT created
+        self.assertFalse(os.path.exists('/tmp/pwned'))
     ```
   </Tab>
-  <Tab title="Ruby">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `Marshal.load`**
-    ```ruby
-    # Marshal.load can deserialize almost any Ruby object, leading to RCE
-    data = Base64.decode64(cookies[:session])
-    session = Marshal.load(data)
-    ```
-    **Example 2: Using YAML's `load()`**
-    ```ruby
-    # Similar to Python, Ruby's default YAML parser is unsafe
-    require 'yaml'
-    config = YAML.load(params[:config_file])
-    ```
-    ##### Secure Code (Remediation)
-    Avoid `Marshal.load` with user input. Use JSON. For YAML, use `YAML.safe_load`.
-    ```ruby
-    require 'json'
-    # Use JSON instead of Marshal
-    data = cookies[:session]
-    session = JSON.parse(data)
+  <Tab title="Spring Boot (Java)">
+    #### Framework Context
+    Java's native `ObjectInputStream` is the classic vector for insecure deserialization. Spring Boot applications should avoid it at all costs and use a safe library like Jackson for JSON processing.
 
+    #### Vulnerable Scenario 1: Reading from an `HttpInvokerServiceExporter`
+    This is a legacy Spring feature that uses Java Serialization to handle remote procedure calls over HTTP.
+    ```java
+    // config/RemotingConfig.java
+    @Bean(name = "/userService")
+    public HttpInvokerServiceExporter userService(UserService userService) {
+        // DANGEROUS: This endpoint will deserialize any Java object sent to it,
+        // making it a prime target for RCE gadget chain exploits.
+        HttpInvokerServiceExporter exporter = new HttpInvokerServiceExporter();
+        exporter.setService(userService);
+        exporter.setServiceInterface(UserService.class);
+        return exporter;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Deserializing an Object from a File Upload
+    An admin function allows uploading a file containing a serialized `Configuration` object.
+    ```java
+    // controller/AdminController.java
+    @PostMapping("/upload-config")
+    public void uploadConfig(@RequestParam("file") MultipartFile file) throws Exception {
+        try (InputStream is = file.getInputStream();
+             ObjectInputStream ois = new ObjectInputStream(is)) {
+            // DANGEROUS: Deserializes the uploaded file content directly.
+            Configuration config = (Configuration) ois.readObject();
+            // ... apply config ...
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Do not use Java Serialization. Use REST endpoints with JSON for communication and a library like Jackson for safe data binding. If native serialization is unavoidable, implement a look-ahead deserialization agent or use a library like `ValidatingObjectInputStream` to strictly allow-list the classes that are permitted to be deserialized.
+
+    #### Secure Code Example
+    ```java
+    // controller/AdminController.java (Secure JSON Version)
+    import com.fasterxml.jackson.databind.ObjectMapper;
+
+    @PostMapping("/upload-config")
+    public void uploadConfig(@RequestParam("file") MultipartFile file) throws IOException {
+        // SAFE: Jackson is used to deserialize JSON into a specific, known DTO class.
+        // It does not execute arbitrary code from the input data.
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            ConfigurationDTO config = mapper.readValue(file.getInputStream(), ConfigurationDTO.class);
+            // ... apply config from the safe DTO ...
+        } catch (JsonProcessingException e) {
+            // Handle invalid JSON
+        }
+    }
+    ```
+    
+    #### Testing Strategy
+    Use a tool like `ysoserial` to generate a Java deserialization payload for a common gadget chain (e.g., `CommonsCollections1`). Send this payload to the vulnerable endpoint. A successful exploit would execute the payload (e.g., run `calc.exe` or `touch /tmp/pwned`). A test should assert that this side-effect does not occur.
+    ```java
+    // A conceptual test
+    @Test
+    void uploadConfig_withMaliciousPayload_shouldNotExecuteCode() {
+        // 1. Generate ysoserial payload that creates a file.
+        byte[] payload = generateYsoserialPayload();
+        MockMultipartFile file = new MockMultipartFile("file", "config.ser", "application/octet-stream", payload);
+        
+        // 2. Call the vulnerable endpoint
+        mockMvc.perform(multipart("/upload-config").file(file));
+        
+        // 3. Assert that the side-effect (file creation) did not happen.
+        File pwnedFile = new File("pwned");
+        assertFalse(pwnedFile.exists());
+    }
+    ```
+  </Tab>
+  <Tab title="ASP.NET Core (C#)">
+    #### Framework Context
+    The `BinaryFormatter` is .NET's equivalent of Java Serialization and is extremely dangerous. Microsoft has officially marked it as obsolete and insecure. The recommended alternative is a data-only format like JSON, processed with libraries like `System.Text.Json` or `Newtonsoft.Json`.
+
+    #### Vulnerable Scenario 1: Using `BinaryFormatter` in Session State
+    An older application might be configured to use `BinaryFormatter` to serialize session objects.
+    ```csharp
+    // An example of state being read from a request
+    public UserProfile GetUserProfileFromState(string state)
+    {
+        byte[] decodedState = Convert.FromBase64String(state);
+        using var stream = new MemoryStream(decodedState);
+        // DANGEROUS: BinaryFormatter is insecure and can lead to RCE.
+        var formatter = new BinaryFormatter();
+        return (UserProfile)formatter.Deserialize(stream);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `Json.NET` with Insecure TypeNameHandling
+    While `Json.NET` is generally safe, configuring it with `TypeNameHandling.All` allows the JSON data to specify which .NET type to create, reintroducing deserialization vulnerabilities.
+    ```csharp
+    // Controllers/ApiController.cs
+    [HttpPost]
+    public IActionResult Post([FromBody] JObject jsonData)
+    {
+        var settings = new JsonSerializerSettings
+        {
+            // DANGEROUS: This setting allows an attacker to control which object gets created.
+            TypeNameHandling = TypeNameHandling.All
+        };
+        // The attacker can craft a JSON payload that instantiates an unexpected object type.
+        var obj = JsonConvert.DeserializeObject(jsonData.ToString(), settings);
+        // ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `BinaryFormatter`**. Use a modern JSON serializer like `System.Text.Json` or `Newtonsoft.Json` with its default, safe settings (`TypeNameHandling.None`). Always deserialize into a known, expected type.
+
+    #### Secure Code Example
+    ```csharp
+    // A secure way to handle user state
+    using System.Text.Json;
+
+    public UserProfile GetUserProfileFromState(string state)
+    {
+        try
+        {
+            // SAFE: System.Text.Json is a modern, secure serializer.
+            // It does not have the same RCE vulnerabilities as BinaryFormatter.
+            return JsonSerializer.Deserialize<UserProfile>(state);
+        }
+        catch (JsonException)
+        {
+            // Handle invalid data
+            return null;
+        }
+    }
+    ```
+    
+    #### Testing Strategy
+    Similar to Java, use a tool like `ysoserial.net` to generate a payload for a known .NET gadget chain. Submit this payload to the vulnerable endpoint and verify that the code execution does not occur.
+    ```csharp
+    // Conceptual test for a vulnerable endpoint
+    [Fact]
+    public void StateDeserialization_WithGadgetPayload_ShouldNotCauseRCE()
+    {
+        // 1. Generate a malicious payload using ysoserial.net that writes a file.
+        string payload = GenerateNetRcePayload();
+        
+        // 2. Call the vulnerable method
+        // ...
+        
+        // 3. Assert that the malicious side-effect did not occur.
+        Assert.False(File.Exists("C:\\pwned.txt"));
+    }
+    ```
+  </Tab>
+  <Tab title="Laravel (PHP)">
+    #### Framework Context
+    PHP's native `unserialize()` function is extremely dangerous with untrusted input because it can trigger "magic methods" (like `__wakeup` or `__destruct`) on any class available in the application's scope, leading to Property-Oriented Programming (POP) gadget chain exploits.
+
+    #### Vulnerable Scenario 1: Processing a Signed URL with Serialized Data
+    Laravel's signed URLs are great for security, but if the developer puts serialized user data inside them, they can still be exploited.
+    ```php
+    // routes/web.php
+    Route::get('/process-report', function (Request $request) {
+        $reportParams = unserialize(base64_decode($request->input('params')));
+        // DANGEROUS: Even if the URL is signed, the 'params' data is from the user
+        // and could have been crafted before the URL was signed.
+        // The unserialize call is the vulnerability.
+    })->name('reports.process')->middleware('signed');
+    ```
+
+    #### Vulnerable Scenario 2: Reading from a Queue
+    A queued job processes data that was originally serialized by another, potentially untrusted, part of the system.
+    ```php
+    // app/Jobs/ProcessUserData.php
+    class ProcessUserData implements ShouldQueue
+    {
+        protected $userData;
+        public function __construct($userData) { $this->userData = $userData; }
+
+        public function handle()
+        {
+            // DANGEROUS: The job is unserialized by the Laravel worker. If an attacker
+            // can inject a malicious job object into the queue (e.g., Redis),
+            // it will be executed.
+            $user = unserialize($this->userData);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `unserialize()` on any data that a user could have influenced.** Use `json_decode()` for all data interchange. If you absolutely must use `unserialize` (which is highly discouraged), use the `allowed_classes` option (PHP 7+) to restrict which objects can be created.
+
+    #### Secure Code Example
+    ```php
+    // routes/web.php (Secure Version)
+    Route::get('/process-report', function (Request $request) {
+        // SAFE: Use JSON, which is a data-only format and cannot instantiate arbitrary classes.
+        $reportParams = json_decode(base64_decode($request->input('params')), true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            abort(400, 'Invalid parameters.');
+        }
+        // ... process the safe array ...
+    })->name('reports.process')->middleware('signed');
+    ```
+
+    #### Testing Strategy
+    Use a tool like PHPGGC to generate a serialized PHP payload with a known gadget chain. Submit this payload to the vulnerable endpoint. The test should verify that the application returns an error and that the side-effect of the gadget chain (e.g., writing a file) did not occur.
+    ```php
+    // tests/Feature/ReportProcessingTest.php
+    public function test_report_endpoint_is_not_vulnerable_to_deserialization()
+    {
+        // 1. Use a tool to generate a payload for a known gadget chain
+        // (e.g., from a library like Monolog or Guzzle used by Laravel)
+        $payload = '...malicious serialized string...';
+        $encodedPayload = base64_encode($payload);
+        
+        $url = URL::temporarySignedRoute(
+            'reports.process', now()->addMinutes(5), ['params' => $encodedPayload]
+        );
+        
+        $response = $this->get($url);
+        
+        // A secure implementation using json_decode will fail.
+        $response->assertStatus(400);
+
+        // Also check that the side-effect did not happen.
+        $this->assertFileDoesNotExist(public_path('pwned.php'));
+    }
+    ```
+  </Tab>
+  <Tab title="Express.js (Node.js)">
+    #### Framework Context
+    Standard Node.js (with `JSON.parse`) is inherently safe from this class of vulnerability because JSON is a data-only format. The risk comes from using insecure third-party libraries that attempt to serialize more complex data, including functions, like `node-serialize`.
+
+    #### Vulnerable Scenario 1: Using the `node-serialize` Library
+    A web application uses the `node-serialize` library to store user preferences in a cookie.
+    ```javascript
+    // app.js
+    const serialize = require('node-serialize');
+    
+    app.get('/profile', (req, res) => {
+        if (req.cookies.profile) {
+            try {
+                // DANGEROUS: `unserialize()` can execute code. An attacker can craft
+                // a payload that runs a function on the server.
+                // For example: {"rce":"_$$ND_FUNC$$_function(){require('child_process').exec('touch /tmp/pwned', function(e,s,st){});}()"}
+                var profile = serialize.unserialize(Buffer.from(req.cookies.profile, 'base64').toString());
+            } catch (e) {
+                // ...
+            }
+        }
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: Using `js-yaml` in an Unsafe Mode
+    The `js-yaml` library, when used with its full (non-safe) `load` function, can execute JavaScript functions embedded in a YAML document.
+    ```javascript
+    // routes/config.js
+    const yaml = require('js-yaml');
+
+    router.post('/apply', (req, res) => {
+        // DANGEROUS: The default `load()` is unsafe.
+        // An attacker can submit YAML with a `!!js/function` tag to run code.
+        const config = yaml.load(req.body.configData);
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Stick to the native, safe `JSON.parse()` for all data serialization and deserialization needs. If using other format libraries like `js-yaml`, always use their "safe" loading methods (e.g., `yaml.safeLoad()`). Avoid any library that claims to serialize functions or other complex types.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Version)
+    app.get('/profile', (req, res) => {
+        if (req.cookies.profile) {
+            try {
+                // SAFE: JSON.parse() only creates plain JavaScript objects and data types.
+                // It cannot execute functions or create arbitrary classes.
+                const profile = JSON.parse(Buffer.from(req.cookies.profile, 'base64').toString());
+                // ... process safe profile object ...
+            } catch (e) {
+                // Handle invalid JSON or tampered cookie
+            }
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Write a test that base64-encodes a known malicious payload for `node-serialize` and sends it in the cookie. The test should then check for the side-effect of the payload (e.g., a file being created) and assert that it did not happen.
+    ```javascript
+    // tests/profile.test.js
+    const fs = require('fs');
+
+    it('should not be vulnerable to deserialization RCE', async () => {
+        // A known RCE payload for node-serialize that creates a file
+        const payload = '{"rce":"_$$ND_FUNC$$_function(){require(\'fs\').writeFileSync(\'pwned.txt\', \'\');}()"}';
+        const encodedPayload = Buffer.from(payload).toString('base64');
+        
+        // Make the request with the malicious cookie
+        await request(app).get('/profile').set('Cookie', `profile=${encodedPayload}`);
+        
+        // Assert that the malicious file was NOT created.
+        const fileExists = fs.existsSync('pwned.txt');
+        expect(fileExists).toBe(false);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    #### Framework Context
+    Ruby's `Marshal.load` is the equivalent of `pickle` and is highly insecure with untrusted data. Rails uses it for its default cookie-based session store, but crucially, it signs the data with a secret key to prevent tampering. The vulnerability appears if a developer uses `Marshal.load` manually on data they *think* is safe.
+
+    #### Vulnerable Scenario 1: Manual Deserialization of a Parameter
+    An endpoint accepts a Base64-encoded, marshaled Ruby object from a trusted client, but an attacker can hit the endpoint directly.
+    ```ruby
+    # app/controllers/api/v1/data_controller.rb
+    class Api::V1::DataController < ApplicationController
+      def create
+        encoded_object = params[:data]
+        # DANGEROUS: The data is coming from an external source and is being
+        # deserialized directly. An attacker can craft a gadget chain payload.
+        object = Marshal.load(Base64.decode64(encoded_object))
+        # ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Use of `YAML.load`
+    Similar to other languages, Ruby's standard YAML library has a `load` method that is unsafe and can instantiate arbitrary objects.
+    ```ruby
+    # app/services/config_importer.rb
     require 'yaml'
-    # Use safe_load for YAML
-    config = YAML.safe_load(params[:config_file])
+    
+    class ConfigImporter
+      def import(yaml_data)
+        # DANGEROUS: YAML.load is unsafe. An attacker could provide a YAML
+        # document that creates and executes a malicious object.
+        config = YAML.load(yaml_data)
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Never use `Marshal.load` or `YAML.load` on data that has ever been in the hands of a user. Use `JSON.parse` for data interchange. If you need to pass complex objects between your own trusted services, ensure the data is signed with a strong MAC (like Rails does for its sessions) to verify its integrity and authenticity before deserializing.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/api/v1/data_controller.rb (Secure Version)
+    class Api::V1::DataController < ApplicationController
+      def create
+        json_data = params[:data]
+        begin
+          # SAFE: JSON.parse only creates basic Ruby hashes, arrays, and primitives.
+          # It cannot be used to trigger gadget chain exploits.
+          hash = JSON.parse(json_data)
+          # ... process the safe hash ...
+        rescue JSON::ParserError
+          render json: { error: 'Invalid data format' }, status: :bad_request
+        end
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Craft a test that generates a marshaled object payload containing a known gadget chain. Send this to the vulnerable endpoint and assert that the application does not execute the malicious code. This often involves checking that a side-effect (like a file being created or a command being run) did not occur.
+    ```ruby
+    # spec/requests/data_api_spec.rb
+    RSpec.describe "Data API", type: :request do
+      it "is not vulnerable to remote code execution via Marshal.load" do
+        # This payload is a simplified example of a gadget chain
+        # In a real test, a tool would generate a complex payload.
+        class RCE
+          def initialize(cmd); @cmd = cmd; end
+          def to_s; `touch /tmp/pwned`; end
+        end
+        payload = Base64.encode64(Marshal.dump(RCE.new("")))
+        
+        post "/api/v1/data", params: { data: payload }
+        
+        # Assert that the malicious side-effect was not executed.
+        expect(File.exist?('/tmp/pwned')).to be false
+      end
+    end
     ```
   </Tab>
 </Tabs>

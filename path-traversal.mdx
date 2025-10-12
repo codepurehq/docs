@@ -1,16 +1,16 @@
 ---
 title: "Path Traversal"
 sidebarTitle: "Path Traversal"
-description: "Learn to prevent Path Traversal in Java, .NET, Node.js, PHP, Python, and Ruby."
+description: "Architectural examples and mitigation for Path Traversal in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "folder-open"
 iconType: "solid"
 ---
 
 ## Overview
-Path Traversal (also known as Directory Traversal) is a web security vulnerability that allows an attacker to read arbitrary files on the server that is running an application. The attacker exploits insufficient security validation of user-supplied input that is used in file paths, allowing them to access files outside of the intended directory, such as configuration files, source code, or system files.
+Path Traversal (also known as Directory Traversal) allows an attacker to read arbitrary files on the server. The vulnerability occurs when an application uses user-supplied input to construct a path to a file or directory without proper validation. By using `../` sequences, an attacker can navigate outside of the intended directory to access sensitive files anywhere on the server's file system.
 
 ## Business Impact
-This vulnerability can lead to the disclosure of sensitive information, including application source code, credentials, and critical system files. This information can then be used to mount further attacks on the web server.
+This vulnerability can lead to the complete disclosure of application source code, configuration files containing credentials, business data, and sensitive operating system files. This information leak is often a precursor to a full system compromise.
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-22](https://cwe.mitre.org/data/definitions/22.html)
@@ -18,222 +18,467 @@ This vulnerability can lead to the disclosure of sensitive information, includin
   **Severity:** High
 </Card>
 
-## Remediation by Language
-The primary defense is to avoid writing code that uses user-supplied input to form file paths. If this is unavoidable, the input must be rigorously validated. A common technique is to ensure the user-supplied filename is alphanumeric and does not contain any path-related characters (`/`, `\`, `..`). The application should then append this sanitized filename to a hard-coded base directory and use a platform API to canonicalize the path, ensuring it still resides within the intended directory.
+## Framework-Specific Analysis and Remediation
+No framework can automatically protect against this logical vulnerability. The developer is always responsible for sanitizing and validating user input before using it in any file system operation. The core principle is to ensure the final, resolved (canonical) path of the requested file is located within the expected, secure base directory.
 
 <Tabs>
-  <Tab title="Java">
-    ##### Vulnerable Code Examples
-    **Example 1: File Download Servlet**
-    ```java
-    // The 'filename' parameter is used to read a file from a directory
-    String filename = request.getParameter("filename");
-    File file = new File("/var/www/uploads/" + filename);
-    // An attacker can use 'filename=../../../../etc/passwd'
-    ```
-    **Example 2: Displaying Static Content**
-    ```java
-    // An application serves static help files based on a query parameter
-    String page = request.getParameter("page");
-    File file = new File("/opt/app/help-files/" + page + ".html");
-    ```
-    ##### Secure Code (Remediation)
-    Canonicalize the path and verify it starts with the intended base directory.
-    ```java
-    String filename = request.getParameter("filename");
-    File baseDir = new File("/var/www/uploads/");
-    File requestedFile = new File(baseDir, filename);
+  <Tab title="Django (Python)">
+    #### Framework Context
+    Django does not provide a specific file-serving view for arbitrary files, forcing developers to write their own. This is where vulnerabilities are often introduced. The key is to use Python's `os.path` module to safely construct and validate paths.
 
-    // Get the canonical path to resolve '..' sequences
-    String canonicalPath = requestedFile.getCanonicalPath();
-
-    if (canonicalPath.startsWith(baseDir.getCanonicalPath())) {
-        // Path is safe, proceed with file operation
-    } else {
-        // Path traversal attempt, reject request
-    }
-    ```
-  </Tab>
-  <Tab title=".NET (C#)">
-    ##### Vulnerable Code Examples
-    **Example 1: Reading a User's Profile Picture**
-    ```csharp
-    // The username is used to construct a path to an image file
-    string username = Request.QueryString["user"];
-    string imagePath = "C:\\UserData\\Images\\" + username + ".jpg";
-    return File.ReadAllBytes(imagePath);
-    ```
-    **Example 2: Loading a Theme Template**
-    ```csharp
-    // A theme name is passed in and used to load a CSS file
-    string theme = Request.Cookies["theme"].Value;
-    string cssPath = Server.MapPath("/themes/" + theme + "/style.css");
-    ```
-    ##### Secure Code (Remediation)
-    Combine paths using `Path.Combine` and get the full path to validate it.
-    ```csharp
-    string baseDir = "C:\\UserData\\Images\\";
-    string filename = Path.GetFileName(userInput); // Extracts just the filename part
-    string fullPath = Path.Combine(baseDir, filename);
-    
-    // Normalize the path and check if it's within the intended directory
-    string normalizedBaseDir = Path.GetFullPath(baseDir);
-    string normalizedFullPath = Path.GetFullPath(fullPath);
-
-    if (normalizedFullPath.StartsWith(normalizedBaseDir)) {
-        // Safe to proceed
-    } else {
-        // Traversal attempt
-    }
-    ```
-  </Tab>
-  <Tab title="Node.js">
-    ##### Vulnerable Code Examples
-    **Example 1: Serving Static Files**
-    ```javascript
-    // The URL path is directly appended to the base directory
-    const fs = require('fs');
-    const path = require('path');
-    const requestedFile = path.join(__dirname, '/public', req.url);
-    fs.readFile(requestedFile, (err, data) => { /* ... */ });
-    // Attacker can use a URL like /../../package.json
-    ```
-    **Example 2: Log File Viewer**
-    ```javascript
-    // An admin panel allows viewing log files by name
-    const logFile = req.query.log;
-    const logContent = fs.readFileSync(`/var/logs/app/${logFile}`);
-    ```
-    ##### Secure Code (Remediation)
-    Normalize the path and verify it is within the base directory.
-    ```javascript
-    const path = require('path');
-    const fs = require('fs');
-    
-    const publicDir = path.resolve(__dirname, '/public');
-    const requestedPath = path.join(publicDir, req.query.file);
-    const normalizedPath = path.normalize(requestedPath);
-
-    if (normalizedPath.startsWith(publicDir)) {
-        fs.readFile(normalizedPath, (err, data) => { /* ... */ });
-    } else {
-        // Directory traversal attempt detected
-        res.status(403).send("Forbidden");
-    }
-    ```
-  </Tab>
-  <Tab title="PHP">
-    ##### Vulnerable Code Examples
-    **Example 1: Including a Page Template**
-    ```php
-    // The 'page' parameter is used in an include statement
-    $template = $_GET['page'];
-    include($template . '.php'); // Can lead to LFI/RFI
-    ```
-    **Example 2: Reading a File for Download**
-    ```php
-    // A filename is taken from the URL to serve a download
-    $file = $_GET['file'];
-    readfile('/home/user/downloads/' . $file);
-    ```
-    ##### Secure Code (Remediation)
-    Use `basename()` to strip directory information and validate against an allow-list if possible.
-    ```php
-    // For file downloads
-    $baseDir = '/home/user/downloads/';
-    $filename = basename($_GET['file']); // Strips all directory info
-    $filePath = $baseDir . $filename;
-    
-    // Additional check with realpath
-    if (file_exists($filePath) && realpath($filePath) && strpos(realpath($filePath), $baseDir) === 0) {
-        readfile($filePath);
-    } else {
-        // File not found or traversal attempt
-    }
-
-    // For includes, use an allow-list
-    $allowed_pages = ['home', 'about', 'contact'];
-    if (in_array($_GET['page'], $allowed_pages)) {
-        include($_GET['page'] . '.php');
-    }
-    ```
-  </Tab>
-  <Tab title="Python">
-    ##### Vulnerable Code Examples
-    **Example 1: Flask Static File Serving**
+    #### Vulnerable Scenario 1: A Document Download View
+    An endpoint allows users to download invoices by providing a filename.
     ```python
-    # A custom route to serve user-uploaded images
-    from flask import send_from_directory
-    @app.route('/uploads/<filename>')
-    def uploaded_file(filename):
-        # Filename is not sanitized
-        return send_from_directory('/app/uploads', filename)
-    ```
-    **Example 2: Reading a Configuration File**
-    ```python
-    # A script that reads a config file based on user input
-    config_name = request.args.get('config')
-    with open(f'configs/{config_name}.json', 'r') as f:
-        data = f.read()
-    ```
-    ##### Secure Code (Remediation)
-    Use `os.path.basename` to strip directory parts and `os.path.abspath` to resolve the path for validation.
-    ```python
+    # invoicing/views.py
     import os
+    from django.http import HttpResponse
+
+    def download_invoice(request, filename):
+        # DANGEROUS: The filename is directly concatenated to the base path.
+        # An attacker can request a URL like /invoices/download/../../../../etc/passwd
+        file_path = os.path.join('/var/www/invoices/', filename)
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as fh:
+                return HttpResponse(fh.read(), content_type="application/pdf")
+        # ...
+    ```
+
+    #### Vulnerable Scenario 2: Dynamic Template Loading
+    A feature loads a custom user theme template based on a cookie value.
+    ```python
+    # themes/utils.py
+    def load_user_theme(request):
+        theme_name = request.COOKIES.get('theme', 'default')
+        # DANGEROUS: The theme name is used to construct a path to an include file.
+        template_path = f"themes/{theme_name}.html"
+        return render_to_string(template_path)
+    ```
+
+    #### Mitigation and Best Practices
+    Never trust the filename. Use `os.path.basename` to strip any directory information. Then, construct the full path and use `os.path.abspath` to resolve it to its canonical form. Finally, check that this resolved path starts with the secure base directory's path.
+
+    #### Secure Code Example
+    ```python
+    # invoicing/views.py (Secure Version)
+    import os
+    from django.http import HttpResponse, Http404
+
+    def download_invoice(request, filename):
+        # Define the secure base directory where invoices are stored.
+        base_dir = os.path.abspath('/var/www/invoices/')
+        
+        # 1. Strip any directory traversal characters from the filename.
+        safe_filename = os.path.basename(filename)
+        
+        # 2. Construct the full path safely.
+        file_path = os.path.join(base_dir, safe_filename)
+        
+        # 3. Resolve the path to its absolute form and check if it's within the base directory.
+        if not os.path.abspath(file_path).startswith(base_dir):
+            raise Http404("Invalid path detected.")
+            
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as fh:
+                return HttpResponse(fh.read(), content_type="application/pdf")
+        else:
+            raise Http404("File not found.")
+    ```
+
+    #### Testing Strategy
+    Write integration tests that request files using path traversal payloads (`../`, `..%2f`, etc.). The tests should assert that the application returns a `404 Not Found` or `403 Forbidden` response, not the content of the targeted sensitive file.
+    ```python
+    # invoicing/tests.py
+    def test_path_traversal_attack_is_blocked(self):
+        # Attempt to access a file outside the intended directory
+        traversal_payload = "../../../../../etc/passwd"
+        url = reverse('download-invoice', args=[traversal_payload])
+        
+        response = self.client.get(url)
+        
+        # A secure implementation should detect the invalid path and return an error.
+        self.assertEqual(response.status_code, 404)
+    ```
+  </Tab>
+  <Tab title="Spring Boot (Java)">
+    #### Framework Context
+    Java's `File` and `Path` APIs provide the tools needed to prevent path traversal. The vulnerability occurs when developers neglect to canonicalize and validate user-provided path fragments.
+
+    #### Vulnerable Scenario 1: Log File Viewer
+    An admin endpoint allows viewing log files by passing a date-stamped filename.
+    ```java
+    // controller/AdminController.java
+    @GetMapping("/logs/{filename}")
+    public String getLogFile(@PathVariable String filename) throws IOException {
+        // DANGEROUS: The filename is directly appended to the log directory path.
+        Path logPath = Paths.get("/var/log/app/" + filename);
+        return Files.readString(logPath);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Serving User-Uploaded Content
+    A controller serves images from a user's personal storage directory.
+    ```java
+    // controller/FileController.java
+    @GetMapping("/{userId}/{imageName}")
+    public byte[] getImage(@PathVariable String userId, @PathVariable String imageName) throws IOException {
+        String path = UPLOAD_DIR + "/" + userId + "/" + imageName;
+        // DANGEROUS: A malicious imageName like "../../../system.properties"
+        // could be used to traverse directories.
+        return Files.readAllBytes(Paths.get(path));
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `java.nio.file.Path` to construct paths. After constructing the path, call `.normalize()` and `.toAbsolutePath()`. Then, check that the resulting absolute path `.startsWith()` the absolute path of the secure base directory.
+
+    #### Secure Code Example
+    ```java
+    // controller/AdminController.java (Secure Version)
+    import java.nio.file.Path;
+    import java.nio.file.Paths;
+
+    @GetMapping("/logs/{filename}")
+    public String getLogFile(@PathVariable String filename) throws IOException {
+        // Define the secure base directory
+        Path baseDir = Paths.get("/var/log/app/").toAbsolutePath();
+        
+        Path requestedPath = baseDir.resolve(filename).normalize();
+        
+        // CRITICAL CHECK: Ensure the normalized path is still within the base directory.
+        if (!requestedPath.startsWith(baseDir)) {
+            throw new SecurityException("Path Traversal attempt detected!");
+        }
+
+        if (Files.exists(requestedPath)) {
+            return Files.readString(requestedPath);
+        } else {
+            throw new FileNotFoundException("Log file not found.");
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write JUnit tests that call the endpoint with various traversal payloads. The tests should assert that a `SecurityException` or another appropriate error is thrown, preventing the file read operation.
+    ```java
+    // src/test/java/com/example/AdminControllerTest.java
+    @Test
+    void getLogFile_withTraversalPayload_shouldThrowException() {
+        String payload = "../../../../../etc/hostname";
+        
+        // Assert that the controller method throws an exception, preventing file access.
+        assertThrows(SecurityException.class, () -> {
+            adminController.getLogFile(payload);
+        });
+    }
+    ```
+  </Tab>
+  <Tab title="ASP.NET Core (C#)">
+    #### Framework Context
+    The `System.IO` namespace provides all the necessary tools for secure path handling. As in other frameworks, the vulnerability comes from developer error in concatenating strings rather than using these tools properly.
+
+    #### Vulnerable Scenario 1: A "Get File" Endpoint
+    An API allows retrieving a file from a public share by name.
+    ```csharp
+    // Controllers/FilesController.cs
+    [HttpGet("{fileName}")]
+    public IActionResult GetFile(string fileName)
+    {
+        // DANGEROUS: `Path.Combine` does not prevent traversal on its own.
+        // If fileName is "..\\..\\web.config", the path will resolve outside the share.
+        var filePath = Path.Combine("C:\\PublicShare", fileName);
+        if (!System.IO.File.Exists(filePath))
+        {
+            return NotFound();
+        }
+        return PhysicalFile(filePath, "application/octet-stream");
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Loading a User's Report Template
+    A service loads a report template file based on a user's department name.
+    ```csharp
+    // Services/ReportService.cs
+    public string LoadTemplate(string department)
+    {
+        string templatePath = $"./Templates/{department}/report.txt";
+        // DANGEROUS: If department is "../../secrets", it could read a secret file.
+        return File.ReadAllText(templatePath);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    The key is to combine path construction with validation. First, use `Path.GetFileName()` to strip any directory information from the user-supplied input. Then, use `Path.Combine()` to build the full path. Finally, get the full, absolute path with `Path.GetFullPath()` and verify it is inside the intended base directory.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/FilesController.cs (Secure Version)
+    [HttpGet("{fileName}")]
+    public IActionResult GetFile(string fileName)
+    {
+        var baseDir = Path.GetFullPath("C:\\PublicShare");
+        
+        // 1. Strip out any directory information from the input.
+        var safeFileName = Path.GetFileName(fileName);
+        
+        // 2. Combine it with the base directory.
+        var fullPath = Path.Combine(baseDir, safeFileName);
+        
+        // 3. Get the absolute path and verify it's still inside the base directory.
+        if (!Path.GetFullPath(fullPath).StartsWith(baseDir))
+        {
+            return Forbid("Attempted path traversal.");
+        }
+
+        if (!System.IO.File.Exists(fullPath))
+        {
+            return NotFound();
+        }
+        return PhysicalFile(fullPath, "application/octet-stream");
+    }
+    ```
     
-    base_dir = os.path.abspath('configs')
-    filename = os.path.basename(request.args.get('config')) # Strip path
-    full_path = os.path.join(base_dir, filename + '.json')
-    
-    # Check that the resolved path is still inside the base directory
-    if os.path.abspath(full_path).startswith(base_dir):
-        with open(full_path, 'r') as f:
-            data = f.read()
-    else:
-        # Traversal attempt
+    #### Testing Strategy
+    Write an integration test that sends a request to the endpoint with a traversal payload. Assert that the response is a `403 Forbidden` or `404 Not Found`, not a `200 OK` with file contents.
+    ```csharp
+    // Tests/FilesControllerTests.cs
+    [Fact]
+    public async Task GetFile_WithTraversalPayload_ShouldReturnForbidden()
+    {
+        var client = _factory.CreateClient();
+        var traversalPayload = "..%2F..%2Fappsettings.json"; // URL encoded ../
+        
+        var response = await client.GetAsync($"/api/files/{traversalPayload}");
+        
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+    ```
+  </Tab>
+  <Tab title="Laravel (PHP)">
+    #### Framework Context
+    PHP's file handling functions are powerful and low-level, making path traversal a common vulnerability if developers are not careful. Laravel provides helpers, but the core responsibility remains with the developer to validate paths.
+
+    #### Vulnerable Scenario 1: A Photo Gallery Endpoint
+    A controller serves images from a storage directory based on the URL.
+    ```php
+    // app/Http/Controllers/PhotoController.php
+    class PhotoController extends Controller
+    {
+        public function show($year, $photoName)
+        {
+            // DANGEROUS: The photoName is not sanitized.
+            // A request to /photos/2025/../../.env could expose credentials.
+            $path = storage_path("app/photos/{$year}/{$photoName}");
+            if (!file_exists($path)) {
+                abort(404);
+            }
+            return response()->file($path);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Using `include` for Localization
+    A feature includes a language file based on a user's cookie.
+    ```php
+    // app/Http/Middleware/LocalizationMiddleware.php
+    public function handle(Request $request, Closure $next)
+    {
+        $locale = $request->cookie('locale', 'en');
+        // DANGEROUS: If an attacker can set the cookie to "../.env",
+        // this could lead to a file inclusion vulnerability.
+        include resource_path("lang/{$locale}.php");
+        return $next($request);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use the `basename()` function on any user-supplied filename to strip out all directory information. After constructing the path, use `realpath()` to get the canonical path and check that it's within the intended base directory. For includes, use a hardcoded allow-list of valid values.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/PhotoController.php (Secure Version)
+    class PhotoController extends Controller
+    {
+        public function show($year, $photoName)
+        {
+            $baseDir = realpath(storage_path("app/photos/{$year}"));
+            if (!$baseDir) { abort(404); }
+
+            // 1. Strip any directory traversal from the user input.
+            $safePhotoName = basename($photoName);
+            
+            // 2. Construct the path.
+            $fullPath = $baseDir . DIRECTORY_SEPARATOR . $safePhotoName;
+            
+            // 3. Verify the final real path is within the allowed directory.
+            if (realpath($fullPath) && strpos(realpath($fullPath), $baseDir) === 0) {
+                return response()->file($fullPath);
+            }
+            
+            abort(404);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a feature test that makes a GET request to the endpoint with a traversal payload. Assert that the response status is `404 Not Found` or `403 Forbidden`.
+    ```php
+    // tests/Feature/PhotoSecurityTest.php
+    public function test_photo_endpoint_prevents_path_traversal()
+    {
+        $user = User::factory()->create();
+        $traversalPayload = '../../../../.env';
+        
+        $response = $this->actingAs($user)
+            ->get('/photos/2025/' . $traversalPayload);
+
+        $response->assertStatus(404);
+    }
+    ```
+  </Tab>
+  <Tab title="Express.js (Node.js)">
+    #### Framework Context
+    The built-in `path` module is essential for securely handling file paths in Node.js. Vulnerabilities are common when developers perform simple string concatenation instead of using `path.join`, `path.resolve`, and `path.normalize`.
+
+    #### Vulnerable Scenario 1: A Custom Static File Server
+    A simple server is written to serve files from a 'public' directory.
+    ```javascript
+    // server.js
+    const express = require('express');
+    const fs = require('fs');
+    const path = require('path');
+    const app = express();
+
+    app.get('/static/*', (req, res) => {
+        // DANGEROUS: req.params[0] contains the path after /static/.
+        // If the URL is /static/../../package.json, this will read the project's config file.
+        const filePath = path.join(__dirname, 'public', req.params[0]);
+        fs.readFile(filePath, (err, data) => {
+            if (err) return res.status(404).send('Not Found');
+            res.send(data);
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: An API to Fetch User Avatars
+    The API fetches an avatar based on a user ID and filename.
+    ```javascript
+    // routes/avatars.js
+    router.get('/:userId/:fileName', (req, res) => {
+        const { userId, fileName } = req.params;
+        const filePath = `./uploads/avatars/${userId}/${fileName}`;
+        // DANGEROUS: Both userId and fileName can contain `../`
+        res.sendFile(path.resolve(filePath));
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Always resolve paths to their absolute form and validate that they are within a secure base directory. The `path.normalize` and `path.resolve` functions are key. Never trust that `path.join` on its own is safe.
+
+    #### Secure Code Example
+    ```javascript
+    // server.js (Secure Version)
+    app.get('/static/*', (req, res) => {
+        const publicDir = path.resolve(__dirname, 'public');
+        const requestedFile = req.params[0];
+        
+        // Construct the full path and then resolve it to its canonical form
+        const fullPath = path.join(publicDir, requestedFile);
+        const resolvedPath = path.normalize(fullPath);
+        
+        // CRITICAL CHECK: Ensure the resolved path is still inside the public directory.
+        if (!resolvedPath.startsWith(publicDir)) {
+            return res.status(403).send('Forbidden: Access Denied');
+        }
+
+        fs.readFile(resolvedPath, (err, data) => {
+            if (err) return res.status(404).send('Not Found');
+            res.send(data);
+        });
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest and Supertest to make a request to the server with a traversal payload. Assert that the server responds with a `403 Forbidden` status code.
+    ```javascript
+    // tests/static.test.js
+    it('should block path traversal attempts', async () => {
+        const response = await request(app).get('/static/..%2f..%2fpackage.json'); // URL encoded ../../
+        
+        expect(response.statusCode).toBe(403);
+        expect(response.text).toContain('Forbidden');
+    });
     ```
   </Tab>
   <Tab title="Ruby on Rails">
-    ##### Vulnerable Code Examples
-    **Example 1: Rendering a Template by Name**
-    ```ruby
-    # The application renders a template based on a URL parameter
-    def show
-      render params[:page]
-    end
-    ```
-    **Example 2: Sending a File**
-    ```ruby
-    # Sending a file from a directory using user input
-    def download
-      send_file Rails.root.join('public', 'invoices', params[:filename])
-    end
-    ```
-    ##### Secure Code (Remediation)
-    Validate the input against a list of allowed templates or sanitize the filename.
-    ```ruby
-    # For rendering, use an allow-list
-    def show
-      allowed_pages = %w[about contact privacy]
-      if allowed_pages.include?(params[:page])
-        render params[:page]
-      else
-        render 'not_found', status: 404
-      end
-    end
+    #### Framework Context
+    Rails abstracts away most direct file system access, but vulnerabilities can still occur in controllers that send files (`send_file`) or in services that read files from disk based on user input.
 
-    # For sending files, sanitize the filename
-    def download
-      base_dir = Rails.root.join('public', 'invoices')
-      filename = File.basename(params[:filename]) # Strip directory info
-      path = base_dir.join(filename)
-      
-      # Verify the path is within the intended directory
-      if File.exist?(path) && path.to_s.start_with?(base_dir.to_s)
-        send_file path
-      else
-        render 'not_found', status: 404
+    #### Vulnerable Scenario 1: A Log Viewer
+    An admin controller that allows viewing different application log files by name.
+    ```ruby
+    # app/controllers/admin/logs_controller.rb
+    class Admin::LogsController < ApplicationController
+      def show
+        log_name = params[:id]
+        # DANGEROUS: The log name is directly joined to the logs directory path.
+        # An attacker can set id to "../../../config/database.yml"
+        log_path = Rails.root.join('log', "#{log_name}.log")
+        render plain: File.read(log_path)
       end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Sending User-Generated Reports
+    A feature that allows a user to download a report that was previously generated for them.
+    ```ruby
+    # app/controllers/reports_controller.rb
+    def download
+      report_id = params[:id]
+      # DANGEROUS: The report_id could be crafted to traverse directories.
+      file_path = "#{Rails.root}/private/reports/#{current_user.id}/#{report_id}.pdf"
+      send_file file_path
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Sanitize the user-provided filename part using `File.basename`. Construct the full path and then use `File.expand_path` to get its canonical form. Check that this expanded path is within the secure base directory.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/admin/logs_controller.rb (Secure Version)
+    class Admin::LogsController < ApplicationController
+      def show
+        base_dir = Rails.root.join('log').to_s
+        
+        # 1. Strip any directory components from the user input
+        safe_log_name = File.basename(params[:id])
+        
+        # 2. Construct the path
+        log_path = File.join(base_dir, "#{safe_log_name}.log")
+        
+        # 3. Canonicalize and verify the path is within the base directory
+        expanded_path = File.expand_path(log_path)
+        if !expanded_path.start_with?(base_dir)
+          render plain: "Error: Invalid log file.", status: :forbidden
+          return
+        end
+
+        render plain: File.read(expanded_path)
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec that attempts to access a sensitive file like `config/database.yml` using a traversal payload. The test should assert that the response is a `403 Forbidden` or `404 Not Found`.
+    ```ruby
+    # spec/requests/admin_logs_spec.rb
+    it "prevents path traversal when accessing logs" do
+      # URL encode the payload
+      traversal_payload = CGI.escape("../config/database.yml").gsub('.', '%2e')
+      
+      get admin_log_path(id: traversal_payload)
+      
+      expect(response).to have_http_status(:forbidden)
     end
     ```
   </Tab>

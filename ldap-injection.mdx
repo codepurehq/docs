@@ -1,184 +1,513 @@
 ---
 title: "LDAP Injection"
 sidebarTitle: "LDAP Injection"
-description: "Learn to prevent LDAP Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
+description: "Architectural examples and mitigation for LDAP Injection in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "address-book"
 iconType: "solid"
 ---
 
 ## Overview
-LDAP Injection is an attack technique used to exploit web applications that construct LDAP (Lightweight Directory Access Protocol) statements from user-supplied input. When an application fails to properly sanitize user input, an attacker can modify the LDAP statement, potentially leading to unauthorized access, information disclosure, or modification of data stored in the LDAP directory.
+LDAP Injection is an attack that exploits applications that construct LDAP (Lightweight Directory Access Protocol) queries from user-supplied input. If an application fails to sanitize this input, an attacker can inject LDAP metacharacters (`*`, `(`, `)`, `&`, `|`, etc.) to modify the query. This can lead to bypassing authentication, escalating privileges, or disclosing sensitive information from the directory.
 
 ## Business Impact
-A successful LDAP Injection attack can allow attackers to bypass authentication, gain elevated privileges, and view or modify sensitive user information (like usernames, passwords, and permissions) within the directory, which often serves as a central authentication system for an organization.
+Since LDAP directories are often the central source of truth for user authentication and authorization in an enterprise, a successful LDAP Injection attack can be catastrophic. It can allow an attacker to bypass login controls for critical applications, grant themselves administrative privileges, or exfiltrate the entire corporate user directory.
 
-<Card title="Reference Details" icon="book-open" iconType="solid">
+<Card title="Reference Details" icon="book-open" iconType: "solid">
   **CWE ID:** [CWE-90](https://cwe.mitre.org/data/definitions/90.html)
   **OWASP Top 10 (2021):** A03:2021 - Injection
   **Severity:** High
 </Card>
 
-## Remediation by Language
-The primary defense against LDAP Injection is to **never** build LDAP queries by concatenating user-supplied input. Instead, use a framework or library that provides a mechanism to safely escape LDAP special characters in user input or supports parameterized LDAP queries.
+## Framework-Specific Analysis and Remediation
+The core of LDAP Injection is identical to SQL Injection: mixing untrusted data with code (in this case, the LDAP filter syntax). The universal defense is to **always escape or sanitize user-supplied input** before it is placed within an LDAP filter. All special characters in the input must be properly escaped so they are treated as literal values, not as operators.
 
 <Tabs>
-  <Tab title="Java">
-    ##### Vulnerable Code Examples
-    **Example 1: User Authentication**
-    ```java
-    // The username is directly concatenated into the LDAP filter
-    String filter = "(&(uid=" + username + ")(userPassword=" + password + "))";
-    ctx.search("ou=users,dc=example,dc=com", filter, new SearchControls());
-    // Attacker can use username: "admin)(uid=*" to bypass password check
-    ```
-    **Example 2: User Search Feature**
-    ```java
-    // A search filter is built from user input
-    String search = request.getParameter("userSearch");
-    String filter = "(cn=" + search + ")";
-    ctx.search("ou=people,dc=example,dc=com", filter, new SearchControls());
-    ```
-    ##### Secure Code (Remediation)
-    Escape all user-supplied input before including it in an LDAP filter.
-    ```java
-    import org.owasp.esapi.ESAPI;
-    
-    // Use a library to escape special LDAP characters
-    String safeUsername = ESAPI.encoder().encodeForLDAP(username);
-    String filter = "(&(uid=" + safeUsername + ")(userPassword=" + password + "))";
-    // Or even better, use parameterized queries if the framework supports it.
-    ```
-  </Tab>
-  <Tab title=".NET (C#)">
-    ##### Vulnerable Code Examples
-    **Example 1: Login Check**
-    ```csharp
-    // Building the filter string manually
-    string filter = "(&(sAMAccountName=" + username + ")(userPassword=" + password + "))";
-    var searcher = new DirectorySearcher(entry, filter);
-    SearchResult result = searcher.FindOne();
-    ```
-    **Example 2: Finding a User's Manager**
-    ```csharp
-    // The 'user' parameter is not escaped
-    string user = Request.QueryString["user"];
-    string filter = "(member=" + user + ")";
-    var searcher = new DirectorySearcher(entry, filter);
-    ```
-    ##### Secure Code (Remediation)
-    Sanitize the input to escape LDAP special characters: `\`, `*`, `(`, `)`, and the null character.
-    ```csharp
-    public static string SanitizeLdapSearchFilter(string filter)
-    {
-        return filter.Replace("\\", "\\5c")
-                     .Replace("*", "\\2a")
-                     .Replace("(", "\\28")
-                     .Replace(")", "\\29")
-                     .Replace("\0", "\\00");
-    }
+  <Tab title="Django (Python)">
+    #### Framework Context
+    Django applications typically use the `python-ldap` library for LDAP integration. This library provides a utility for escaping, but developers often forget to use it when building filters manually.
 
-    string safeUsername = SanitizeLdapSearchFilter(username);
-    string filter = "(&(sAMAccountName=" + safeUsername + ")(userPassword=" + password + "))";
-    ```
-  </Tab>
-  <Tab title="Node.js">
-    ##### Vulnerable Code Examples
-    **Example 1: Authenticating with `ldapjs`**
-    ```javascript
-    // The search filter is created via string concatenation
-    const opts = {
-      filter: '(&(cn=' + req.body.username + ')(password=' + req.body.password + '))',
-      scope: 'sub'
-    };
-    client.search('ou=users, o=myhost', opts, (err, res) => { /* ... */ });
-    ```
-    **Example 2: Looking up a User by Email**
-    ```javascript
-    const email = req.query.email;
-    const searchOptions = { filter: `(mail=${email})`, scope: 'sub' };
-    ```
-    ##### Secure Code (Remediation)
-    Use a library that provides escaping functionality, or manually escape the input.
-    ```javascript
-    const ldap_escape = require('ldap-escape'); // Using a third-party library
+    #### Vulnerable Scenario 1: User Authentication
+    A custom authentication backend attempts to bind to an LDAP server by constructing a filter from the username.
+    ```python
+    # myapp/auth.py
+    import ldap
 
-    const opts = {
-      filter: `(&(cn=${ldap_escape.filter(req.body.username)})(password=${req.body.password}))`,
-      scope: 'sub'
-    };
+    def authenticate_user(username, password):
+        conn = ldap.initialize('ldap://ldap.example.com')
+        # DANGEROUS: The username is directly formatted into the filter.
+        # Payload for username: "admin)(uid=*" - this filter becomes "(&(uid=admin)(uid=*)(userPassword=...))"
+        # If 'admin' is a valid user, this can bypass the password check.
+        search_filter = f"(&(uid={username})(userPassword={password}))"
+        try:
+            conn.simple_bind_s(f"uid={username},ou=users,dc=example,dc=com", password)
+            # A search might be performed here
+            return True
+        except ldap.INVALID_CREDENTIALS:
+            return False
     ```
-  </Tab>
-  <Tab title="PHP">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `ldap_search`**
-    ```php
-    // The username from a form is directly included in the filter
-    $filter = "(uid=" . $_POST['username'] . ")";
-    $result = ldap_search($ds, "ou=people, dc=example, dc=com", $filter);
-    ```
-    **Example 2: Group Membership Check**
-    ```php
-    // The group name is not escaped
-    $group = $_GET['group'];
-    $filter = "(&(objectClass=groupOfNames)(cn=" . $group . "))";
-    ```
-    ##### Secure Code (Remediation)
-    Use `ldap_escape()` to sanitize the input before building the filter.
-    ```php
-    // The LDAP_ESCAPE_FILTER flag is for filter strings
-    $safe_username = ldap_escape($_POST['username'], "", LDAP_ESCAPE_FILTER);
-    $filter = "(uid=" . $safe_username . ")";
-    $result = ldap_search($ds, "ou=people, dc=example, dc=com", $filter);
-    ```
-  </Tab>
-  <Tab title="Python">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `python-ldap` to search**
+
+    #### Vulnerable Scenario 2: Employee Search Feature
+    An internal portal allows searching for employees by their common name (cn).
     ```python
-    # The filter is built with f-string formatting
-    username = request.form.get('username')
-    search_filter = f"(uid={username})"
-    ldap_conn.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter)
+    # employees/views.py
+    def search_employees(request):
+        name = request.GET.get('name')
+        # DANGEROUS: An attacker can use a wildcard to dump all users.
+        # Payload: "*" which makes the filter "(cn=*)"
+        search_filter = f"(cn={name})"
+        results = conn.search_s('ou=people,dc=example,dc=com', ldap.SCOPE_SUBTREE, search_filter)
+        # ...
     ```
-    **Example 2: Authenticating a User**
+
+    #### Mitigation and Best Practices
+    Use the `ldap.filter.escape_filter_chars()` function on all user input that will be part of an LDAP filter. This correctly escapes special characters like `*`, `(`, `)`, `\`, etc.
+
+    #### Secure Code Example
     ```python
-    password = request.form.get('password')
-    search_filter = f"(&(uid={username})(userPassword={password}))"
-    ```
-    ##### Secure Code (Remediation)
-    Use the built-in `ldap.filter.escape_filter_chars()` function to sanitize all user input.
-    ```python
+    # myapp/auth.py (Secure Version)
+    import ldap
     import ldap.filter
 
-    username = request.form.get('username')
-    safe_username = ldap.filter.escape_filter_chars(username)
-    search_filter = f"(uid={safe_username})"
-    ldap_conn.search_s(base_dn, ldap.SCOPE_SUBTREE, search_filter)
+    def authenticate_user(username, password):
+        conn = ldap.initialize('ldap://ldap.example.com')
+        
+        # SAFE: The username is escaped before being used in the filter.
+        # The payload "admin)(uid=*" would be transformed into a harmless literal string.
+        safe_username = ldap.filter.escape_filter_chars(username)
+        search_filter = f"(&(uid={safe_username})(userPassword={password}))"
+        
+        # For authentication, binding is generally safer than searching.
+        try:
+            # Note: Storing and checking plain-text passwords in LDAP is a bad practice itself.
+            # This is for demonstrating the injection fix.
+            conn.simple_bind_s(f"uid={safe_username},ou=users,dc=example,dc=com", password)
+            return True
+        except ldap.INVALID_CREDENTIALS:
+            return False
+    ```
+
+    #### Testing Strategy
+    Write unit tests for the authentication/search function. Pass payloads containing LDAP metacharacters (e.g., `testuser*`, `admin)(uid=*`, `*`) and assert that the function behaves as expected (e.g., fails authentication, returns no results) rather than executing the modified filter.
+    ```python
+    # employees/tests.py
+    def test_ldap_search_injection(self):
+        # Mock the `python-ldap` library's search method
+        with patch('ldap.ldapobject.SimpleLDAPObject.search_s') as mock_search:
+            search_employees_with_payload("*") # A helper that calls the view logic
+            
+            # The test should assert that the filter passed to the real search
+            # method contains the correctly escaped string, not the raw wildcard.
+            called_filter = mock_search.call_args[0][2]
+            self.assertEqual(called_filter, "(cn=\\2a)") # `*` is escaped to `\2a`
     ```
   </Tab>
-  <Tab title="Ruby">
-    ##### Vulnerable Code Examples
-    **Example 1: Using `net-ldap`**
-    ```ruby
-    # The filter is constructed with string interpolation
-    filter = Net::LDAP::Filter.construct("(&(uid=#{params[:username]})(userPassword=#{params[:password]}))")
-    ldap.search(base: base_dn, filter: filter)
-    ```
-    **Example 2: User Lookup**
-    ```ruby
-    email = params[:email]
-    filter_str = "(mail=#{email})"
-    ```
-    ##### Secure Code (Remediation)
-    Manually escape the special characters according to RFC 4515.
-    ```ruby
-    def escape_ldap_filter(str)
-      str.gsub(/([\(\)\*\\])/) { |char| "\\#{char.unpack('H2').first}" }
-    end
+  <Tab title="Spring Boot (Java)">
+    #### Framework Context
+    Applications using Spring LDAP need to be careful when constructing `LdapQuery` objects. While the query builder is generally safe, manual filter construction is a common source of vulnerabilities.
 
-    safe_username = escape_ldap_filter(params[:username])
-    filter = Net::LDAP::Filter.construct("(&(uid=#{safe_username})(userPassword=#{params[:password]}))")
-    ldap.search(base: base_dn, filter: filter)
+    #### Vulnerable Scenario 1: A "Forgot Password" Email Lookup
+    A service looks up a user by email address to send a password reset link.
+    ```java
+    // service/LdapUserService.java
+    import org.springframework.ldap.core.LdapTemplate;
+
+    @Service
+    public class LdapUserService {
+        @Autowired private LdapTemplate ldapTemplate;
+
+        public boolean userExists(String email) {
+            // DANGEROUS: The email is directly concatenated into the filter.
+            // An attacker can use "test@test.com)(mail=*" to check for the existence
+            // of any user if the first part of the query fails.
+            String filter = "(&(objectClass=person)(mail=" + email + "))";
+            return !ldapTemplate.search("", filter, (Object ctx) -> null).isEmpty();
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Role-Based Access Control Check
+    A method checks if a user is a member of a specific group.
+    ```java
+    // service/AuthorizationService.java
+    public boolean isUserInGroup(String username, String group) {
+        // DANGEROUS: Both username and group are unsanitized.
+        String filter = "(&(objectClass=groupOfNames)(cn=" + group + ")(member=uid=" + username + ",ou=users,dc=example,dc=com))";
+        // ... perform search ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use Spring LDAP's query builder (`LdapQueryBuilder`) which provides a fluent API for building filters safely. If you must construct a filter string manually, use a library like OWASP ESAPI to encode the user input for LDAP.
+
+    #### Secure Code Example
+    ```java
+    // service/LdapUserService.java (Secure Version)
+    import org.springframework.ldap.query.LdapQueryBuilder;
+    import org.springframework.ldap.query.LdapQuery;
+
+    @Service
+    public class LdapUserService {
+        @Autowired private LdapTemplate ldapTemplate;
+
+        public boolean userExists(String email) {
+            // SAFE: The query builder handles proper escaping of the value.
+            LdapQuery query = LdapQueryBuilder.query()
+                .attributes("dn")
+                .where("objectClass").is("person")
+                .and("mail").is(email);
+
+            return !ldapTemplate.search(query, (Object ctx) -> null).isEmpty();
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write JUnit tests for the service layer. The tests should pass malicious payloads to the methods and assert that the generated LDAP filter (which can be captured with a mocking framework like Mockito) is correctly escaped or that the method fails gracefully.
+    ```java
+    // src/test/java/com/example/LdapUserServiceTest.java
+    @Test
+    void userExists_withLdapInjectionPayload_shouldBeSafe() {
+        LdapTemplate mockLdapTemplate = mock(LdapTemplate.class);
+        LdapUserService service = new LdapUserService(mockLdapTemplate);
+        
+        String payload = "a)(mail=*";
+        service.userExists(payload);
+        
+        // Use an ArgumentCaptor to capture the filter string passed to the mock
+        ArgumentCaptor<LdapQuery> queryCaptor = ArgumentCaptor.forClass(LdapQuery.class);
+        verify(mockLdapTemplate).search(queryCaptor.capture(), any(NameClassPairMapper.class));
+        
+        // Assert that the generated filter string is properly escaped.
+        String actualFilter = queryCaptor.getValue().filter().encode();
+        assertEquals("(&(objectClass=person)(mail=a\\29\\28mail=\\2a))", actualFilter);
+    }
+    ```
+  </Tab>
+  <Tab title="ASP.NET Core (C#)">
+    #### Framework Context
+    When using `System.DirectoryServices.Protocols`, developers are responsible for constructing LDAP filters. This manual construction is where injection vulnerabilities can occur.
+
+    #### Vulnerable Scenario 1: User Login
+    An authentication service builds a filter string to find the user in Active Directory.
+    ```csharp
+    // Services/LdapAuthService.cs
+    using System.DirectoryServices.Protocols;
+
+    public bool Authenticate(string username, string password)
+    {
+        using var connection = new LdapConnection("ldap.example.com");
+        // DANGEROUS: The username is concatenated directly.
+        // Payload for username: "administrator)(&))"
+        string filter = $"(&(objectClass=user)(sAMAccountName={username}))";
+        var searchRequest = new SearchRequest("dc=example,dc=com", filter, SearchScope.Subtree, null);
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Searching for Users
+    An HR tool searches for users by their display name.
+    ```csharp
+    // Repositories/UserRepository.cs
+    public User FindByDisplayName(string name)
+    {
+        string filter = "(displayName=" + name + ")";
+        // DANGEROUS: A payload of "*" would return all users.
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    There is no built-in LDAP escaping function in the standard .NET libraries. You must write a utility function to escape the special LDAP characters `\`, `*`, `(`, `)`, and the null character `\0` according to RFC 4515.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/LdapAuthService.cs (Secure Version)
+    public class LdapAuthService
+    {
+        private string EscapeLdapFilter(string value)
+        {
+            // RFC 4515 compliant escaping
+            return value.Replace("\\", "\\5c")
+                        .Replace("*", "\\2a")
+                        .Replace("(", "\\28")
+                        .Replace(")", "\\29")
+                        .Replace("\0", "\\00");
+        }
+
+        public bool Authenticate(string username, string password)
+        {
+            using var connection = new LdapConnection("ldap.example.com");
+            
+            // SAFE: The username is sanitized before being used in the filter.
+            string safeUsername = EscapeLdapFilter(username);
+            string filter = $"(&(objectClass=user)(sAMAccountName={safeUsername}))";
+            
+            var searchRequest = new SearchRequest("dc=example,dc=com", filter, SearchScope.Subtree, null);
+            // ...
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write xUnit tests for the sanitization function itself to ensure it correctly escapes all special characters. Then, write tests for the authentication service that pass malicious usernames and assert that the login fails.
+    ```csharp
+    // Tests/LdapAuthServiceTests.cs
+    [Theory]
+    [InlineData("test*user", "test\\2auser")]
+    [InlineData("user(name)", "user\\28name\\29")]
+    public void EscapeLdapFilter_ShouldCorrectlyEscapeChars(string input, string expected)
+    {
+        var service = new LdapAuthService(); // Assuming the method is public for testing
+        // Use reflection if the method is private, or test the public method that uses it.
+        string actual = service.EscapeLdapFilter(input);
+        Assert.Equal(expected, actual);
+    }
+    ```
+  </Tab>
+  <Tab title="Laravel (PHP)">
+    #### Framework Context
+    When using PHP's built-in LDAP functions or a library like `LdapRecord-Laravel`, the key to security is sanitizing input before it becomes part of a filter.
+
+    #### Vulnerable Scenario 1: Authenticating a User
+    A custom authentication guard builds a raw LDAP filter.
+    ```php
+    // app/Auth/LdapUserProvider.php
+    use LdapRecord\Connection;
+
+    class LdapUserProvider implements UserProvider
+    {
+        public function retrieveByCredentials(array $credentials)
+        {
+            $username = $credentials['username'];
+            // DANGEROUS: The username is inserted directly into the filter.
+            $filter = "(&(objectClass=person)(uid={$username}))";
+            
+            $connection = new Connection(/* ... */);
+            $results = $connection->query()->rawFilter($filter)->get();
+            // ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A "Find My Manager" Feature
+    The application searches the LDAP directory to find who a user reports to.
+    ```php
+    // app/Services/DirectoryService.php
+    public function findManager(string $userDn)
+    {
+        // DANGEROUS: A specially crafted user DN could modify the query.
+        $filter = "(directReports={$userDn})";
+    }
+    ```
+    
+    #### Mitigation and Best Practices
+    Use PHP's `ldap_escape()` function on all user-supplied data before incorporating it into a filter. If using the `LdapRecord` library, use its fluent query builder, which handles escaping automatically.
+
+    #### Secure Code Example
+    ```php
+    // app/Auth/LdapUserProvider.php (Secure Version using LdapRecord)
+    use LdapRecord\Models\ActiveDirectory\User;
+    
+    class LdapUserProvider implements UserProvider
+    {
+        public function retrieveByCredentials(array $credentials)
+        {
+            // SAFE: LdapRecord's query builder automatically escapes values.
+            return User::where('uid', '=', $credentials['username'])->first();
+        }
+    }
+
+    // Secure Version using native PHP ldap_escape()
+    public function retrieveWithNativePhp(array $credentials)
+    {
+        $username = $credentials['username'];
+        // SAFE: The input is escaped for use in a filter.
+        $safeUsername = ldap_escape($username, '', LDAP_ESCAPE_FILTER);
+        $filter = "(&(objectClass=person)(uid={$safeUsername}))";
+        // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Write a PHPUnit test that attempts to authenticate or search with a malicious username. Mock the LDAP connection and assert that the filter string sent to the LDAP library is correctly escaped.
+    ```php
+    // tests/Unit/LdapUserProviderTest.php
+    public function test_ldap_filter_is_escaped()
+    {
+        // This test requires mocking the LdapRecord Connection or native ldap_search
+        $provider = new LdapUserProvider();
+        $payload = 'user*';
+        
+        // When calling the provider with the payload, we'd capture the
+        // filter that gets generated and assert that it has been escaped to
+        // something like "(uid=user\2a)".
+        // This is complex and requires deep mocking.
+        
+        // A simpler test for the native version:
+        $safeUsername = ldap_escape($payload, '', LDAP_ESCAPE_FILTER);
+        $this->assertEquals('user\2a', $safeUsername);
+    }
+    ```
+  </Tab>
+  <Tab title="Express.js (Node.js)">
+    #### Framework Context
+    Node.js applications typically use libraries like `ldapjs` or `activedirectory2`. The security depends on whether the developer builds filters manually or uses safe, built-in methods.
+
+    #### Vulnerable Scenario 1: A User Login Endpoint
+    An authentication route constructs an LDAP filter using a template literal.
+    ```javascript
+    // routes/auth.js
+    const ldap = require('ldapjs');
+    const client = ldap.createClient({ url: 'ldap://ldap.example.com' });
+
+    router.post('/login', (req, res) => {
+        const { username, password } = req.body;
+        // DANGEROUS: The username is directly embedded in the filter string.
+        const opts = {
+            filter: `(&(uid=${username})(userPassword=${password}))`,
+            scope: 'sub'
+        };
+        // ... perform search ...
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: Search API
+    An API for searching for users by department.
+    ```javascript
+    // routes/users.js
+    router.get('/search', (req, res) => {
+        const { department } = req.query;
+        const opts = {
+            filter: `(department=${department})`,
+            scope: 'sub'
+        };
+        // ... perform search ...
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Use a library specifically designed for escaping LDAP filters, such as `ldap-escape`. Alternatively, if the LDAP library provides a filter builder (like `ldapjs`'s `Filter` objects), use that instead of raw strings.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/auth.js (Secure Version)
+    const ldap = require('ldapjs');
+    const escape = require('ldap-escape').filter; // Import the filter escape function
+
+    router.post('/login', (req, res) => {
+        const { username, password } = req.body;
+        
+        // SAFE: The username is escaped before being used in the filter.
+        const safeUsername = escape(username);
+        const opts = {
+            filter: `(&(uid=${safeUsername})(userPassword=${password}))`,
+            scope: 'sub'
+        };
+        // ... perform search ...
+    });
+    ```
+
+    #### Testing Strategy
+    Write Jest tests that call your authentication or search logic with malicious input. Mock the `ldapjs` client's `search` method and use an argument captor to inspect the `filter` string that was passed to it, asserting that it contains the properly escaped characters.
+    ```javascript
+    // tests/auth.test.js
+    const authLogic = require('../services/authService'); // Assume logic is refactored
+    const ldapClient = require('ldapjs').createClient();
+
+    jest.mock('ldapjs'); // Mock the library
+
+    it('should escape LDAP metacharacters in username', () => {
+        const mockSearch = jest.fn();
+        ldapClient.search = mockSearch;
+        
+        authLogic.authenticate('test*user', 'password123', ldapClient);
+        
+        const calledFilter = mockSearch.mock.calls[0][1].filter;
+        expect(calledFilter).toContain('(uid=test\\2auser)');
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby on Rails">
+    #### Framework Context
+    Rails applications often use the `net-ldap` gem for LDAP communication. The gem itself does not provide automatic escaping, so the developer is responsible for sanitizing input before building filter strings.
+
+    #### Vulnerable Scenario 1: A Session Controller for Authentication
+    A controller authenticates a user against an LDAP directory.
+    ```ruby
+    # app/controllers/sessions_controller.rb
+    require 'net/ldap'
+
+    class SessionsController < ApplicationController
+      def create
+        ldap = Net::LDAP.new host: 'ldap.example.com'
+        username = params[:session][:username]
+        # DANGEROUS: The username is interpolated directly into the filter.
+        filter = Net::LDAP::Filter.eq("uid", username) # This is deceptive, it can be unsafe if not handled carefully
+        filter_string = "(&(objectClass=person)(uid=#{username}))"
+        
+        if ldap.bind_as(base: "ou=people,dc=example,dc=com", filter: filter_string, password: params[:session][:password])
+          # successful bind
+        else
+          # failed bind
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Admin User Lookup
+    An admin feature looks up a user's full DN based on their email.
+    ```ruby
+    # app/services/ldap_lookup_service.rb
+    def find_user_by_email(email)
+      filter = Net::LDAP::Filter.construct("(mail=#{email})")
+      # ...
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Manually escape LDAP filter metacharacters for all user input according to RFC 4515. There is no standard, built-in escape function in `net-ldap`, so a helper method is the best approach.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/sessions_controller.rb (Secure Version)
+    class SessionsController < ApplicationController
+      def create
+        ldap = Net::LDAP.new host: 'ldap.example.com'
+        username = params[:session][:username]
+        
+        # SAFE: The input is passed through a sanitization method.
+        safe_username = escape_ldap_filter(username)
+        filter_string = "(&(objectClass=person)(uid=#{safe_username}))"
+        
+        if ldap.bind_as(base: "ou=people,dc=example,dc=com", filter: filter_string, password: params[:session][:password])
+          # ...
+        end
+      end
+
+      private
+
+      def escape_ldap_filter(str)
+        # Escapes special characters for use in an LDAP filter.
+        str.gsub(/([\(\)\*\\])/) { |char| "\\#{char.unpack('H2').first}" }
+      end
+    end
+    ```
+    
+    #### Testing Strategy
+    Write RSpec tests for the helper method to ensure it correctly escapes all special characters. Then, write a controller spec that mocks the `Net::LDAP` object and verifies that the filter string passed to the `bind_as` method is the correctly escaped version of the malicious input.
+    ```ruby
+    # spec/controllers/sessions_controller_spec.rb
+    describe SessionsController, type: :controller do
+      it "properly escapes LDAP filters during authentication" do
+        ldap_connection = instance_double(Net::LDAP)
+        allow(Net::LDAP).to receive(:new).and_return(ldap_connection)
+        
+        # Expect the bind_as method to be called with an escaped filter
+        expected_filter = "(&(objectClass=person)(uid=test\\2auser))"
+        expect(ldap_connection).to receive(:bind_as).with(hash_including(filter: expected_filter)).and_return(true)
+        
+        post :create, params: { session: { username: "test*user", password: "pw" } }
+      end
+    end
     ```
   </Tab>
 </Tabs>
