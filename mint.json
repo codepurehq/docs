@@ -10,10 +10,6 @@
   "primary": "#2563EB",
   "light": "#2563EB",
   "dark": "#3B82F6",
-  "background": {
-    "light": "#3b71ca",
-    "dark": "#0e0a32"
-  },
   "anchors": {
     "from": "#2563EB",
     "to": "#3B82F6"
