@@ -7,14 +7,18 @@
   },
   "favicon": "/logo/Asset 7@2x-8.png",
   "colors": {
-    "primary": "#3b71ca",
-    "light": "#3b71ca",
-    "dark": "#69a9de",
-    "anchors": {
-      "from": "#3b71ca",
-      "to": "#69a9de"
-    }
+  "primary": "#2563EB",
+  "light": "#2563EB",
+  "dark": "#3B82F6",
+  "background": {
+    "light": "#FFFFFF",
+    "dark": "#0D1117"
   },
+  "anchors": {
+    "from": "#2563EB",
+    "to": "#3B82F6"
+  }
+},
   "topbarLinks": [
     {
       "name": "Support",
