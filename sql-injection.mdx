@@ -3,92 +3,166 @@ title: "SQL Injection (SQLi)"
 sidebarTitle: "SQL Injection"
 description: "Learn to prevent SQL Injection in Java, .NET, Node.js, PHP, Python, and Ruby."
 icon: "database"
+iconType: "solid"
 ---
 
 ## Overview
-SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. It generally allows an attacker to view data that they are not normally able to retrieve.
+SQL Injection is a web security vulnerability that allows an attacker to interfere with the queries that an application makes to its database. By inserting malicious SQL statements into an entry field, an attacker can bypass authentication, view, modify, or delete data, and in some cases, gain full control of the database server.
 
 ## Business Impact
-A successful SQLi attack can result in the complete compromise of the database, including unauthorized access to sensitive data, data modification or deletion, and potentially shell access to the server.
+A successful SQLi attack can result in the complete compromise of the database, leading to unauthorized access to sensitive data (passwords, PII, financial records), data modification or deletion, and potentially remote code execution on the database server.
 
-<Card title="Reference Details" icon="book-open">
+<Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-89](https://cwe.mitre.org/data/definitions/89.html)
   **OWASP Top 10 (2021):** A03:2021 - Injection
   **Severity:** Critical
 </Card>
 
 ## Remediation by Language
-The primary defense against SQL Injection is the use of parameterized queries (prepared statements). Below are examples of how to implement this control in various languages.
+The primary defense against SQL Injection is the use of parameterized queries (also known as prepared statements). This practice separates the SQL query structure from the data, ensuring that user-supplied input is always treated as data and never as executable code.
 
 <Tabs>
   <Tab title="Java">
-    **Insecure (Bad Practice):**
-    ```java Vulnerable.java
-    String query = "SELECT * FROM users WHERE username = '" + username + "'";
+    ##### Vulnerable Code Examples
+    **Example 1: Authentication Bypass**
+    ```java
+    // User input from a login form is directly concatenated into the query
+    String query = "SELECT * FROM users WHERE username = '" + username + "' AND password = '" + password + "'";
     Statement statement = connection.createStatement();
     ResultSet rs = statement.executeQuery(query);
     ```
-    **Secure (Remediation):**
-    ```java Secure.java
-    String query = "SELECT * FROM users WHERE username = ?";
+    **Example 2: Data Retrieval from URL Parameter**
+    ```java
+    // A product ID from a GET request is used to build the query
+    String productId = request.getParameter("productId");
+    String query = "SELECT * FROM products WHERE id = " + productId; // Numeric input is still vulnerable
+    Statement statement = connection.createStatement();
+    ResultSet rs = statement.executeQuery(query);
+    ```
+    ##### Secure Code (Remediation)
+    Use `PreparedStatement` to parameterize all user-supplied input.
+    ```java
+    String query = "SELECT * FROM users WHERE username = ? AND password = ?";
     PreparedStatement statement = connection.prepareStatement(query);
     statement.setString(1, username);
+    statement.setString(2, password);
     ResultSet rs = statement.executeQuery();
     ```
   </Tab>
   <Tab title=".NET (C#)">
-    **Insecure (Bad Practice):**
+    ##### Vulnerable Code Examples
+    **Example 1: User Profile Search**
     ```csharp
-    var command = new SqlCommand("SELECT * FROM Users WHERE UserId = " + userId);
+    // User-supplied search term is concatenated
+    string searchTerm = Request.QueryString["search"];
+    var command = new SqlCommand("SELECT * FROM UserProfiles WHERE bio LIKE '%" + searchTerm + "%'");
     ```
-    **Secure (Remediation):**
+    **Example 2: Ordering Results**
     ```csharp
-    var command = new SqlCommand("SELECT * FROM Users WHERE UserId = @UserId");
-    command.Parameters.AddWithValue("@UserId", userId);
+    // Column name for sorting is taken directly from user input
+    string sortBy = Request.QueryString["sort"];
+    var command = new SqlCommand("SELECT * FROM products ORDER BY " + sortBy); // Also vulnerable
+    ```
+    ##### Secure Code (Remediation)
+    Use parameterized queries with `SqlCommand` and `SqlParameter`. For dynamic ordering, validate the input against an allow-list of valid column names.
+    ```csharp
+    // For data parameters
+    var command = new SqlCommand("SELECT * FROM UserProfiles WHERE Bio LIKE @SearchTerm");
+    command.Parameters.AddWithValue("@SearchTerm", "%" + searchTerm + "%");
+    
+    // For sorting (allow-list approach)
+    string[] allowedColumns = { "price", "name", "category" };
+    if (allowedColumns.Contains(sortBy)) {
+        var sortCommand = new SqlCommand("SELECT * FROM products ORDER BY " + sortBy);
+    }
     ```
   </Tab>
   <Tab title="Node.js">
-    **Insecure (Bad Practice):**
+    ##### Vulnerable Code Examples
+    **Example 1: Direct String Interpolation**
     ```javascript
-    const query = "SELECT * FROM users WHERE id = " + userId;
+    // User input is directly placed in a template literal
+    const query = `SELECT * FROM invoices WHERE user_id = '${req.user.id}' AND invoice_num = '${req.params.invoiceNum}'`;
     db.query(query);
     ```
-    **Secure (Remediation):**
+    **Example 2: Insecure Library Usage**
     ```javascript
-    db.query("SELECT * FROM users WHERE id = ?", [userId]);
+    // Some libraries might offer insecure convenience methods
+    const query = "SELECT * FROM users WHERE id = " + req.params.id;
+    db.query(query);
+    ```
+    ##### Secure Code (Remediation)
+    Use the placeholder syntax (`?`) provided by your database driver (e.g., `mysql`, `pg`).
+    ```javascript
+    db.query("SELECT * FROM invoices WHERE user_id = ? AND invoice_num = ?", [req.user.id, req.params.invoiceNum]);
     ```
   </Tab>
   <Tab title="PHP">
-    **Insecure (Bad Practice):**
+    ##### Vulnerable Code Examples
+    **Example 1: Using `$_GET` Directly**
     ```php
-    $query = "SELECT * FROM users WHERE username = '" . $username . "'";
+    // The 'id' parameter from the URL is used directly
+    $query = "SELECT * FROM articles WHERE id = " . $_GET['id'];
     $result = mysqli_query($conn, $query);
     ```
-    **Secure (Remediation):**
+    **Example 2: Concatenating `$_POST` Variables**
     ```php
-    $stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
-    $stmt->bind_param("s", $username);
+    // Login credentials from a form are concatenated
+    $query = "SELECT id FROM users WHERE username = '" . $_POST['username'] . "' AND password = '" . $_POST['password'] . "'";
+    $result = mysqli_query($conn, $query);
+    ```
+    ##### Secure Code (Remediation)
+    Use prepared statements with PDO or MySQLi.
+    ```php
+    // Using PDO
+    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = :id");
+    $stmt->execute(['id' => $_GET['id']]);
+    $article = $stmt->fetch();
+    
+    // Using MySQLi
+    $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? AND password = ?");
+    $stmt->bind_param("ss", $_POST['username'], $_POST['password']);
     $stmt->execute();
     ```
   </Tab>
   <Tab title="Python">
-    **Insecure (Bad Practice):**
+    ##### Vulnerable Code Examples
+    **Example 1: F-String Formatting**
     ```python
-    cursor.execute(f"SELECT * FROM users WHERE username = '{username}'")
+    # Using an f-string to build the query is unsafe
+    cursor.execute(f"SELECT * FROM accounts WHERE owner_id = '{owner_id}'")
     ```
-    **Secure (Remediation):**
+    **Example 2: Percent (`%`) Formatting**
     ```python
-    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    # Using the old % formatting is also unsafe
+    cursor.execute("SELECT * FROM products WHERE category = '%s'" % category)
+    ```
+    ##### Secure Code (Remediation)
+    Pass parameters as a separate tuple to the `execute` method. The database driver will safely handle the substitution.
+    ```python
+    cursor.execute("SELECT * FROM accounts WHERE owner_id = %s", (owner_id,))
     ```
   </Tab>
   <Tab title="Ruby on Rails">
-    **Insecure (Bad Practice):**
+    ##### Vulnerable Code Examples
+    **Example 1: String Interpolation in `where` Clause**
     ```ruby
-    User.where("name = '#{params[:name]}'")
+    # Interpolating parameters directly into the where clause is dangerous
+    User.where("email = '#{params[:email]}'")
     ```
-    **Secure (Remediation):**
+    **Example 2: Unsafe `find_by_sql`**
     ```ruby
-    User.where("name = ?", params[:name])
+    # find_by_sql is powerful but unsafe if not used with parameterization
+    User.find_by_sql("SELECT * FROM users WHERE name = '#{params[:name]}' AND admin = true")
+    ```
+    ##### Secure Code (Remediation)
+    Use the array or hash syntax for conditions in ActiveRecord. This automatically creates parameterized queries.
+    ```ruby
+    # Array syntax (placeholder `?`)
+    User.where("email = ?", params[:email])
+
+    # Hash syntax
+    User.where(email: params[:email])
     ```
   </Tab>
 </Tabs>
