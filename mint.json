@@ -38,27 +38,32 @@
     }
   ],
   "navigation": [
-    {
-      "group": "Getting Started",
-  "pages": ["introduction", "quickstart", "team"]
-    },
-    {
-      "group": "Core Capabilities",
-      "pages": ["sast", "sca", "container_security", "secret_scanning", "devsecops"]
-    },
-    {
-      "group": "User Management",
-      "pages": ["role_perm"]
-    },
-    {
-      "group": "Integrations",
-      "pages": ["github", "gitlab", "bitbucket", "teams"]
-    },
-    {
-      "group": "Releases & Roadmap",
-      "pages": ["changelog", "roadmap"]
-    }
-  ],
+  {
+    "group": "Getting Started",
+    "icon": "book-open",
+    "pages": ["introduction", "quickstart", "team"]
+  },
+  {
+    "group": "Core Capabilities",
+    "icon": "shield-alt",
+    "pages": ["sast", "sca", "container_security", "secret_scanning", "devsecops"]
+  },
+  {
+    "group": "User Management",
+    "icon": "users-cog",
+    "pages": ["role_perm"]
+  },
+  {
+    "group": "Integrations",
+    "icon": "plug",
+    "pages": ["github", "gitlab", "bitbucket", "teams"]
+  },
+  {
+    "group": "Releases & Roadmap",
+    "icon": "map-signs",
+    "pages": ["changelog", "roadmap"]
+  }
+],
   "footerSocials": {
     "twitter": "https://twitter.com/codepurehq",
     "github": "https://github.com/codepurehq",
