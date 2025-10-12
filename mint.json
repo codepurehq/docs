@@ -29,6 +29,13 @@
     "name": "Go to Codepure",
     "url": "https://codepure.com"
   },
+  "anchors": [
+    {
+      "name": "Roadmap",
+      "icon": "road",
+      "url": "https://guide.codepure.com/roadmap"
+    }
+  ],
   "navigation": [
   {
     "group": "Getting Started",
