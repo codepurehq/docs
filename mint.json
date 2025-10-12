@@ -7,18 +7,18 @@
   },
   "favicon": "/logo/Asset 7@2x-8.png",
   "colors": {
-    "primary": "#2563EB",
-    "light": "#2563EB",
-    "dark": "#3B82F6",
-    "background": {
-      "light": "#F9FAFB",
-      "dark": "#0D1117"
-    },
-    "anchors": {
-      "from": "#2563EB",
-      "to": "#3B82F6"
-    }
+  "primary": "#2563EB",
+  "light": "#2563EB",
+  "dark": "#3B82F6",
+  "background": {
+    "light": "#e0e8ff",
+    "dark": "#0e0a32"
   },
+  "anchors": {
+    "from": "#2563EB",
+    "to": "#3B82F6"
+  }
+},
   "topbarLinks": [
     {
       "name": "Support",
@@ -42,88 +42,69 @@
     }
   ],
   "navigation": [
+  {
+    "group": "Getting Started",
+    "icon": "book-open",
+    "iconType": "solid",
+    "pages": ["introduction", "quickstart", "team"]
+  },
+  {
+    "group": "Core Capabilities",
+    "icon": "shield-alt",
+    "pages": [
+      {
+        "group": "SAST",
+        "pages": [
+          "sast/overview",
+          "sast/supported-languages"
+        ]
+      },
+      "sca",
+      "container_security",
+      "secret_scanning",
+      "devsecops"
+    ]
+  },
+  {
+    "group": "User Management",
+    "icon": "users-cog",
+    "pages": ["role_perm"]
+  },
+  {
+  "group": "Vulnerability Reference",
+  "icon": "shield-virus",
+  "pages": [
     {
-      "group": "Getting Started",
-      "icon": "book-open",
-      "iconType": "solid",
+      "group": "Injection Flaws",
       "pages": [
-        "introduction",
-        "quickstart",
-        "team"
+        "vulnerabilities/sql-injection",
+        "vulnerabilities/xss",
+        "vulnerabilities/command-injection",
+        "vulnerabilities/ldap-injection"
       ]
     },
     {
-      "group": "Core Capabilities",
-      "icon": "shield-alt",
-      "iconType": "solid",
+      "group": "Data & Server Flaws",
       "pages": [
-        {
-          "group": "SAST",
-          "pages": [
-            "sast/overview",
-            "sast/supported-languages"
-          ]
-        },
-        "sca",
-        "container_security",
-        "secret_scanning",
-        "devsecops"
-      ]
-    },
-    {
-      "group": "User Management",
-      "icon": "users-cog",
-      "iconType": "solid",
-      "pages": [
-        "role_perm"
-      ]
-    },
-    {
-      "group": "Vulnerability Reference",
-      "icon": "shield-virus",
-      "iconType": "solid",
-      "pages": [
-        {
-          "group": "Injection Flaws",
-          "pages": [
-            "vulnerabilities/sql-injection",
-            "vulnerabilities/xss",
-            "vulnerabilities/command-injection",
-            "vulnerabilities/ldap-injection"
-          ]
-        },
-        {
-          "group": "Data & Server Flaws",
-          "pages": [
-            "vulnerabilities/xxe",
-            "vulnerabilities/ssrf",
-            "vulnerabilities/deserialization",
-            "vulnerabilities/path-traversal"
-          ]
-        }
-      ]
-    },
-    {
-      "group": "Integrations",
-      "icon": "plug",
-      "iconType": "solid",
-      "pages": [
-        "github",
-        "gitlab",
-        "bitbucket",
-        "teams"
-      ]
-    },
-    {
-      "group": "Releases & Roadmap",
-      "icon": "map-signs",
-      "iconType": "solid",
-      "pages": [
-        "changelog",
-        "roadmap"
+        "vulnerabilities/xxe",
+        "vulnerabilities/ssrf",
+        "vulnerabilities/deserialization",
+        "vulnerabilities/path-traversal"
       ]
     }
-  ],
+  ]
+},
+  {
+    "group": "Integrations",
+    "icon": "plug",
+    "pages": ["github", "gitlab", "bitbucket", "teams"]
+  },
+  {
+    "group": "Releases & Roadmap",
+    "icon": "map-signs",
+    "pages": ["changelog", "roadmap"]
+  }
+],
   "footerSocials": {
     "twitter": "https://twitter.com/codepurehq",
     "github": "https://github.com/codepurehq",
