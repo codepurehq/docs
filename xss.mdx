@@ -22,7 +22,7 @@ XSS compromises the trust users have in your application. It can lead to widespr
 Modern web frameworks provide strong default protection against XSS through automatic output encoding in their template engines. Vulnerabilities are almost always introduced when developers deliberately disable this protection or manually construct HTML without proper escaping.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Django's template engine automatically escapes all variable content by default, providing robust protection against XSS. Vulnerabilities occur when developers use the `|safe` filter or the `mark_safe` utility to intentionally render raw HTML from a variable containing user input.
 
@@ -98,7 +98,7 @@ Modern web frameworks provide strong default protection against XSS through auto
         self.assertNotContains(response, "<script>alert('xss')</script>")
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Template engines like Thymeleaf, which are commonly used with Spring Boot, provide automatic, context-aware escaping for HTML, attributes, and JavaScript. Vulnerabilities arise when developers bypass this protection, for example by using `th:utext` (unescaped text) instead of `th:text`.
 
@@ -164,7 +164,7 @@ Modern web frameworks provide strong default protection against XSS through auto
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     The Razor engine in ASP.NET Core is secure by default. It automatically HTML-encodes any output from variables (`@Model.UserInput`). Vulnerabilities are introduced when developers explicitly bypass this using `@Html.Raw()` because they want to render HTML stored in the database.
 
@@ -247,7 +247,7 @@ Modern web frameworks provide strong default protection against XSS through auto
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     Laravel's Blade template engine is secure by default, escaping all output rendered with `{{ $variable }}` syntax. The vulnerability is introduced when developers use the `!! $variable !!}` syntax, which explicitly tells Blade not to escape the data.
 
@@ -324,7 +324,7 @@ Modern web frameworks provide strong default protection against XSS through auto
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     The security of an Express application depends heavily on the chosen template engine. Engines like Pug escape output by default, while others like EJS require careful use of different tags for escaped (`<%= ... %>`) versus unescaped (`<%- ... %>`) output.
 
@@ -406,7 +406,7 @@ Modern web frameworks provide strong default protection against XSS through auto
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Rails ERB templates provide automatic HTML escaping for all content rendered with the standard `<%= ... %>` tag. The primary way to introduce an XSS vulnerability is to explicitly bypass this protection using the `raw()` helper or the `.html_safe` method on a string.
 

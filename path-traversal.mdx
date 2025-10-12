@@ -22,7 +22,7 @@ This vulnerability can lead to the complete disclosure of application source cod
 No framework can automatically protect against this logical vulnerability. The developer is always responsible for sanitizing and validating user input before using it in any file system operation. The core principle is to ensure the final, resolved (canonical) path of the requested file is located within the expected, secure base directory.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Django does not provide a specific file-serving view for arbitrary files, forcing developers to write their own. This is where vulnerabilities are often introduced. The key is to use Python's `os.path` module to safely construct and validate paths.
 
@@ -99,7 +99,7 @@ No framework can automatically protect against this logical vulnerability. The d
         self.assertEqual(response.status_code, 404)
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Java's `File` and `Path` APIs provide the tools needed to prevent path traversal. The vulnerability occurs when developers neglect to canonicalize and validate user-provided path fragments.
 
@@ -172,7 +172,7 @@ No framework can automatically protect against this logical vulnerability. The d
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     The `System.IO` namespace provides all the necessary tools for secure path handling. As in other frameworks, the vulnerability comes from developer error in concatenating strings rather than using these tools properly.
 
@@ -253,7 +253,7 @@ No framework can automatically protect against this logical vulnerability. The d
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     PHP's file handling functions are powerful and low-level, making path traversal a common vulnerability if developers are not careful. Laravel provides helpers, but the core responsibility remains with the developer to validate paths.
 
@@ -335,7 +335,7 @@ No framework can automatically protect against this logical vulnerability. The d
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     The built-in `path` module is essential for securely handling file paths in Node.js. Vulnerabilities are common when developers perform simple string concatenation instead of using `path.join`, `path.resolve`, and `path.normalize`.
 
@@ -409,7 +409,7 @@ No framework can automatically protect against this logical vulnerability. The d
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Rails abstracts away most direct file system access, but vulnerabilities can still occur in controllers that send files (`send_file`) or in services that read files from disk based on user input.
 

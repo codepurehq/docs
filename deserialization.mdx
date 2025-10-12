@@ -22,7 +22,7 @@ This is often one of the most critical vulnerabilities, frequently leading direc
 The universal and most effective mitigation is to **never deserialize data from untrusted sources using native, object-oriented serialization formats**. Instead, use safe, data-only formats like JSON for all data interchange. If a native format is absolutely required, use features that restrict which classes can be instantiated or use a digital signature to verify the integrity and authenticity of the serialized data before processing.
 
 <Tabs>
-  <Tab title="Django (Python)">
+  <Tab title="Python">
     #### Framework Context
     Python's `pickle` module is the primary mechanism for native object serialization, and it is notoriously insecure. The official documentation explicitly warns against unpickling data from untrusted sources. `PyYAML`'s `load()` function is also unsafe.
 
@@ -96,7 +96,7 @@ The universal and most effective mitigation is to **never deserialize data from 
         self.assertFalse(os.path.exists('/tmp/pwned'))
     ```
   </Tab>
-  <Tab title="Spring Boot (Java)">
+  <Tab title="Java">
     #### Framework Context
     Java's native `ObjectInputStream` is the classic vector for insecure deserialization. Spring Boot applications should avoid it at all costs and use a safe library like Jackson for JSON processing.
 
@@ -171,7 +171,7 @@ The universal and most effective mitigation is to **never deserialize data from 
     }
     ```
   </Tab>
-  <Tab title="ASP.NET Core (C#)">
+  <Tab title=".NET(C#)">
     #### Framework Context
     The `BinaryFormatter` is .NET's equivalent of Java Serialization and is extremely dangerous. Microsoft has officially marked it as obsolete and insecure. The recommended alternative is a data-only format like JSON, processed with libraries like `System.Text.Json` or `Newtonsoft.Json`.
 
@@ -249,7 +249,7 @@ The universal and most effective mitigation is to **never deserialize data from 
     }
     ```
   </Tab>
-  <Tab title="Laravel (PHP)">
+  <Tab title="PHP">
     #### Framework Context
     PHP's native `unserialize()` function is extremely dangerous with untrusted input because it can trigger "magic methods" (like `__wakeup` or `__destruct`) on any class available in the application's scope, leading to Property-Oriented Programming (POP) gadget chain exploits.
 
@@ -326,7 +326,7 @@ The universal and most effective mitigation is to **never deserialize data from 
     }
     ```
   </Tab>
-  <Tab title="Express.js (Node.js)">
+  <Tab title="Node.js">
     #### Framework Context
     Standard Node.js (with `JSON.parse`) is inherently safe from this class of vulnerability because JSON is a data-only format. The risk comes from using insecure third-party libraries that attempt to serialize more complex data, including functions, like `node-serialize`.
 
@@ -403,7 +403,7 @@ The universal and most effective mitigation is to **never deserialize data from 
     });
     ```
   </Tab>
-  <Tab title="Ruby on Rails">
+  <Tab title="Ruby">
     #### Framework Context
     Ruby's `Marshal.load` is the equivalent of `pickle` and is highly insecure with untrusted data. Rails uses it for its default cookie-based session store, but crucially, it signs the data with a secret key to prevent tampering. The vulnerability appears if a developer uses `Marshal.load` manually on data they *think* is safe.
 
