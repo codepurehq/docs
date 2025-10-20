@@ -19,15 +19,15 @@ CSRF can lead to unauthorized financial transactions, data modification, or full
 </Card>
 
 ## Framework-Specific Analysis and Remediation
-Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have built-in CSRF protection enabled by default. The vulnerability is *not* that the framework is weak, but that a developer *disables* this protection, often for convenience (e.g., in an API). The fix is to re-enable and correctly use the framework's anti-CSRF token mechanism.
+Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have built-in CSRF protection enabled by default for session-based authentication. The vulnerability is *not* that the framework is weak, but that a developer *disables* this protection, often for convenience (e.g., for an API) or by mistake. The fix is to re-enable and correctly use the framework's anti-CSRF token mechanism.
 
 <Tabs>
   <Tab title="Python">
     #### Framework Context
     Django's `CsrfViewMiddleware` is enabled by default. It requires a `{% csrf_token %}` in all `POST` forms. The vulnerability is using the `@csrf_exempt` decorator on a view.
 
-    #### Vulnerable Scenario 1: `@csrf_exempt`
-    A view that changes data (like a user profile) is exempted from CSRF checks.
+    #### Vulnerable Scenario 1: Exempting a Function-Based View
+    A view that changes a user's email is explicitly exempted from CSRF checks for convenience.
     ```python
     # users/views.py
     from django.views.decorators.csrf import csrf_exempt
@@ -35,23 +35,41 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
 
     @login_required
     @csrf_exempt # DANGEROUS
-    def update_profile(request):
+    def update_email(request):
         if request.method == 'POST':
             # This action can be triggered from a malicious site
             request.user.email = request.POST.get('email')
             request.user.save()
         return render(request, 'profile.html')
     ```
+    
+    #### Vulnerable Scenario 2: Exempting a Class-Based View
+    A `FormView` for deleting an account is exempted using `@method_decorator`.
+    ```python
+    # users/views.py
+    from django.utils.decorators import method_decorator
+    from django.views.decorators.csrf import csrf_exempt
+    from django.views.generic import FormView
+
+    @method_decorator(csrf_exempt, name='dispatch') # DANGEROUS
+    class DeleteAccountView(FormView):
+        # ... form_class and success_url ...
+        
+        def form_valid(self, form):
+            # This deletion can be triggered by a malicious POST
+            self.request.user.delete()
+            return super().form_valid(form)
+    ```
 
     #### Mitigation and Best Practices
-    Remove the `@csrf_exempt` decorator. Ensure your `POST` form in the template includes the `{% csrf_token %}` tag. For AJAX, pass the token in a custom `X-CSRFToken` header.
+    Remove the `@csrf_exempt` and `@method_decorator(csrf_exempt)` decorators. Ensure your `POST` form in the template includes the `{% csrf_token %}` tag. For AJAX, pass the token in a custom `X-CSRFToken` header.
 
     #### Secure Code Example
     ```python
     # users/views.py (Secure Version)
     @login_required
     # @csrf_exempt decorator is REMOVED
-    def update_profile(request):
+    def update_email(request):
         if request.method == 'POST':
             request.user.email = request.POST.get('email')
             request.user.save()
@@ -71,9 +89,9 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
     Write an integration test that performs a `POST` request to the endpoint *without* the CSRF token. The test should assert that the response is a `403 Forbidden`.
     ```python
     # users/tests.py
-    def test_update_profile_fails_without_csrf_token(self):
+    def test_update_email_fails_without_csrf_token(self):
         # self.client is logged in
-        response = self.client.post(reverse('update-profile'), {
+        response = self.client.post(reverse('update-email'), {
             'email': 'new@example.com'
         })
         
@@ -83,10 +101,10 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
   </Tab>
   <Tab title="Java">
     #### Framework Context
-    Spring Security enables CSRF protection by default. It requires a unique token for all state-changing methods (POST, PUT, DELETE). The vulnerability is disabling it globally.
+    Spring Security enables CSRF protection by default. It requires a unique token for all state-changing methods (POST, PUT, DELETE). The vulnerability is disabling it.
 
-    #### Vulnerable Scenario 1: Disabling CSRF
-    In the `WebSecurityConfigurerAdapter`, a developer disables CSRF protection.
+    #### Vulnerable Scenario 1: Disabling CSRF Globally
+    In the `WebSecurityConfigurerAdapter`, a developer disables CSRF protection entirely.
     ```java
     // config/SecurityConfig.java
     @Override
@@ -97,12 +115,30 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
                 .and()
             .formLogin()
                 .and()
-            .csrf().disable(); // DANGEROUS: CSRF protection is off
+            .csrf().disable(); // DANGEROUS: CSRF protection is off globally
+    }
+    ```
+    
+    #### Vulnerable Scenario 2: Disabling CSRF for Specific Routes
+    A developer disables CSRF for all routes under `/api`, thinking it's only for a stateless API, but a stateful (session-based) endpoint is accidentally included.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            // DANGEROUS: If /api/profile/update uses session cookies,
+            // it is now vulnerable to CSRF.
+            .csrf().ignoringAntMatchers("/api/**")
+            .and()
+            .authorizeRequests()
+                .antMatchers("/api/profile/**").authenticated() // Session-based
+                .antMatchers("/api/public/**").permitAll()
+                .anyRequest().authenticated();
     }
     ```
 
     #### Mitigation and Best Practices
-    Remove the `.csrf().disable()` call. Spring will now automatically handle token generation. For Thymeleaf templates, the `th:action` attribute automatically includes the token. For SPAs, you must manually read the token (from a cookie or endpoint) and send it in an `X-CSRF-TOKEN` header.
+    Remove the `.csrf().disable()` call. If you must disable CSRF for a stateless API, ensure those routes (`.antMatchers("/api/stateless/**")`) are *truly* stateless (e.g., use JWT bearer tokens) and that your session-based routes remain protected.
 
     #### Secure Code Example
     ```java
@@ -117,7 +153,7 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
         // SECURE: .csrf().disable() is removed. Protection is ON.
     }
     
-    // templates/profile.html (Secure Version)
+    // templates/profile.html (Secure Version with Thymeleaf)
     /*
     <form th:action="@{/update-profile}" method="post">
         <label>Email:</label>
@@ -150,7 +186,7 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
   </Tab>
   <Tab title=".NET(C#)">
     #### Framework Context
-    ASP.NET Core automatically generates and validates anti-forgery tokens for Razor Pages and MVC forms. The vulnerability is a developer forgetting to add the `[ValidateAntiForgeryToken]` attribute to an `[HttpPost]` action.
+    ASP.NET Core automatically generates and validates anti-forgery tokens for Razor Pages and MVC forms created with tag helpers. The vulnerability is a developer forgetting to add the `[ValidateAntiForgeryToken]` attribute or explicitly ignoring it.
 
     #### Vulnerable Scenario 1: Missing Validation Attribute
     An endpoint that modifies data is missing the validation attribute.
@@ -168,13 +204,37 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
         }
     }
     ```
+    
+    #### Vulnerable Scenario 2: Globally Ignoring Validation
+    A developer globally disables anti-forgery token validation in `Startup.cs`.
+    ```csharp
+    // Startup.cs
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddControllersWithViews(options =>
+        {
+            // DANGEROUS: This globally disables CSRF validation for all POST actions.
+            options.Filters.Add<IgnoreAntiforgeryTokenAttribute>();
+        });
+    }
+    ```
 
     #### Mitigation and Best Practices
-    Add the `[ValidateAntiForgeryToken]` attribute to all `[HttpPost]`, `[HttpPut]`, and `[HttpDelete]` actions. Ensure your `<form>` tag in the Razor view uses `asp-controller` and `asp-action` helpers, which automatically add the token.
+    Add the `[ValidateAntiForgeryToken]` attribute to all `[HttpPost]`, `[HttpPut]`, and `[HttpDelete]` actions. For a safer "deny by default" approach, add `[AutoValidateAntiforgeryToken]` as a global filter in `Startup.cs`, which automatically protects all state-changing methods.
 
     #### Secure Code Example
     ```csharp
-    // Controllers/ProfileController.cs (Secure Version)
+    // Startup.cs (Secure - Global)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddControllersWithViews(options =>
+        {
+            // SECURE: Automatically validates tokens on all non-GET methods.
+            options.Filters.Add<AutoValidateAntiforgeryTokenAttribute>();
+        });
+    }
+
+    // Controllers/ProfileController.cs (Secure - Method-specific)
     [Authorize]
     public class ProfileController : Controller
     {
@@ -197,7 +257,7 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
     ```
 
     #### Testing Strategy
-    Write an integration test that authenticates a client. The test then creates an `HttpRequestMessage` for a `POST` but *does not* include the `__RequestVerificationToken` cookie or form data. Assert the response is a `400 Bad Request` or `403 Forbidden`.
+    Write an integration test that authenticates a client. The test then creates an `HttpRequestMessage` for a `POST` but *does not* include the `__RequestVerificationToken` cookie or form data. Assert the response is a `400 Bad Request`.
     ```csharp
     [Fact]
     public async Task Update_Without_AntiForgeryToken_ShouldFail()
@@ -216,10 +276,10 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
   </Tab>
   <Tab title="PHP">
     #### Framework Context
-    Laravel's `VerifyCsrfToken` middleware is enabled by default for the `web` route group. The vulnerability is adding a state-changing route to the `$except` array in `App/Http/Middleware/VerifyCsrfToken.php`.
+    Laravel's `VerifyCsrfToken` middleware is enabled by default for the `web` route group. The vulnerability is adding a state-changing route to the `$except` array or incorrectly using cookie-based auth on an "API" route.
 
     #### Vulnerable Scenario 1: Exempting a Route
-    A developer exempts the profile update route from CSRF protection.
+    A developer exempts the profile update route from CSRF protection in the middleware.
     ```php
     // app/Http/Middleware/VerifyCsrfToken.php
     class VerifyCsrfToken extends Middleware
@@ -230,9 +290,21 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
         ];
     }
     ```
+    
+    #### Vulnerable Scenario 2: Using Session Auth on API Route
+    The `routes/api.php` file does *not* have CSRF protection. A developer defines a route here but authenticates using the web session cookie instead of a stateless token.
+    ```php
+    // routes/api.php
+    
+    // DANGEROUS: If a user is logged into the main app (with a session),
+    // and this route uses that session cookie for auth, it is vulnerable
+    // to CSRF because the `api` middleware group is stateless by default.
+    Route::post('/user/delete', [UserController::class, 'delete'])
+         ->middleware('auth:web'); // Using web auth in API
+    ```
 
     #### Mitigation and Best Practices
-    Remove the route from the `$except` array. Ensure your Blade template form includes the `@csrf` directive. For SPAs, pass the `X-XSRF-TOKEN` header (Laravel/Axios integrate this automatically).
+    Remove the route from the `$except` array. Ensure your Blade template form includes the `@csrf` directive. Routes in `api.php` must be stateless (e.g., use Sanctum API tokens or JWTs), not web session cookies.
 
     #### Secure Code Example
     ```php
@@ -274,7 +346,7 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
   </Tab>
   <Tab title="Node.js">
     #### Framework Context
-    Express has **no built-in CSRF protection**. The vulnerability is simply not using a library to add it. The standard library for this is `csurf`.
+    Express has **no built-in CSRF protection**. The vulnerability is simply not using a library to add it, or misconfiguring it. The standard library is `csurf`.
 
     #### Vulnerable Scenario 1: No CSRF Middleware
     A standard Express app with `cookie-session` but no CSRF middleware.
@@ -293,9 +365,28 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
         res.redirect('/profile');
     });
     ```
+    
+    #### Vulnerable Scenario 2: Middleware Applied Incorrectly
+    The `csurf` middleware is added, but *after* the route it's supposed to protect.
+    ```javascript
+    // app.js
+    const csrf = require('csurf');
+    
+    app.use(express.urlencoded({ extended: false }));
+
+    // DANGEROUS: The vulnerable route is defined before
+    // the CSRF middleware is applied.
+    app.post('/profile/update', (req, res) => {
+        req.session.user.email = req.body.email;
+        res.redirect('/profile');
+    });
+    
+    // The middleware is applied too late.
+    app.use(csrf());
+    ```
 
     #### Mitigation and Best Practices
-    Add the `csurf` middleware. This middleware creates a `req.csrfToken()` function. You must pass this token to your template and include it in your form.
+    Add the `csurf` middleware *before* you define any routes that modify state. This middleware creates a `req.csrfToken()` function. You must pass this token to your template and include it in your form.
 
     #### Secure Code Example
     ```javascript
@@ -306,7 +397,7 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
     
     app.use(require('cookie-session')({ keys: ['secret'] }));
     app.use(express.urlencoded({ extended: false }));
-    app.use(csrf()); // SECURE: Use the csurf middleware
+    app.use(csrf()); // SECURE: Use the csurf middleware before routes
 
     app.get('/profile', (req, res) => {
         // SECURE: Pass the token to the render function
@@ -347,8 +438,8 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
     #### Framework Context
     Rails has `protect_from_forgery with: :exception` in `ApplicationController` by default. This is secure. The vulnerability is a developer adding `skip_before_action :verify_authenticity_token`.
 
-    #### Vulnerable Scenario 1: Skipping the Filter
-    A controller skips the authenticity check.
+    #### Vulnerable Scenario 1: Skipping the Filter for an Action
+    A controller skips the authenticity check for a single action.
     ```ruby
     # app/controllers/profile_controller.rb
     class ProfileController < ApplicationController
@@ -366,8 +457,23 @@ Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have bu
     end
     ```
 
+    #### Vulnerable Scenario 2: Skipping the Filter for a Controller
+    A developer, annoyed by CSRF errors during API development, skips the filter for the entire controller.
+    ```ruby
+    # app/controllers/api_controller.rb
+    class ApiController < ApplicationController
+      # DANGEROUS: If any method in this controller uses session auth,
+      # it is now vulnerable to CSRF.
+      skip_before_action :verify_authenticity_token
+      
+      def change_settings
+        # ... logic using `current_user` ...
+      end
+    end
+    ```
+
     #### Mitigation and Best Practices
-    Remove the `skip_before_action :verify_authenticity_token` line. Ensure your forms in `.html.erb` files are generated with `form_with` or `form_for`, which automatically include the token.
+    Remove the `skip_before_action :verify_authenticity_token` line. Ensure your forms in `.html.erb` files are generated with `form_with` or `form_for`, which automatically include the token. For APIs, use `protect_from_forgery with: :null_session` and use token-based auth.
 
     #### Secure Code Example
     ```ruby
