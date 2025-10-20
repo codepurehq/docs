@@ -1,16 +1,16 @@
 ---
 title: "Improper Access Control"
 sidebarTitle: "Improper Access Control (CWE-284)"
-description: "Architectural examples and mitigation for Improper Access Control in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+description: "Mitigation for improper access control (missing role/permission checks) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "user-lock"
 iconType: "solid"
 ---
 
 ## Overview
-Improper Access Control is a general weakness that occurs when an application fails to properly restrict what a user is allowed to do. Unlike *Missing Authorization* (which is a total failure to check), this weakness implies a check *exists* but is flawed. This could mean a check is in the wrong place, relies on untrusted data, or can be bypassed.
+Improper Access Control occurs when an application fails to properly enforce what a user is allowed to do. This is different from authentication (who you are). This vulnerability means an *authenticated* user (e..g., a "viewer") can perform actions reserved for a different role (e.g., an "admin"), such as accessing an admin panel or deleting data.
 
 ## Business Impact
-This is a critical vulnerability that can allow users to perform actions they shouldn't, such as changing other users' passwords, elevating their own privileges to "admin," or accessing sensitive business functions like "cancel account" or "process refund" on behalf of others. It directly breaks the trust and security model of the application.
+This is a critical vulnerability that can lead to full system compromise. A low-privilege attacker can escalate their privileges, modify or delete any data, and lock out legitimate administrators.
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-284](https://cwe.mitre.org/data/definitions/284.html)
@@ -19,557 +19,422 @@ This is a critical vulnerability that can allow users to perform actions they sh
 </Card>
 
 ## Framework-Specific Analysis and Remediation
-Frameworks provide tools (like decorators, middleware, and attributes) to manage access control, but it's up to the developer to apply them correctly. The most common flaw is performing a check but not *enforcing* the result, or checking for "authentication" (`is_authenticated`) but not "authorization" (`is_admin` or `is_owner`).
+All frameworks provide powerful, declarative, and imperative ways to handle authorization. The vulnerability is almost always a developer *forgetting* to apply these controls to a new endpoint or function. The principle is "Deny by Default."
 
 <Tabs>
   <Tab title="Python">
     #### Framework Context
-    In Django, this often means a developer correctly uses `@login_required` (authentication) but forgets to check if the logged-in user is the *owner* of the resource (authorization).
+    Django and DRF provide view decorators (`@login_required`, `@permission_required`) and `permission_classes` on views. The vulnerability is a view that lacks these.
 
-    #### Vulnerable Scenario 1: A Flawed User Profile Update
-    An endpoint allows a user to update their profile, but only checks if they are logged in.
+    #### Vulnerable Scenario 1: A Missing Permission Check
+    An admin view is created that only checks if the user is logged in, not if they are an admin.
     ```python
-    # users/views.py
+    # reporting/views.py
     from django.contrib.auth.decorators import login_required
-    from .models import UserProfile
 
     @login_required
-    def update_profile(request, user_id):
-        # DANGEROUS: The view checks if a user is logged in,
-        # but NOT if the logged-in user (request.user) matches the 'user_id'
-        # being updated. An attacker can log in as user 123
-        # and send a POST request to /profile/update/456
-        profile = UserProfile.objects.get(pk=user_id)
-        form = UserProfileForm(request.POST, instance=profile)
-        if form.is_valid():
-            form.save()
-            return redirect('profile_view', user_id=user_id)
-        # ...
+    def generate_all_sales_report(request):
+        # DANGEROUS: Any logged-in user can access this, not just staff.
+        # It should check for `is_staff` or a specific permission.
+        report = Sales.objects.generate_full_report()
+        return HttpResponse(report, content_type="text/csv")
+    ```
+
+    #### Vulnerable Scenario 2: DRF ViewSet
+    A DRF `ModelViewSet` that has no `permission_classes` set.
+    ```python
+    # api/views.py
+    class UserViewSet(viewsets.ModelViewSet):
+        queryset = User.objects.all()
+        serializer_class = UserSerializer
+        # DANGEROUS: This ViewSet allows ANY authenticated user
+        # (or even anonymous if default is AllowAny) to LIST, CREATE,
+        # UPDATE, and DELETE users.
+        # permission_classes = [permissions.IsAuthenticated] # Still too permissive!
     ```
 
     #### Mitigation and Best Practices
-    Always perform two checks:
-    1.  **Authentication:** Is the user logged in?
-    2.  **Authorization:** Is this user *allowed* to act on this specific resource?
-    
-    The authorization check should compare `request.user` with the resource's owner.
+    For function-based views, use `@user_passes_test(lambda u: u.is_staff)`. For class-based views, use `UserPassesTestMixin`. For DRF, set `permission_classes` explicitly, e.g., `permission_classes = [permissions.IsAdminUser]`.
 
     #### Secure Code Example
     ```python
-    # users/views.py (Secure Version)
-    from django.contrib.auth.decorators import login_required
-    from django.shortcuts import get_object_or_404
-    from django.core.exceptions import PermissionDenied
-    from .models import UserProfile
+    # reporting/views.py (Secure Version)
+    from django.contrib.auth.decorators import user_passes_test
 
     @login_required
-    def update_profile(request, user_id):
-        # 1. Fetch the resource
-        profile = get_object_or_404(UserProfile, pk=user_id)
+    @user_passes_test(lambda u: u.is_staff)
+    def generate_all_sales_report(request):
+        # SECURE: Now only staff members can access this view.
+        report = Sales.objects.generate_full_report()
+        return HttpResponse(report, content_type="text/csv")
         
-        # 2. CRITICAL CHECK: Enforce ownership.
-        if request.user != profile.user:
-            raise PermissionDenied("You are not authorized to edit this profile.")
-            
-        # 3. Proceed with logic
-        form = UserProfileForm(request.POST or None, instance=profile)
-        if request.method == 'POST' and form.is_valid():
-            form.save()
-            return redirect('profile_view', user_id=user_id)
-        
-        return render(request, 'profile_form.html', {'form': form})
+    # api/views.py (Secure Version)
+    from rest_framework import permissions
+
+    class UserViewSet(viewsets.ModelViewSet):
+        queryset = User.objects.all()
+        serializer_class = UserSerializer
+        # SECURE: Only Admin users can access this ViewSet.
+        permission_classes = [permissions.IsAdminUser]
     ```
 
     #### Testing Strategy
-    Write two tests:
-    1.  A "negative" test: Log in as `user_A`. Attempt to POST data to `user_B`'s update endpoint. Assert a `403 Forbidden` response.
-    2.  A "positive" test: Log in as `user_A`. POST to `user_A`'s endpoint. Assert a `200 OK` or `302 Redirect`.
-    
+    Write integration tests where you authenticate as a non-admin user. Attempt to access the admin endpoint and assert that the response is a `403 Forbidden`.
     ```python
-    # users/tests.py
-    def test_user_cannot_update_another_users_profile(self):
-        user_a = User.objects.create_user('user_a', 'a@a.com', 'pass')
-        user_b = User.objects.create_user('user_b', 'b@b.com', 'pass')
-        
-        self.client.login(username='user_a', password='pass')
-        
-        # user_a attempts to update user_b's profile
-        url = reverse('update-profile', args=[user_b.profile.id])
-        response = self.client.post(url, {'email': 'attacker@a.com'})
-        
-        # A secure implementation should deny this.
+    # reporting/tests.py
+    def test_sales_report_is_forbidden_for_normal_user(self):
+        # self.client is logged in as a non-staff user
+        response = self.client.get(reverse('sales-report'))
         self.assertEqual(response.status_code, 403)
-        user_b.profile.refresh_from_db()
-        self.assertEqual(user_b.profile.email, 'b@b.com') # Verify no change
     ```
   </Tab>
   <Tab title="Java">
     #### Framework Context
-    In Spring Security, this flaw occurs when a developer correctly uses `@PreAuthorize("isAuthenticated()")` but fails to add the authorization check, such as `@PreAuthorize("#username == principal.username")` or checking against the `Authentication` object.
+    Spring Security provides method-level security (`@PreAuthorize`, `@Secured`) and configuration-level security (`http.authorizeRequests()`). The vulnerability is a public endpoint that should be protected.
 
-    #### Vulnerable Scenario 1: Flawed Account Details Endpoint
-    A controller allows fetching account details but only checks for a valid login.
+    #### Vulnerable Scenario 1: Unprotected Controller Method
+    An admin-only method in a controller has no security annotation.
     ```java
-    // controller/AccountController.java
+    // controller/AdminController.java
     @RestController
-    @RequestMapping("/api/accounts")
-    public class AccountController {
-        @Autowired
-        private AccountRepository accountRepo;
-
-        @GetMapping("/{accountId}")
-        @PreAuthorize("isAuthenticated()") // Checks for login, but not ownership
-        public Account getAccountDetails(@PathVariable Long accountId) {
-            // DANGEROUS: Any logged-in user can request any 'accountId'.
-            // An attacker authenticated as user 123 can request /api/accounts/456
-            return accountRepo.findById(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException());
+    @RequestMapping("/admin")
+    public class AdminController {
+        
+        @GetMapping("/dashboard")
+        public String getAdminDashboard() {
+            // DANGEROUS: If the global config doesn't secure "/admin/**",
+            // this endpoint is open to any user, or even anonymous.
+            return "Admin Dashboard Data";
         }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Weak Global Configuration
+    The `WebSecurityConfigurerAdapter` secures some paths but forgets the new admin path.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+            .antMatchers("/api/users/**").hasRole("USER")
+            // DANGEROUS: The "/admin/**" path is forgotten and left open.
+            .antMatchers("/", "/home").permitAll()
+            .anyRequest().authenticated();
     }
     ```
 
     #### Mitigation and Best Practices
-    Enforce security at the method level. Use Spring Security's expression language (SpEL) to compare the logged-in principal's ID/username with the resource being accessed.
+    Apply method-level security as a "deny-by-default" policy. It's safer to annotate each method than rely on global config. Enable method security with `@EnableGlobalMethodSecurity(prePostEnabled = true)`.
 
     #### Secure Code Example
-    There are two main ways to fix this.
-    
-    **Option 1: Use `@PreAuthorize` with SpEL:**
+    Use `@PreAuthorize` on the method or controller.
     ```java
-    // controller/AccountController.java (Secure Version 1)
-    @GetMapping("/{accountId}")
-    @PreAuthorize("isAuthenticated() and @accountSecurityService.isOwner(principal, #accountId)")
-    public Account getAccountDetails(@PathVariable Long accountId) {
-        // Now this code is only reachable if the security check passes.
-        return accountRepo.findById(accountId)
-            .orElseThrow(() -> new ResourceNotFoundException());
-    }
+    // config/SecurityConfig.java (Secure)
+    @Configuration
+    @EnableGlobalMethodSecurity(prePostEnabled = true) // Enable method security
+    public class SecurityConfig extends WebSecurityConfigurerAdapter { ... }
     
-    // service/AccountSecurityService.java (Helper Service)
-    @Service("accountSecurityService")
-    public class AccountSecurityService {
-        public boolean isOwner(UserDetails userDetails, Long accountId) {
-            User user = (User) userDetails;
-            return user.getAccount().getId().equals(accountId);
-        }
-    }
-    ```
-    
-    **Option 2: Check manually inside the method:**
-    ```java
-    // controller/AccountController.java (Secure Version 2)
-    @GetMapping("/{accountId}")
-    public Account getAccountDetails(@PathVariable Long accountId, Authentication auth) {
-        // Get the logged-in user's details
-        UserDetails userDetails = (UserDetails) auth.getPrincipal();
-        User loggedInUser = userRepository.findByUsername(userDetails.getUsername());
-
-        // Fetch the requested resource
-        Account account = accountRepo.findById(accountId)
-            .orElseThrow(() -> new ResourceNotFoundException());
-
-        // CRITICAL CHECK: Enforce ownership
-        if (!account.getOwner().getId().equals(loggedInUser.getId())) {
-            throw new SecurityException("Access Denied");
-        }
+    // controller/AdminController.java (Secure Version)
+    @RestController
+    @RequestMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')") // SECURE: Applies to all methods in this controller
+    public class AdminController {
         
-        return account;
+        @GetMapping("/dashboard")
+        public String getAdminDashboard() {
+            return "Admin Dashboard Data";
+        }
     }
     ```
 
     #### Testing Strategy
-    Write a MockMVC test with two users. Authenticate as `user_A`. Make a request for `user_B`'s resource. Assert that the response is `403 Forbidden`.
+    Write a MockMVC test using `@WithMockUser` to simulate a request from a user *without* the 'ADMIN' role. Assert that the response is a `403 Forbidden`.
     ```java
-    // src/test/java/com/example/AccountControllerTest.java
     @Test
-    @WithMockUser(username = "user_A")
-    public void getAccountDetails_whenNotOwner_shouldReturnForbidden() throws Exception {
-        // Assume user_B has accountId 456L
-        // And user_A is not the owner
-        
-        mockMvc.perform(get("/api/accounts/456"))
+    @WithMockUser(roles = "USER") // Simulate as a regular user
+    void getAdminDashboard_asUser_shouldBeForbidden() throws Exception {
+        mockMvc.perform(get("/admin/dashboard"))
             .andExpect(status().isForbidden());
-    }
-    
-    @Test
-    @WithMockUser(username = "user_A", authorities = "ROLE_USER")
-    public void getAccountDetails_whenIsOwner_shouldReturnOk() throws Exception {
-        // Assume user_A has accountId 123L
-        
-        mockMvc.perform(get("/api/accounts/123"))
-            .andExpect(status().isOk());
     }
     ```
   </Tab>
   <Tab title=".NET(C#)">
     #### Framework Context
-    In ASP.NET Core, this flaw is using `[Authorize]` (which only checks for a valid token/cookie) but failing to use *Policies* or manual checks to validate resource ownership.
+    ASP.NET Core Identity uses `[Authorize]` attributes. These can be applied to controllers or individual action methods. A missing attribute is a critical flaw.
 
-    #### Vulnerable Scenario 1: An Order Details API
-    An endpoint is secured with `[Authorize]`, but any user can query any order.
+    #### Vulnerable Scenario 1: Missing Authorize Attribute
+    An `AdminController` is created, but the developer forgets to add the `[Authorize]` attribute.
     ```csharp
-    // Controllers/OrdersController.cs
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize] // Checks for authentication, NOT authorization
-    public class OrdersController : ControllerBase
+    // Controllers/AdminController.cs
+    // DANGEROUS: This entire controller is accessible by anonymous users.
+    public class AdminController : Controller
     {
-        private readonly AppDbContext _context;
+        public IActionResult Index() { ... }
+        
+        [HttpPost]
+        public IActionResult DeleteUser(string id) { ... }
+    }
+    ```
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Order>> GetOrder(int id)
-        {
-            // DANGEROUS: Any authenticated user can get any order by its ID.
-            var order = await _context.Orders.FindAsync(id);
-            if (order == null)
-            {
-                return NotFound();
-            }
-            return order;
-        }
+    #### Vulnerable Scenario 2: Weak Role Check
+    The controller checks for authentication, but not for the specific "Admin" role.
+    ```csharp
+    // Controllers/AdminController.cs
+    [Authorize] // DANGEROUS: Any logged-in user can access this.
+    public class AdminController : Controller
+    {
+        public IActionResult Index() { ... }
     }
     ```
 
     #### Mitigation and Best Practices
-    The best practice is to inject the `UserManager` or use the `User` principal to get the logged-in user's ID. Then, use that ID in the database query to ensure you *only* fetch resources they own.
+    Apply `[Authorize(Roles = "Admin")]` to the controller. You can also define "Policies" in `Startup.cs` (e.g., `policy.RequireRole("Admin")`) and use `[Authorize(Policy = "AdminOnly")]`.
 
     #### Secure Code Example
     ```csharp
-    // Controllers/OrdersController.cs (Secure Version)
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize] // Still good to have!
-    public class OrdersController : ControllerBase
+    // Controllers/AdminController.cs (Secure Version)
+    [Authorize(Roles = "Admin")] // SECURE: Only users in the "Admin" role can access.
+    public class AdminController : Controller
     {
-        private readonly AppDbContext _context;
-        private readonly UserManager<AppUser> _userManager;
-
-        public OrdersController(AppDbContext context, UserManager<AppUser> userManager)
-        {
-            _context = context;
-            _userManager = userManager;
-        }
-
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Order>> GetOrder(int id)
-        {
-            // 1. Get the currently logged-in user's ID
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            
-            // 2. CRITICAL CHECK: Add the user ID to the database query.
-            // This query can ONLY find an order if the ID matches AND the user ID matches.
-            var order = await _context.Orders
-                .Where(o => o.Id == id && o.OwnerId == userId)
-                .FirstOrDefaultAsync();
-
-            if (order == null)
-            {
-                // Return NotFound for both "doesn't exist" and "not yours"
-                // This prevents leaking information about which IDs are valid.
-                return NotFound();
-            }
-            return order;
-        }
+        public IActionResult Index() { ... }
+        
+        [HttpPost]
+        public IActionResult DeleteUser(string id) { ... }
     }
     ```
     
     #### Testing Strategy
-    Write an integration test with a mock client. Authenticate as `user_A`. Request an order ID known to belong to `user_B`. Assert that the response is `404 Not Found`.
+    Write an integration test that authenticates a client as a normal user. The client then makes a request to the `AdminController` action and asserts a `403 Forbidden` or a redirect to the login page.
     ```csharp
-    // Tests/OrdersControllerTests.cs
     [Fact]
-    public async Task GetOrder_WhenUserIsNotOwner_ShouldReturnNotFound()
+    public async Task AdminController_Index_ForbiddenForNormalUser()
     {
-        // 1. Setup: Authenticate client as 'user_A'
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = 
-            new AuthenticationHeaderValue("Bearer", "token_for_user_A");
+        // _client is authenticated as a non-admin user
+        var response = await _client.GetAsync("/Admin/Index");
         
-        // 2. Act: Request an order that belongs to 'user_B' (e.g., orderId 99)
-        var response = await client.GetAsync("/api/orders/99");
-        
-        // 3. Assert: The API should return 404, not the order data.
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        // Assert it's forbidden (or a redirect if not authenticated)
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
     ```
   </Tab>
   <Tab title="PHP">
     #### Framework Context
-    In Laravel, this is the classic "Insecure Direct Object Reference" (IDOR). A developer protects a route with `auth` middleware but then fails to scope the Eloquent query to the authenticated user.
+    Laravel uses "middleware" to protect routes. The vulnerability is defining a route in `routes/web.php` or `routes/api.php` that is not part of a middleware group.
 
-    #### Vulnerable Scenario 1: A Post Editor
-    An endpoint allows a user to edit a blog post, checking only for login.
+    #### Vulnerable Scenario 1: Route Outside Middleware Group
+    A developer adds a new admin route but forgets to put it inside the admin middleware group.
     ```php
-    // app/Http/Controllers/PostController.php
-    class PostController extends Controller
-    {
-        // Route is in web.php, wrapped in ->middleware('auth');
-        
-        public function edit($id)
-        {
-            // DANGEROUS: Fetches *any* post by its ID.
-            // An attacker can log in and go to /posts/5/edit,
-            // even if post 5 belongs to another user.
-            $post = Post::findOrFail($id);
-            return view('posts.edit', ['post' => $post]);
-        }
+    // routes/web.php
+    
+    Route::middleware(['auth', 'admin'])->group(function () {
+        Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
+    });
+    
+    // DANGEROUS: This route is outside the group and accessible to anyone.
+    Route::get('/admin/delete-user/{id}', [AdminController::class, 'deleteUser']);
+    ```
 
-        public function update(Request $request, $id)
-        {
-            $post = Post::findOrFail($id);
-            
-            // DANGEROUS: Same problem. Any user can update any post.
-            $post->title = $request->title;
-            $post->save();
-            return redirect()->route('posts.show', $post->id);
-        }
-    }
+    #### Vulnerable Scenario 2: Weak Gate/Policy
+    A `Gate` is defined for an action but the logic is flawed.
+    ```php
+    // app/Providers/AuthServiceProvider.php
+    Gate::define('view-admin-panel', function (User $user) {
+        // DANGEROUS: Logic is missing, so it implicitly returns null (denies).
+        // Or worse: `return $user->is_active;` (any active user is admin)
+    });
     ```
 
     #### Mitigation and Best Practices
-    Never use `Post::find($id)` or `Post::findOrFail($id)` in a user-facing controller. Instead, get the authenticated user (`Auth::user()`) and query *their* related posts.
-    
-    A secondary, stronger mitigation is to use Laravel Policies.
+    Ensure all admin-related routes are inside a `Route::middleware([...])->group(...)` block. Use policies (`php artisan make:policy`) to organize authorization logic for models.
 
     #### Secure Code Example
-    
-    **Option 1: Scope the Query (Good):**
     ```php
-    // app/Http/Controllers/PostController.php (Secure Version 1)
-    class PostController extends Controller
-    {
-        public function edit($id)
-        {
-            // SECURE: We get the logged-in user, access their 'posts'
-            // relationship, and then find the post.
-            // This will fail if the post doesn't belong to them.
-            $post = Auth::user()->posts()->findOrFail($id);
-            return view('posts.edit', ['post' => $post]);
-        }
-
-        public function update(Request $request, $id)
-        {
-            $post = Auth::user()->posts()->findOrFail($id);
-            
-            // SECURE: The update can only happen on a post they own.
-            $post->title = $request->title;
-            $post->save();
-            return redirect()->route('posts.show', $post->id);
-        }
-    }
-    ```
+    // routes/web.php (Secure Version)
     
-    **Option 2: Use a Policy (Better):**
-    ```php
-    // app/Policies/PostPolicy.php
-    class PostPolicy
-    {
-        public function update(User $user, Post $post)
-        {
-            // CRITICAL CHECK
-            return $user->id === $post->user_id;
-        }
-    }
+    // SECURE: All routes in this group require auth and admin checks.
+    Route::middleware(['auth', 'admin'])->group(function () {
+        Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
+        Route.get('/admin/delete-user/{id}', [AdminController::class, 'deleteUser']);
+    });
     
-    // app/Http/Controllers/PostController.php (Secure Version 2)
-    class PostController extends Controller
-    {
-        public function update(Request $request, $id)
-        {
-            $post = Post::findOrFail($id);
-            
-            // SECURE: This line will throw a 403 error
-            // if the 'update' policy check fails.
-            $this->authorize('update', $post); 
-            
-            $post->title = $request->title;
-            $post->save();
-            return redirect()->route('posts.show', $post->id);
-        }
-    }
+    // app/Providers/AuthServiceProvider.php (Secure Version)
+    Gate::define('view-admin-panel', function (User $user) {
+        // SECURE: Explicitly check the user's role.
+        return $user->role === 'admin';
+    });
     ```
 
     #### Testing Strategy
-    Write a feature test where `user_A` is created and authenticated. Create a post belonging to `user_B`. Have `user_A` attempt to hit the `update` endpoint for `user_B`'s post. Assert a `403 Forbidden` response.
+    Write a feature test. First, `actingAs` a non-admin user. Then, make a request to the admin-only route. Assert the response status is `403 Forbidden`.
     ```php
-    // tests/Feature/PostSecurityTest.php
-    public function test_user_cannot_update_another_users_post()
+    // tests/Feature/AdminAccessTest.php
+    public function test_normal_user_cannot_access_admin_panel()
     {
-        $userA = User::factory()->create();
-        $userB = User::factory()->create();
+        $user = User::factory()->create(['role' => 'user']);
         
-        $postB = Post::factory()->create(['user_id' => $userB->id]);
-        
-        $response = $this->actingAs($userA)
-            ->put(route('posts.update', $postB->id), [
-                'title' => 'This is a hacked title'
-            ]);
-            
+        $response = $this->actingAs($user)
+                         ->get('/admin/dashboard');
+
         $response->assertStatus(403);
     }
     ```
   </Tab>
   <Tab title="Node.js">
     #### Framework Context
-    In Express, this flaw is common. A developer writes middleware to check for a valid session or JWT, but the route handler itself blindly trusts a URL parameter (like `:id`) to fetch a resource.
+    Express relies entirely on middleware. Authorization is a custom middleware function that developers must write and apply. Forgetting to apply it is the vulnerability.
 
-    #### Vulnerable Scenario 1: A "Get Todo" Endpoint
-    An API endpoint for a todo app is protected by session middleware, but the route handler doesn't check *who* owns the todo.
+    #### Vulnerable Scenario 1: Missing Route-Level Middleware
+    An admin route is defined without the corresponding `ensureAdmin` middleware.
     ```javascript
-    // authMiddleware.js
-    const ensureLoggedIn = (req, res, next) => {
-        if (req.session.userId) {
-            return next(); // User is logged in
-        }
-        res.status(401).send('Unauthorized');
+    // app.js
+    const ensureAuthenticated = (req, res, next) => { ... };
+    const ensureAdmin = (req, res, next) => {
+        if (req.user && req.user.role === 'admin') return next();
+        res.status(403).send('Forbidden');
     };
     
-    // server.js
-    app.get('/api/todos/:id', ensureLoggedIn, async (req, res) => {
-        const { id } = req.params;
-        try {
-            // DANGEROUS: Fetches *any* todo by its 'id'.
-            // If user 123 is logged in, they can request /api/todos/456
-            // and get the todo for user 456.
-            const todo = await Todo.findById(id);
-            if (!todo) return res.status(404).send('Not Found');
-            res.json(todo);
-        } catch (err) {
-            res.status(500).send('Server Error');
-        }
+    app.get('/dashboard', ensureAuthenticated, (req, res) => { ... });
+    
+    // DANGEROUS: This route is missing the 'ensureAdmin' middleware.
+    app.get('/admin/reports', ensureAuthenticated, (req, res) => {
+        // Any logged-in user can access this.
+        res.send('Admin Reports');
     });
     ```
 
+    #### Vulnerable Scenario 2: Flawed Middleware Logic
+    The middleware logic is incorrect.
+    ```javascript
+    // app.js
+    const ensureAdmin = (req, res, next) => {
+        // DANGEROUS: 'admin' (string) vs. true (boolean)
+        // This check might always fail or pass incorrectly.
+        if (req.user.isAdmin === 'true') return next(); 
+        res.status(403).send('Forbidden');
+    };
+    ```
+
     #### Mitigation and Best Practices
-    The route handler *must* use the authenticated user's ID (e.g., `req.session.userId` or `req.user.id` from a JWT) to scope the database query.
+    Use `app.use('/admin', ensureAdmin)` to apply the middleware to *all* routes starting with `/admin`. This is a "deny-by-default" approach that's safer than applying it to each route individually.
 
     #### Secure Code Example
     ```javascript
-    // server.js (Secure Version)
-    app.get('/api/todos/:id', ensureLoggedIn, async (req, res) => {
-        const { id } = req.params;
-        const userId = req.session.userId; // Get ID from the session
-        
-        try {
-            // CRITICAL CHECK: The query now requires BOTH the 'id'
-            // and the 'userId' to match.
-            const todo = await Todo.findOne({ _id: id, owner: userId });
-            
-            if (!todo) {
-                // Return 404. This correctly handles "not found"
-                // and "not yours" with the same response.
-                return res.status(404).send('Not Found');
-            }
-            res.json(todo);
-        } catch (err) {
-            res.status(500).send('Server Error');
+    // app.js (Secure Version)
+    const ensureAdmin = (req, res, next) => {
+        if (req.user && req.user.role === 'admin') {
+            return next();
         }
+        res.status(403).send('Forbidden');
+    };
+    
+    // SECURE: Apply the 'ensureAdmin' middleware to all routes
+    // under '/admin'.
+    app.use('/admin', ensureAuthenticated, ensureAdmin);
+    
+    // This route is now protected by the middleware above.
+    app.get('/admin/reports', (req, res) => {
+        res.send('Admin Reports');
+    });
+    
+    app.get('/admin/users', (req, res) => {
+        res.send('Admin User List');
     });
     ```
 
     #### Testing Strategy
-    Use Jest and Supertest. Create two users and one todo belonging to `user_B`. Create an authenticated session for `user_A`. Make a request as `user_A` for `user_B`'s todo. Assert a `404 Not Found` response.
+    Use Jest/Supertest. Log in as a non-admin user (e.g., using a mock agent) and attempt to GET the `/admin/reports` endpoint. Assert the response status is `403`.
     ```javascript
-    // tests/todos.test.js
-    it('should return 404 when user requests another users todo', async () => {
-        // 1. Setup: userA is logged in (via supertest agent)
-        const agent = request.agent(app);
-        await agent.post('/login').send({ user: 'userA', pass: 'pass' });
+    // tests/admin.test.js
+    it('should forbid access to /admin/reports for non-admin users', async () => {
+        // 'userAgent' is a supertest agent logged in as a 'user' role
+        const response = await userAgent.get('/admin/reports');
         
-        // todoB belongs to userB (id: 'todo-b-id')
-        
-        // 2. Act: userA requests todoB
-        const response = await agent.get('/api/todos/todo-b-id');
-        
-        // 3. Assert: Server should not find it (for this user)
-        expect(response.statusCode).toBe(404);
+        expect(response.statusCode).toBe(403);
     });
     ```
   </Tab>
   <Tab title="Ruby">
     #### Framework Context
-    In Rails, this is the canonical example of an IDOR. A developer uses `before_action :authenticate_user!` but then uses `Post.find(params[:id])` in the controller action, which finds *any* post.
+    Ruby on Rails uses `before_action` filters in controllers. The vulnerability is a controller action that is not covered by a `before_action` that checks for admin privileges.
 
-    #### Vulnerable Scenario 1: A Message Viewer
-    A controller action allows a user to view a private message, but only checks for authentication.
+    #### Vulnerable Scenario 1: Action Not in `only` or `except`
+    A `before_action` is applied, but the new, dangerous action is forgotten.
     ```ruby
-    # app/controllers/messages_controller.rb
-    class MessagesController < ApplicationController
-      before_action :authenticate_user! # Checks for login
+    # app/controllers/admin_controller.rb
+    class AdminController < ApplicationController
+      before_action :require_admin, only: [:index]
     
-      def show
-        # DANGEROUS: Any authenticated user can view any message
-        # by simply knowing its ID.
-        @message = Message.find(params[:id])
-        render :show
+      def index
+        # This is protected
+      end
+    
+      def delete_all_users
+        # DANGEROUS: This action is not in the `only` list,
+        # so it has no `before_action` filter.
+        User.all.destroy_all
+      end
+    
+      private
+      def require_admin
+        redirect_to root_path unless current_user&.admin?
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Flawed Pundit/CanCanCan Policy
+    Using a gem like Pundit, but the policy logic is wrong.
+    ```ruby
+    # app/policies/post_policy.rb
+    class PostPolicy < ApplicationPolicy
+      def destroy?
+        # DANGEROUS: This allows a user to destroy a post if they
+        # are the author OR an admin. But it should also check
+        # that the record hasn't been published, for example.
+        # This is "improper", not just "missing".
+        user.admin? || record.user == user
       end
     end
     ```
 
     #### Mitigation and Best Practices
-    Never find an object directly by its ID. Instead, find it *through* the authenticated user's association. Use `current_user.messages.find(params[:id])`. This will automatically scope the search.
+    Apply `before_action` filters to the entire controller without `only` or `except`. This is "deny-by-default." If some actions must be public, use `skip_before_action` on those specific, safe actions.
 
     #### Secure Code Example
-    
-    **Option 1: Scope the Query (Good):**
     ```ruby
-    # app/controllers/messages_controller.rb (Secure Version 1)
-    class MessagesController < ApplicationController
-      before_action :authenticate_user!
+    # app/controllers/admin_controller.rb (Secure Version)
+    class AdminController < ApplicationController
+      # SECURE: This filter applies to EVERY action in this controller.
+      before_action :require_admin
     
-      def show
-        # SECURE: This query searches *only* within the 'current_user.messages'
-        # It will raise an 'ActiveRecord::RecordNotFound' if the
-        # message exists but doesn't belong to the user.
-        @message = current_user.messages.find(params[:id])
-        render :show
+      def index
+        # This is protected
       end
-    end
-    ```
     
-    **Option 2: Use a Policy (Better, e.g., with Pundit gem):**
-    ```ruby
-    # app/policies/message_policy.rb
-    class MessagePolicy < ApplicationPolicy
-      def show?
-        # record = the @message
-        # user = the current_user
-        record.user == user
+      def delete_all_users
+        # This is now also protected
+        User.all.destroy_all
       end
-    end
-
-    # app/controllers/messages_controller.rb (Secure Version 2)
-    class MessagesController < ApplicationController
-      before_action :authenticate_user!
     
-      def show
-        @message = Message.find(params[:id])
-        
-        # SECURE: This line will raise a Pundit::NotAuthorizedError
-        # if the 'show?' policy fails.
-        authorize @message
-        
-        render :show
+      private
+      def require_admin
+        redirect_to root_path, alert: "Access Denied" unless current_user&.admin?
       end
     end
     ```
 
     #### Testing Strategy
-    Write an RSpec request spec. Create `user_A` and `user_B`. Create a message for `user_B`. Log in as `user_A`. Attempt to GET the `show` action for `user_B`'s message. Assert that the response is a `404 Not Found` (if using scoped query) or `403 Forbidden`.
+    Write an RSpec request or controller spec. Log in as a non-admin user. `post` to the `delete_all_users` action and assert that the user count has not changed and that the response was a redirect.
     ```ruby
-    # spec/requests/messages_spec.rb
-    it "prevents a user from seeing another user's message" do
-      user_a = create(:user)
-      user_b = create(:user)
-      message_b = create(:message, user: user_b)
+    # spec/requests/admin_spec.rb
+    it "prevents non-admins from deleting users" do
+      create_list(:user, 5)
+      login_as(create(:user, admin: false)) # Log in as non-admin
       
-      sign_in user_a # Helper method to log in
+      expect {
+        post delete_all_users_path
+      }.to_not change(User, :count)
       
-      get message_path(message_b)
-      
-      # ActiveRecord::RecordNotFound will be rescued by Rails
-      # and turned into a 404 response.
-      expect(response).to have_http_status(:not_found)
+      expect(response).to redirect_to(root_path)
     end
     ```
   </Tab>
