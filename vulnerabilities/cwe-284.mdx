@@ -1,0 +1,576 @@
+---
+title: "Improper Access Control"
+sidebarTitle: "Improper Access Control (CWE-284)"
+description: "Architectural examples and mitigation for Improper Access Control in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "user-lock"
+iconType: "solid"
+---
+
+## Overview
+Improper Access Control is a general weakness that occurs when an application fails to properly restrict what a user is allowed to do. Unlike *Missing Authorization* (which is a total failure to check), this weakness implies a check *exists* but is flawed. This could mean a check is in the wrong place, relies on untrusted data, or can be bypassed.
+
+## Business Impact
+This is a critical vulnerability that can allow users to perform actions they shouldn't, such as changing other users' passwords, elevating their own privileges to "admin," or accessing sensitive business functions like "cancel account" or "process refund" on behalf of others. It directly breaks the trust and security model of the application.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-284](https://cwe.mitre.org/data/definitions/284.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** High
+</Card>
+
+## Framework-Specific Analysis and Remediation
+Frameworks provide tools (like decorators, middleware, and attributes) to manage access control, but it's up to the developer to apply them correctly. The most common flaw is performing a check but not *enforcing* the result, or checking for "authentication" (`is_authenticated`) but not "authorization" (`is_admin` or `is_owner`).
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    In Django, this often means a developer correctly uses `@login_required` (authentication) but forgets to check if the logged-in user is the *owner* of the resource (authorization).
+
+    #### Vulnerable Scenario 1: A Flawed User Profile Update
+    An endpoint allows a user to update their profile, but only checks if they are logged in.
+    ```python
+    # users/views.py
+    from django.contrib.auth.decorators import login_required
+    from .models import UserProfile
+
+    @login_required
+    def update_profile(request, user_id):
+        # DANGEROUS: The view checks if a user is logged in,
+        # but NOT if the logged-in user (request.user) matches the 'user_id'
+        # being updated. An attacker can log in as user 123
+        # and send a POST request to /profile/update/456
+        profile = UserProfile.objects.get(pk=user_id)
+        form = UserProfileForm(request.POST, instance=profile)
+        if form.is_valid():
+            form.save()
+            return redirect('profile_view', user_id=user_id)
+        # ...
+    ```
+
+    #### Mitigation and Best Practices
+    Always perform two checks:
+    1.  **Authentication:** Is the user logged in?
+    2.  **Authorization:** Is this user *allowed* to act on this specific resource?
+    
+    The authorization check should compare `request.user` with the resource's owner.
+
+    #### Secure Code Example
+    ```python
+    # users/views.py (Secure Version)
+    from django.contrib.auth.decorators import login_required
+    from django.shortcuts import get_object_or_404
+    from django.core.exceptions import PermissionDenied
+    from .models import UserProfile
+
+    @login_required
+    def update_profile(request, user_id):
+        # 1. Fetch the resource
+        profile = get_object_or_404(UserProfile, pk=user_id)
+        
+        # 2. CRITICAL CHECK: Enforce ownership.
+        if request.user != profile.user:
+            raise PermissionDenied("You are not authorized to edit this profile.")
+            
+        # 3. Proceed with logic
+        form = UserProfileForm(request.POST or None, instance=profile)
+        if request.method == 'POST' and form.is_valid():
+            form.save()
+            return redirect('profile_view', user_id=user_id)
+        
+        return render(request, 'profile_form.html', {'form': form})
+    ```
+
+    #### Testing Strategy
+    Write two tests:
+    1.  A "negative" test: Log in as `user_A`. Attempt to POST data to `user_B`'s update endpoint. Assert a `403 Forbidden` response.
+    2.  A "positive" test: Log in as `user_A`. POST to `user_A`'s endpoint. Assert a `200 OK` or `302 Redirect`.
+    
+    ```python
+    # users/tests.py
+    def test_user_cannot_update_another_users_profile(self):
+        user_a = User.objects.create_user('user_a', 'a@a.com', 'pass')
+        user_b = User.objects.create_user('user_b', 'b@b.com', 'pass')
+        
+        self.client.login(username='user_a', password='pass')
+        
+        # user_a attempts to update user_b's profile
+        url = reverse('update-profile', args=[user_b.profile.id])
+        response = self.client.post(url, {'email': 'attacker@a.com'})
+        
+        # A secure implementation should deny this.
+        self.assertEqual(response.status_code, 403)
+        user_b.profile.refresh_from_db()
+        self.assertEqual(user_b.profile.email, 'b@b.com') # Verify no change
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    In Spring Security, this flaw occurs when a developer correctly uses `@PreAuthorize("isAuthenticated()")` but fails to add the authorization check, such as `@PreAuthorize("#username == principal.username")` or checking against the `Authentication` object.
+
+    #### Vulnerable Scenario 1: Flawed Account Details Endpoint
+    A controller allows fetching account details but only checks for a valid login.
+    ```java
+    // controller/AccountController.java
+    @RestController
+    @RequestMapping("/api/accounts")
+    public class AccountController {
+        @Autowired
+        private AccountRepository accountRepo;
+
+        @GetMapping("/{accountId}")
+        @PreAuthorize("isAuthenticated()") // Checks for login, but not ownership
+        public Account getAccountDetails(@PathVariable Long accountId) {
+            // DANGEROUS: Any logged-in user can request any 'accountId'.
+            // An attacker authenticated as user 123 can request /api/accounts/456
+            return accountRepo.findById(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException());
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Enforce security at the method level. Use Spring Security's expression language (SpEL) to compare the logged-in principal's ID/username with the resource being accessed.
+
+    #### Secure Code Example
+    There are two main ways to fix this.
+    
+    **Option 1: Use `@PreAuthorize` with SpEL:**
+    ```java
+    // controller/AccountController.java (Secure Version 1)
+    @GetMapping("/{accountId}")
+    @PreAuthorize("isAuthenticated() and @accountSecurityService.isOwner(principal, #accountId)")
+    public Account getAccountDetails(@PathVariable Long accountId) {
+        // Now this code is only reachable if the security check passes.
+        return accountRepo.findById(accountId)
+            .orElseThrow(() -> new ResourceNotFoundException());
+    }
+    
+    // service/AccountSecurityService.java (Helper Service)
+    @Service("accountSecurityService")
+    public class AccountSecurityService {
+        public boolean isOwner(UserDetails userDetails, Long accountId) {
+            User user = (User) userDetails;
+            return user.getAccount().getId().equals(accountId);
+        }
+    }
+    ```
+    
+    **Option 2: Check manually inside the method:**
+    ```java
+    // controller/AccountController.java (Secure Version 2)
+    @GetMapping("/{accountId}")
+    public Account getAccountDetails(@PathVariable Long accountId, Authentication auth) {
+        // Get the logged-in user's details
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
+        User loggedInUser = userRepository.findByUsername(userDetails.getUsername());
+
+        // Fetch the requested resource
+        Account account = accountRepo.findById(accountId)
+            .orElseThrow(() -> new ResourceNotFoundException());
+
+        // CRITICAL CHECK: Enforce ownership
+        if (!account.getOwner().getId().equals(loggedInUser.getId())) {
+            throw new SecurityException("Access Denied");
+        }
+        
+        return account;
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test with two users. Authenticate as `user_A`. Make a request for `user_B`'s resource. Assert that the response is `403 Forbidden`.
+    ```java
+    // src/test/java/com/example/AccountControllerTest.java
+    @Test
+    @WithMockUser(username = "user_A")
+    public void getAccountDetails_whenNotOwner_shouldReturnForbidden() throws Exception {
+        // Assume user_B has accountId 456L
+        // And user_A is not the owner
+        
+        mockMvc.perform(get("/api/accounts/456"))
+            .andExpect(status().isForbidden());
+    }
+    
+    @Test
+    @WithMockUser(username = "user_A", authorities = "ROLE_USER")
+    public void getAccountDetails_whenIsOwner_shouldReturnOk() throws Exception {
+        // Assume user_A has accountId 123L
+        
+        mockMvc.perform(get("/api/accounts/123"))
+            .andExpect(status().isOk());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    In ASP.NET Core, this flaw is using `[Authorize]` (which only checks for a valid token/cookie) but failing to use *Policies* or manual checks to validate resource ownership.
+
+    #### Vulnerable Scenario 1: An Order Details API
+    An endpoint is secured with `[Authorize]`, but any user can query any order.
+    ```csharp
+    // Controllers/OrdersController.cs
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize] // Checks for authentication, NOT authorization
+    public class OrdersController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Order>> GetOrder(int id)
+        {
+            // DANGEROUS: Any authenticated user can get any order by its ID.
+            var order = await _context.Orders.FindAsync(id);
+            if (order == null)
+            {
+                return NotFound();
+            }
+            return order;
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    The best practice is to inject the `UserManager` or use the `User` principal to get the logged-in user's ID. Then, use that ID in the database query to ensure you *only* fetch resources they own.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/OrdersController.cs (Secure Version)
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize] // Still good to have!
+    public class OrdersController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+        private readonly UserManager<AppUser> _userManager;
+
+        public OrdersController(AppDbContext context, UserManager<AppUser> userManager)
+        {
+            _context = context;
+            _userManager = userManager;
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Order>> GetOrder(int id)
+        {
+            // 1. Get the currently logged-in user's ID
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            
+            // 2. CRITICAL CHECK: Add the user ID to the database query.
+            // This query can ONLY find an order if the ID matches AND the user ID matches.
+            var order = await _context.Orders
+                .Where(o => o.Id == id && o.OwnerId == userId)
+                .FirstOrDefaultAsync();
+
+            if (order == null)
+            {
+                // Return NotFound for both "doesn't exist" and "not yours"
+                // This prevents leaking information about which IDs are valid.
+                return NotFound();
+            }
+            return order;
+        }
+    }
+    ```
+    
+    #### Testing Strategy
+    Write an integration test with a mock client. Authenticate as `user_A`. Request an order ID known to belong to `user_B`. Assert that the response is `404 Not Found`.
+    ```csharp
+    // Tests/OrdersControllerTests.cs
+    [Fact]
+    public async Task GetOrder_WhenUserIsNotOwner_ShouldReturnNotFound()
+    {
+        // 1. Setup: Authenticate client as 'user_A'
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = 
+            new AuthenticationHeaderValue("Bearer", "token_for_user_A");
+        
+        // 2. Act: Request an order that belongs to 'user_B' (e.g., orderId 99)
+        var response = await client.GetAsync("/api/orders/99");
+        
+        // 3. Assert: The API should return 404, not the order data.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    In Laravel, this is the classic "Insecure Direct Object Reference" (IDOR). A developer protects a route with `auth` middleware but then fails to scope the Eloquent query to the authenticated user.
+
+    #### Vulnerable Scenario 1: A Post Editor
+    An endpoint allows a user to edit a blog post, checking only for login.
+    ```php
+    // app/Http/Controllers/PostController.php
+    class PostController extends Controller
+    {
+        // Route is in web.php, wrapped in ->middleware('auth');
+        
+        public function edit($id)
+        {
+            // DANGEROUS: Fetches *any* post by its ID.
+            // An attacker can log in and go to /posts/5/edit,
+            // even if post 5 belongs to another user.
+            $post = Post::findOrFail($id);
+            return view('posts.edit', ['post' => $post]);
+        }
+
+        public function update(Request $request, $id)
+        {
+            $post = Post::findOrFail($id);
+            
+            // DANGEROUS: Same problem. Any user can update any post.
+            $post->title = $request->title;
+            $post->save();
+            return redirect()->route('posts.show', $post->id);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Never use `Post::find($id)` or `Post::findOrFail($id)` in a user-facing controller. Instead, get the authenticated user (`Auth::user()`) and query *their* related posts.
+    
+    A secondary, stronger mitigation is to use Laravel Policies.
+
+    #### Secure Code Example
+    
+    **Option 1: Scope the Query (Good):**
+    ```php
+    // app/Http/Controllers/PostController.php (Secure Version 1)
+    class PostController extends Controller
+    {
+        public function edit($id)
+        {
+            // SECURE: We get the logged-in user, access their 'posts'
+            // relationship, and then find the post.
+            // This will fail if the post doesn't belong to them.
+            $post = Auth::user()->posts()->findOrFail($id);
+            return view('posts.edit', ['post' => $post]);
+        }
+
+        public function update(Request $request, $id)
+        {
+            $post = Auth::user()->posts()->findOrFail($id);
+            
+            // SECURE: The update can only happen on a post they own.
+            $post->title = $request->title;
+            $post->save();
+            return redirect()->route('posts.show', $post->id);
+        }
+    }
+    ```
+    
+    **Option 2: Use a Policy (Better):**
+    ```php
+    // app/Policies/PostPolicy.php
+    class PostPolicy
+    {
+        public function update(User $user, Post $post)
+        {
+            // CRITICAL CHECK
+            return $user->id === $post->user_id;
+        }
+    }
+    
+    // app/Http/Controllers/PostController.php (Secure Version 2)
+    class PostController extends Controller
+    {
+        public function update(Request $request, $id)
+        {
+            $post = Post::findOrFail($id);
+            
+            // SECURE: This line will throw a 403 error
+            // if the 'update' policy check fails.
+            $this->authorize('update', $post); 
+            
+            $post->title = $request->title;
+            $post->save();
+            return redirect()->route('posts.show', $post->id);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a feature test where `user_A` is created and authenticated. Create a post belonging to `user_B`. Have `user_A` attempt to hit the `update` endpoint for `user_B`'s post. Assert a `403 Forbidden` response.
+    ```php
+    // tests/Feature/PostSecurityTest.php
+    public function test_user_cannot_update_another_users_post()
+    {
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+        
+        $postB = Post::factory()->create(['user_id' => $userB->id]);
+        
+        $response = $this->actingAs($userA)
+            ->put(route('posts.update', $postB->id), [
+                'title' => 'This is a hacked title'
+            ]);
+            
+        $response->assertStatus(403);
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    In Express, this flaw is common. A developer writes middleware to check for a valid session or JWT, but the route handler itself blindly trusts a URL parameter (like `:id`) to fetch a resource.
+
+    #### Vulnerable Scenario 1: A "Get Todo" Endpoint
+    An API endpoint for a todo app is protected by session middleware, but the route handler doesn't check *who* owns the todo.
+    ```javascript
+    // authMiddleware.js
+    const ensureLoggedIn = (req, res, next) => {
+        if (req.session.userId) {
+            return next(); // User is logged in
+        }
+        res.status(401).send('Unauthorized');
+    };
+    
+    // server.js
+    app.get('/api/todos/:id', ensureLoggedIn, async (req, res) => {
+        const { id } = req.params;
+        try {
+            // DANGEROUS: Fetches *any* todo by its 'id'.
+            // If user 123 is logged in, they can request /api/todos/456
+            // and get the todo for user 456.
+            const todo = await Todo.findById(id);
+            if (!todo) return res.status(404).send('Not Found');
+            res.json(todo);
+        } catch (err) {
+            res.status(500).send('Server Error');
+        }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    The route handler *must* use the authenticated user's ID (e.g., `req.session.userId` or `req.user.id` from a JWT) to scope the database query.
+
+    #### Secure Code Example
+    ```javascript
+    // server.js (Secure Version)
+    app.get('/api/todos/:id', ensureLoggedIn, async (req, res) => {
+        const { id } = req.params;
+        const userId = req.session.userId; // Get ID from the session
+        
+        try {
+            // CRITICAL CHECK: The query now requires BOTH the 'id'
+            // and the 'userId' to match.
+            const todo = await Todo.findOne({ _id: id, owner: userId });
+            
+            if (!todo) {
+                // Return 404. This correctly handles "not found"
+                // and "not yours" with the same response.
+                return res.status(404).send('Not Found');
+            }
+            res.json(todo);
+        } catch (err) {
+            res.status(500).send('Server Error');
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest and Supertest. Create two users and one todo belonging to `user_B`. Create an authenticated session for `user_A`. Make a request as `user_A` for `user_B`'s todo. Assert a `404 Not Found` response.
+    ```javascript
+    // tests/todos.test.js
+    it('should return 404 when user requests another users todo', async () => {
+        // 1. Setup: userA is logged in (via supertest agent)
+        const agent = request.agent(app);
+        await agent.post('/login').send({ user: 'userA', pass: 'pass' });
+        
+        // todoB belongs to userB (id: 'todo-b-id')
+        
+        // 2. Act: userA requests todoB
+        const response = await agent.get('/api/todos/todo-b-id');
+        
+        // 3. Assert: Server should not find it (for this user)
+        expect(response.statusCode).toBe(404);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    In Rails, this is the canonical example of an IDOR. A developer uses `before_action :authenticate_user!` but then uses `Post.find(params[:id])` in the controller action, which finds *any* post.
+
+    #### Vulnerable Scenario 1: A Message Viewer
+    A controller action allows a user to view a private message, but only checks for authentication.
+    ```ruby
+    # app/controllers/messages_controller.rb
+    class MessagesController < ApplicationController
+      before_action :authenticate_user! # Checks for login
+    
+      def show
+        # DANGEROUS: Any authenticated user can view any message
+        # by simply knowing its ID.
+        @message = Message.find(params[:id])
+        render :show
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Never find an object directly by its ID. Instead, find it *through* the authenticated user's association. Use `current_user.messages.find(params[:id])`. This will automatically scope the search.
+
+    #### Secure Code Example
+    
+    **Option 1: Scope the Query (Good):**
+    ```ruby
+    # app/controllers/messages_controller.rb (Secure Version 1)
+    class MessagesController < ApplicationController
+      before_action :authenticate_user!
+    
+      def show
+        # SECURE: This query searches *only* within the 'current_user.messages'
+        # It will raise an 'ActiveRecord::RecordNotFound' if the
+        # message exists but doesn't belong to the user.
+        @message = current_user.messages.find(params[:id])
+        render :show
+      end
+    end
+    ```
+    
+    **Option 2: Use a Policy (Better, e.g., with Pundit gem):**
+    ```ruby
+    # app/policies/message_policy.rb
+    class MessagePolicy < ApplicationPolicy
+      def show?
+        # record = the @message
+        # user = the current_user
+        record.user == user
+      end
+    end
+
+    # app/controllers/messages_controller.rb (Secure Version 2)
+    class MessagesController < ApplicationController
+      before_action :authenticate_user!
+    
+      def show
+        @message = Message.find(params[:id])
+        
+        # SECURE: This line will raise a Pundit::NotAuthorizedError
+        # if the 'show?' policy fails.
+        authorize @message
+        
+        render :show
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. Create `user_A` and `user_B`. Create a message for `user_B`. Log in as `user_A`. Attempt to GET the `show` action for `user_B`'s message. Assert that the response is a `404 Not Found` (if using scoped query) or `403 Forbidden`.
+    ```ruby
+    # spec/requests/messages_spec.rb
+    it "prevents a user from seeing another user's message" do
+      user_a = create(:user)
+      user_b = create(:user)
+      message_b = create(:message, user: user_b)
+      
+      sign_in user_a # Helper method to log in
+      
+      get message_path(message_b)
+      
+      # ActiveRecord::RecordNotFound will be rescued by Rails
+      # and turned into a 404 response.
+      expect(response).to have_http_status(:not_found)
+    end
+    ```
+  </Tab>
+</Tabs>
