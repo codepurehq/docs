@@ -1,0 +1,389 @@
+---
+title: "Insufficient Password Hash Effort"
+sidebarTitle: "Weak Password Hash (CWE-916)"
+description: "Mitigation for using fast password hashes (SHA256/512) instead of slow ones (bcrypt/Argon2/PBKDF2) in various frameworks."
+icon: "stopwatch"
+iconType: "solid"
+---
+
+## Overview
+This vulnerability occurs when an application uses a password hashing algorithm that is too fast, even if it's cryptographically strong for other purposes (like SHA-256 or SHA-512). Fast hashes allow attackers to perform rapid offline brute-force or dictionary attacks if they obtain a database of password hashes. Modern password hashing requires algorithms designed to be **computationally expensive** (slow) and **memory-hard** to significantly hinder attackers.
+
+## Business Impact
+If an attacker steals password hashes stored using fast algorithms, they can quickly crack many of them, especially common or weak passwords. This leads to widespread account compromise, allowing attackers to impersonate users, steal sensitive data linked to those accounts, and potentially pivot to other systems. 🔑💥
+
+<Card title="Reference Details" icon="book-open" iconType:="solid">
+  **CWE ID:** [CWE-916](https://cwe.mitre.org/data/definitions/916.html)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+## Framework-Specific Analysis and Remediation
+Secure password hashing relies on algorithms like **bcrypt**, **scrypt**, **Argon2**, or **PBKDF2**. The vulnerability arises when developers manually implement hashing using fast algorithms like SHA-256 directly, often combined with a salt but without sufficient iterations or work factor. Framework defaults are usually secure, but custom implementations or legacy code are common sources of this weakness.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Django defaults to PBKDF2_SHA256, which is acceptable but slower is better. Using `hashlib.sha256` directly is the vulnerability.
+
+    #### Vulnerable Scenario 1: Direct SHA-256 Hashing
+    A custom user model uses `hashlib.sha256` directly with just a salt.
+    ```python
+    # models.py (Custom User Model)
+    import hashlib
+    import os
+
+    def set_password(self, raw_password):
+        self.salt = os.urandom(16)
+        # DANGEROUS: SHA-256 is too fast for passwords, even with a salt.
+        # Attackers can compute billions of hashes per second.
+        self.password_hash = hashlib.sha256(self.salt + raw_password.encode()).hexdigest()
+        
+    def check_password(self, raw_password):
+        check_hash = hashlib.sha256(self.salt + raw_password.encode()).hexdigest()
+        return check_hash == self.password_hash
+    ```
+
+    #### Vulnerable Scenario 2: Using PBKDF2 with Low Iterations
+    Using `hashlib.pbkdf2_hmac` but setting the iteration count too low.
+    ```python
+    # utils/auth.py
+    import hashlib
+    import os
+
+    def hash_password_weak_pbkdf2(password):
+        salt = os.urandom(16)
+        # DANGEROUS: iterations=1000 is far too low for modern hardware.
+        # OWASP recommends at least 100,000 for PBKDF2-SHA256.
+        pw_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 1000)
+        return salt + pw_hash # Store salt with hash
+    ```
+
+    #### Mitigation and Best Practices
+    Use Django's built-in password management (`user.set_password(raw_password)`, `user.check_password(raw_password)`). Configure `PASSWORD_HASHERS` in `settings.py` to prioritize `Argon2PasswordHasher` or `BCryptSHA256PasswordHasher`.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Secure Password Hashers)
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.Argon2PasswordHasher', # Preferred
+        'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher', # Default, ensure high iterations
+    ]
+    
+    # Usage with Django User model (Secure)
+    from django.contrib.auth.models import User
+    
+    user = User.objects.get(username='test')
+    user.set_password('newS3cureP@ssw0rd') # Uses hasher from settings
+    user.save()
+    
+    is_correct = user.check_password('attempted_password') 
+    ```
+
+    #### Testing Strategy
+    Inspect password hashes in the database. They should start with `argon2$`, `bcrypt$`, or `pbkdf2_sha256$`. Manually check the iteration count if using PBKDF2 (it's part of the stored hash string). Ensure no code uses `hashlib.sha256` etc. directly for passwords.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Spring Security defaults to `BCryptPasswordEncoder`, which is secure. The vulnerability is using `MessageDigest` (e.g., SHA-256) directly or a `PasswordEncoder` with insufficient work factor.
+
+    #### Vulnerable Scenario 1: Direct SHA-256 Hashing
+    Manually hashing passwords using `java.security.MessageDigest`.
+    ```java
+    // service/UserService.java
+    import java.security.MessageDigest;
+    import java.security.SecureRandom;
+
+    public String hashPasswordSha256(String password) throws Exception {
+        SecureRandom random = new SecureRandom();
+        byte[] salt = new byte[16];
+        random.nextBytes(salt);
+        
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        md.update(salt);
+        // DANGEROUS: SHA-256 is too fast, even with a salt.
+        byte[] hashedPassword = md.digest(password.getBytes("UTF-8"));
+        // ... combine salt and hash for storage ...
+        return bytesToHex(salt) + ":" + bytesToHex(hashedPassword); 
+    }
+    ```
+
+    #### Vulnerable Scenario 2: BCrypt with Low Strength
+    Using `BCryptPasswordEncoder` but configuring it with a very low strength (work factor).
+    ```java
+    // config/SecurityConfig.java
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        // DANGEROUS: Strength 4 is extremely weak and fast to compute.
+        // Default is 10, recommended is 12+.
+        int strength = 4; 
+        return new BCryptPasswordEncoder(strength);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `BCryptPasswordEncoder` with a strength of at least 12, or use `Argon2PasswordEncoder`. Let Spring Security handle the hashing via `PasswordEncoder.encode(rawPassword)`.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure)
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        // SECURE: Use BCrypt with adequate strength (12 or higher).
+        // Or use Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+        int strength = 12; 
+        return new BCryptPasswordEncoder(strength); 
+    }
+
+    // service/UserService.java (Secure Usage)
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    public String hashPasswordSecure(String rawPassword) {
+        // SECURE: Delegate hashing to the configured PasswordEncoder.
+        return passwordEncoder.encode(rawPassword);
+    }
+    ```
+
+    #### Testing Strategy
+    Check password hashes in the database; they should start with `$2a$12$` (BCrypt strength 12) or `$argon2id$`. Write a unit test for the `PasswordEncoder` bean to ensure it's BCrypt or Argon2.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    ASP.NET Core Identity defaults to `PBKDF2` with HMAC-SHA256 and a high iteration count (>= 10,000 in recent versions), which is acceptable. The vulnerability is using `SHA256.Create()` directly or configuring Identity with low iteration counts.
+
+    #### Vulnerable Scenario 1: Direct SHA-256 Hashing
+    Manually hashing passwords using `System.Security.Cryptography.SHA256`.
+    ```csharp
+    // Services/AuthService.cs
+    using System.Security.Cryptography;
+    using System.Text;
+
+    public string HashPasswordSha256(string password, byte[] salt)
+    {
+        using (var sha256 = SHA256.Create())
+        {
+            byte[] passwordBytes = Encoding.UTF8.GetBytes(password);
+            byte[] saltedPassword = new byte[salt.Length + passwordBytes.Length];
+            // ... combine salt and password bytes ...
+            
+            // DANGEROUS: SHA-256 is too fast for passwords.
+            byte[] hashBytes = sha256.ComputeHash(saltedPassword);
+            return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hashBytes);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Low Iteration Count for PBKDF2
+    Configuring ASP.NET Core Identity's `PasswordHasher` with insufficient iterations.
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.Configure<PasswordHasherOptions>(options => 
+        // DANGEROUS: Iteration count of 1000 is too low.
+        // Default is higher (e.g., 10000+).
+        options.IterationCount = 1000 
+    );
+    services.AddDefaultIdentity<IdentityUser>()...
+    ```
+
+    #### Mitigation and Best Practices
+    Use the default ASP.NET Core Identity password hasher (`PasswordHasher<TUser>`). Ensure the `PasswordHasherOptions.IterationCount` is set to a high value (OWASP recommends 120,000+ for PBKDF2-SHA256).
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure Default)
+    // SECURE: Rely on the default high iteration count.
+    services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = true)
+        .AddEntityFrameworkStores<ApplicationDbContext>();
+
+    // Usage (Secure)
+    var user = new IdentityUser { UserName = model.Email, Email = model.Email };
+    // SECURE: UserManager uses the configured (secure) hasher.
+    var result = await _userManager.CreateAsync(user, model.Password); 
+    ```
+
+    #### Testing Strategy
+    Check the `PasswordHash` column in `AspNetUsers`. While the format encodes parameters, verifying the iteration count requires either attempting a hash verification (which uses the embedded count) or decoding the format. Ensure no code manually uses `SHA256.Create().ComputeHash()`.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel defaults to `bcrypt` (`Hash::make`), which is secure. The vulnerability is using `hash('sha256', ...)` or `md5()` manually.
+
+    #### Vulnerable Scenario 1: Using `hash('sha256', ...)`
+    A developer manually hashes a password using the generic `hash()` function.
+    ```php
+    // app/Http/Controllers/RegisterController.php
+    protected function create(array $data)
+    {
+        $salt = random_bytes(16);
+        // DANGEROUS: 'sha256' is too fast, even with a salt.
+        $passwordHash = hash('sha256', $salt . $data['password']);
+        
+        return User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'salt' => base64_encode($salt),
+            'password' => $passwordHash,
+        ]);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Low bcrypt Cost Factor
+    Configuring Laravel's bcrypt hasher with a low cost factor (rounds).
+    ```php
+    // config/hashing.php
+    'bcrypt' => [
+        // DANGEROUS: 'rounds' => 4 is extremely weak.
+        // Default is 10, recommended is 12+.
+        'rounds' => 4, 
+    ],
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `Hash::make()` and `Hash::check()`. Ensure the bcrypt `rounds` in `config/hashing.php` is at least 12. Consider switching the default driver to `argon2id` if your server supports it.
+
+    #### Secure Code Example
+    ```php
+    // config/hashing.php (Secure)
+    'bcrypt' => [
+        'rounds' => 12, // SECURE: Use a sufficient cost factor
+    ],
+    // Or configure Argon2
+    'argon2id' => [
+        'memory' => 65536, // 64MB
+        'threads' => 1,
+        'time' => 4,
+    ],
+    // 'driver' => 'argon2id', // If supported
+
+    // app/Http/Controllers/RegisterController.php (Secure Usage)
+    use Illuminate\Support\Facades\Hash;
+    
+    protected function create(array $data)
+    {
+        return User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            // SECURE: Uses Laravel's configured default (bcrypt or Argon2).
+            'password' => Hash::make($data['password']), 
+        ]);
+    }
+    ```
+
+    #### Testing Strategy
+    Check password hashes in the database; they should start with `$2y$12$` (bcrypt cost 12) or `$argon2id$`. Verify the `rounds` in `config/hashing.php`. Ensure no code uses `hash()`, `md5()`, or `sha1()` for passwords.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Node's built-in `crypto.pbkdf2` is available but requires careful parameter selection. The standard is the `bcrypt` library. Using `crypto.createHash('sha256', ...)` is the vulnerability.
+
+    #### Vulnerable Scenario 1: Direct SHA-256 Hashing
+    Hashing passwords using the built-in `crypto` module directly.
+    ```javascript
+    // utils/auth.js
+    const crypto = require('crypto');
+
+    function hashPasswordSha256(password) {
+      const salt = crypto.randomBytes(16);
+      // DANGEROUS: SHA-256 is too fast.
+      const hash = crypto.createHash('sha256').update(salt.toString('hex') + password).digest('hex');
+      return salt.toString('hex') + ':' + hash;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Using `crypto.pbkdf2` with Low Iterations
+    Using the built-in PBKDF2 but with insufficient iterations.
+    ```javascript
+    // utils/auth.js
+    const crypto = require('crypto');
+
+    function hashPasswordWeakPbkdf2(password, callback) {
+      const salt = crypto.randomBytes(16);
+      // DANGEROUS: 1000 iterations is too low.
+      crypto.pbkdf2(password, salt, 1000, 64, 'sha512', (err, derivedKey) => {
+        if (err) throw err;
+        callback(salt.toString('hex') + ':' + derivedKey.toString('hex'));
+      });
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use the `bcrypt` library (`bcrypt.hash`, `bcrypt.compare`). Ensure the salt rounds parameter is 12 or higher.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/auth.js (Secure with bcrypt)
+    const bcrypt = require('bcrypt');
+    const saltRounds = 12; // SECURE: Recommended salt rounds
+
+    async function hashPasswordSecure(password) {
+      // SECURE: Uses bcrypt async with salt rounds
+      const salt = await bcrypt.genSalt(saltRounds);
+      const hash = await bcrypt.hash(password, salt);
+      return hash; // bcrypt hash includes salt and cost factor
+    }
+
+    async function comparePassword(password, hash) {
+      return await bcrypt.compare(password, hash);
+    }
+    ```
+
+    #### Testing Strategy
+    Check password hashes in the database; they should start with `$2b$12$`. Ensure no code uses `crypto.createHash` directly for passwords. If using `crypto.pbkdf2`, verify the iteration count is high (e.g., > 100,000).
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Rails' `has_secure_password` uses `BCrypt::Password.create`, which is secure. The vulnerability is using `Digest::SHA256.hexdigest` manually.
+
+    #### Vulnerable Scenario 1: Direct SHA-256 Hashing
+    Manually hashing a password using `Digest::SHA256`.
+    ```ruby
+    # app/models/legacy_user.rb
+    require 'digest'
+    require 'securerandom'
+
+    def password=(new_password)
+      self.salt = SecureRandom.hex(16)
+      # DANGEROUS: SHA256 is too fast.
+      self.password_digest = Digest::SHA256.hexdigest(self.salt + new_password)
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Low Cost Factor for bcrypt
+    Manually using `BCrypt::Password.create` with a low cost factor.
+    ```ruby
+    # lib/custom_hasher.rb
+    require 'bcrypt'
+
+    def self.hash_password_weak_bcrypt(password)
+      # DANGEROUS: Cost factor 4 is extremely weak.
+      # Default is usually 12.
+      BCrypt::Password.create(password, cost: 4) 
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Use `has_secure_password` in your Active Record model. If hashing manually, use `BCrypt::Password.create(password)` which uses a secure default cost factor.
+
+    #### Secure Code Example
+    ```ruby
+    # app/models/user.rb (Secure)
+    class User < ApplicationRecord
+      # SECURE: Uses BCrypt::Password with default cost factor.
+      has_secure_password 
+    end
+
+    # lib/custom_hasher.rb (Secure Manual Hashing)
+    require 'bcrypt'
+
+    def self.hash_password_secure(password)
+      # SECURE: Uses default cost factor (>= 12)
+      BCrypt::Password.create(password)
+    end
+    ```
+
+    #### Testing Strategy
+    Check the `password_digest` column in your database; hashes should start with `$2a$12$` (bcrypt cost 12). Ensure no code manually uses `Digest::SHA256` etc. for passwords.
+  </Tab>
+</Tabs>
