@@ -1,0 +1,525 @@
+---
+title: "Open Redirect"
+sidebarTitle: "Open Redirect (CWE-601)"
+description: "Mitigation for Open Redirect vulnerabilities in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "arrow-right-from-bracket"
+iconType: "solid"
+---
+
+## Overview
+An Open Redirect vulnerability occurs when an application uses user-supplied input to redirect the user to a URL, but fails to validate that URL. An attacker can craft a link to your trusted website that, when clicked, redirects the user to a malicious site. This is often used in phishing attacks, as the user only sees your legitimate domain in the link.
+
+## Business Impact
+This vulnerability is a powerful tool for phishing. Attackers can steal user credentials by redirecting them to a clone of your login page. It abuses the trust users have in your domain, leading to account compromise and reputational damage.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-601](https://cwe.mitre.org/data/definitions/601.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** Medium
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This vulnerability is common in login pages, logout endpoints, and any "interstitial" page that uses a query parameter (e.g., `?next=`, `?returnTo=`) to control navigation. The key to mitigation is to *never* trust this user-supplied URL. It must be validated against an allow-list or checked to ensure it's a local path.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    A login view that takes a `?next` parameter and uses `redirect(request.GET.get('next'))`.
+
+    #### Vulnerable Scenario 1: A Login Redirect
+    ```python
+    # accounts/views.py
+    from django.shortcuts import redirect
+
+    def login_view(request):
+        if request.method == 'POST':
+            # ... (login logic) ...
+            if user_is_authenticated:
+                next_url = request.GET.get('next')
+                if next_url:
+                    # DANGEROUS: If next_url is "[https://evil.com](https://evil.com)",
+                    # the user will be redirected there.
+                    return redirect(next_url)
+                return redirect('/')
+    ```
+
+    #### Vulnerable Scenario 2: A "Change Language" Endpoint
+    A view that sets a language cookie and redirects the user back to where they came from.
+    ```python
+    # localization/views.py
+    def set_language(request):
+        return_to = request.GET.get('return_to', '/')
+        lang_code = request.GET.get('lang', 'en')
+        response = redirect(return_to) # DANGEROUS
+        response.set_cookie('language', lang_code)
+        return response
+    ```
+
+    #### Mitigation and Best Practices
+    Use `django.utils.http.url_has_allowed_host_and_scheme` to validate the `next_url`. You must pass it the allowed hosts (from `settings.ALLOWED_HOSTS`). For relative paths, you can also check `next_url.startswith('/')`.
+
+    #### Secure Code Example
+    ```python
+    # accounts/views.py (Secure)
+    from django.shortcuts import redirect
+    from django.utils.http import url_has_allowed_host_and_scheme
+    from django.conf import settings
+
+    def login_view(request):
+        if request.method == 'POST':
+            # ... (login logic) ...
+            if user_is_authenticated:
+                next_url = request.GET.get('next')
+                
+                # SECURE: Check if the URL is local and safe
+                if next_url and url_has_allowed_host_and_scheme(
+                    url=next_url,
+                    allowed_hosts={request.get_host()},
+                    require_https=request.is_secure()
+                ):
+                    return redirect(next_url)
+                
+                # Default to a safe internal URL
+                return redirect('/')
+    ```
+
+    #### Testing Strategy
+    Write an integration test that logs in and passes a malicious `next` parameter. Assert that the response redirects to the *default* page (`/`), not the malicious URL.
+    ```python
+    # accounts/tests.py
+    def test_login_redirect_prevents_open_redirect(self):
+        malicious_url = "[https://evil-site.com](https://evil-site.com)"
+        response = self.client.post(
+            reverse('login') + f'?next={malicious_url}', 
+            {'username': 'u', 'password': 'p'}
+        )
+        
+        # Should redirect to the default, not the malicious URL
+        self.assertRedirects(response, '/')
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    A controller that returns a `RedirectView` or `ModelAndView` constructed with a user-supplied `returnUrl` parameter.
+
+    #### Vulnerable Scenario 1: A Logout Redirect
+    ```java
+    // controller/AccountController.java
+    @GetMapping("/logout")
+    public RedirectView logout(
+        HttpServletRequest request,
+        @RequestParam(required = false) String returnUrl
+    ) {
+        request.getSession().invalidate();
+        if (returnUrl != null) {
+            // DANGEROUS: The returnUrl is not validated.
+            return new RedirectView(returnUrl);
+        }
+        return new RedirectView("/");
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A Language Switcher
+    A controller changes the user's language and redirects back to their previous page.
+    ```java
+    // controller/LocaleController.java
+    @GetMapping("/change-locale")
+    public RedirectView changeLocale(
+        @RequestParam String lang,
+        @RequestParam String returnUrl
+    ) {
+        // ... (logic to change locale) ...
+        
+        // DANGEROUS: The returnUrl is not validated.
+        // An attacker can set returnUrl=[https://evil.com](https://evil.com)
+        return new RedirectView(returnUrl);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Create a custom validation function. Parse the `returnUrl` into a `java.net.URI` object, get the `getHost()`, and compare it against an allow-list of your application's valid hosts. You can also check if `uri.getHost() == null` which indicates a relative path.
+
+    #### Secure Code Example
+    ```java
+    // controller/LocaleController.java (Secure)
+    import java.net.URI;
+    import java.net.URISyntaxException;
+
+    @GetMapping("/change-locale")
+    public RedirectView changeLocale(
+        @RequestParam String lang,
+        @RequestParam String returnUrl
+    ) {
+        // ... (logic to change locale) ...
+        
+        if (isUrlLocalAndSafe(returnUrl)) {
+            return new RedirectView(returnUrl);
+        }
+        
+        // SECURE: Default to a safe, hardcoded path
+        return new RedirectView("/");
+    }
+
+    private boolean isUrlLocalAndSafe(String url) {
+        if (url == null || url.trim().isEmpty()) return false;
+        // Whitelist relative paths
+        if (url.startsWith("/")) return true; 
+        
+        try {
+            URI uri = new URI(url);
+            // Check for relative paths or same host
+            if (uri.getHost() == null) {
+                return true; // e.g., "page.html"
+            }
+            // Check against your app's domain
+            return uri.getHost().equalsIgnoreCase("my-app.com");
+        } catch (URISyntaxException e) {
+            return false;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test. `perform` a `get` to the endpoint with a malicious `returnUrl`. Assert that the `redirectedUrl` is the default (`/`) and not the malicious one.
+    ```java
+    @Test
+    void changeLocale_preventsOpenRedirect() throws Exception {
+        mockMvc.perform(get("/change-locale")
+                .param("lang", "en")
+                .param("returnUrl", "[https://evil.com](https://evil.com)"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/"));
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    ASP.NET Core has a built-in helper `Url.IsLocalUrl()`. The vulnerability is when a developer uses `Redirect(returnUrl)` without this check.
+
+    #### Vulnerable Scenario 1: A Login Redirect
+    ```csharp
+    // Controllers/AccountController.cs
+    [HttpPost]
+    public async Task<IActionResult> Login(LoginViewModel model, string returnUrl = null)
+    {
+        // ... (login logic) ...
+        if (result.Succeeded)
+        {
+            if (!string.IsNullOrEmpty(returnUrl))
+            {
+                // DANGEROUS: returnUrl is not validated.
+                return Redirect(returnUrl);
+            }
+            return RedirectToAction("Index", "Home");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A Logout Redirect
+    A logout action that redirects to a "goodbye" page specified in the query.
+    ```csharp
+    // Controllers/AccountController.cs
+    [HttpPost]
+    public async Task<IActionResult> Logout(string returnUrl = null)
+    {
+        await _signInManager.SignOutAsync();
+        if (!string.IsNullOrEmpty(returnUrl))
+        {
+            // DANGEROUS: returnUrl is not validated.
+            return Redirect(returnUrl);
+        }
+        return RedirectToAction("Index", "Home");
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always validate the `returnUrl` using `Url.IsLocalUrl()`. If the check fails, redirect to a safe, hardcoded default page (like the homepage).
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/AccountController.cs (Secure)
+    [HttpPost]
+    public async Task<IActionResult> Login(LoginViewModel model, string returnUrl = null)
+    {
+        // ... (login logic) ...
+        if (result.Succeeded)
+        {
+            // SECURE: Use Url.IsLocalUrl() to check the path
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            {
+                return Redirect(returnUrl);
+            }
+            return RedirectToAction("Index", "Home");
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write an integration test that posts to the login action with a malicious `returnUrl`. Assert that the response's `Location` header is the default path (`/`) and not the malicious URL.
+    ```csharp
+    [Fact]
+    public async Task Login_Prevents_OpenRedirect()
+    {
+        // ... (setup http client and form data) ...
+        
+        var maliciousUrl = "[https://evil.com](https://evil.com)";
+        var response = await _client.PostAsync($"/Account/Login?returnUrl={maliciousUrl}", formData);
+        
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        // Asserts it redirects to the safe default, not evil.com
+        Assert.Equal("/", response.Headers.Location.OriginalString);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    A developer uses `return redirect(request->input('next'))` without validation. Laravel's `redirect()->intended()` helper is designed to solve this safely for logins.
+
+    #### Vulnerable Scenario 1: A Login Controller
+    ```php
+    // app/Http/Controllers/LoginController.php
+    public function login(Request $request)
+    {
+        // ... (login logic) ...
+        if (Auth::attempt($credentials)) {
+            $next_url = $request->input('next');
+            if ($next_url) {
+                // DANGEROUS: The 'next' param is not validated.
+                return redirect($next_url);
+            }
+            return redirect('/dashboard');
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A Marketing Redirect
+    An endpoint on the main site redirects to a partner site based on a query param.
+    ```php
+    // app/Http/Controllers/MarketingController.php
+    public function partnerRedirect(Request $request)
+    {
+        $partnerUrl = $request->input('url');
+        if ($partnerUrl) {
+            // DANGEROUS: The 'url' param is not validated against an
+            // allow-list of known partners.
+            return redirect($partnerUrl);
+        }
+        return redirect('/');
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    For logins, use Laravel's built-in `redirect()->intended('default_path')`. For other redirects, validate the URL. Check if it's a local path using `filter_var` or `parse_url`, or check it against a hardcoded allow-list of domains.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/LoginController.php (Secure)
+    public function login(Request $request)
+    {
+        // ... (login logic) ...
+        if (Auth::attempt($credentials)) {
+            // SECURE: This automatically and safely redirects to the
+            // page the user intended to visit, or /dashboard if none.
+            return redirect()->intended('/dashboard');
+        }
+    }
+
+    // app/Http/Controllers/MarketingController.php (Secure)
+    public function partnerRedirect(Request $request)
+    {
+        $partnerUrl = $request->input('url');
+        $allowedPartners = [
+            'partner-one.com',
+            'partner-two.org'
+        ];
+        
+        $host = parse_url($partnerUrl, PHP_URL_HOST);
+        
+        if ($host && in_array($host, $allowedPartners)) {
+            return redirect($partnerUrl);
+        }
+        return redirect('/');
+    }
+    ```
+
+    #### Testing Strategy
+    Write a feature test that posts to the login route with a malicious `next` parameter in the query. Assert that the redirect goes to the default path, not the malicious one.
+    ```php
+    // tests/Feature/LoginRedirectTest.php
+    public function test_login_prevents_open_redirect()
+    {
+        $user = User::factory()->create();
+        $maliciousUrl = '[https://evil.com](https://evil.com)';
+
+        $response = $this->post('/login?next=' . $maliciousUrl, [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+        
+        // Asserts it redirects to the safe 'intended' default
+        $response->assertRedirect('/dashboard');
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    This vulnerability is extremely common in Express, caused by `res.redirect(req.query.returnTo)`.
+
+    #### Vulnerable Scenario 1: Login Redirect
+    ```javascript
+    // app.js
+    app.post('/login', passport.authenticate('local'), (req, res) => {
+        const { returnTo } = req.query;
+        if (returnTo) {
+            // DANGEROUS: No validation on returnTo
+            res.redirect(returnTo);
+        } else {
+            res.redirect('/dashboard');
+        }
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: Affiliate Link Redirect
+    An endpoint for tracking affiliate clicks redirects to any URL.
+    ```javascript
+    // routes/tracking.js
+    router.get('/click', (req, res) => {
+        const { aff_id, target_url } = req.query;
+        
+        logClick(aff_id);
+        
+        // DANGEROUS: target_url is not validated
+        res.redirect(target_url);
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Use `new URL()` to parse the `returnTo` parameter. Check that `url.hostname` matches your application's hostname or that it is a relative path (e.g., `startsWith('/')`). For external redirects, use an allow-list.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    app.post('/login', passport.authenticate('local'), (req, res) => {
+        const { returnTo } = req.query;
+        
+        if (isUrlLocalAndSafe(returnTo, req.hostname)) {
+            res.redirect(returnTo);
+        } else {
+            res.redirect('/dashboard');
+        }
+    });
+
+    function isUrlLocalAndSafe(url, hostname) {
+        if (!url) return false;
+        // Check for relative paths, which are always safe
+        if (url.startsWith('/')) return true; 
+        
+        try {
+            const parsedUrl = new URL(url);
+            // SECURE: Check if the host matches our app's host
+            return parsedUrl.hostname === hostname;
+        } catch (e) {
+            return false; // Invalid URL
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest. Log in with a `POST` to `/login?returnTo=https://evil.com`. Assert that the `Location` header in the response is `/dashboard`, not the malicious URL.
+    ```javascript
+    // tests/login.test.js
+    it('should prevent open redirect on login', async () => {
+        const response = await request(app)
+            .post('/login?returnTo=[https://evil.com](https://evil.com)')
+            .send('username=u&password=p'); // (mocked auth)
+            
+        expect(response.statusCode).toBe(302);
+        expect(response.headers.location).toBe('/dashboard');
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    A controller action uses `redirect_to params[:return_to]` without validation.
+
+    #### Vulnerable Scenario 1: Logout Redirect
+    ```ruby
+    # app/controllers/sessions_controller.rb
+    class SessionsController < ApplicationController
+      def destroy
+        logout
+        return_to = params[:return_to]
+        if return_to
+          # DANGEROUS: User is redirected to any URL in return_to
+          redirect_to return_to
+        else
+          redirect_to root_path
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: OAuth "Continue" Redirect
+    An action that handles an OAuth callback redirects the user back to a path they were on.
+    ```ruby
+    # app/controllers/omniauth_callbacks_controller.rb
+    def github
+        @user = User.from_omniauth(request.env["omniauth.auth"])
+        sign_in @user
+        
+        state = params[:state] # Contains `return_to` path
+        
+        # DANGEROUS: Assuming `state` is a safe URL
+        redirect_to state
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Use `redirect_back(fallback_location: root_path)`. This helper is designed to be safe. If you must use a param, validate it with `URI.parse` and check the host, or use `url_from(return_to)` and check `only_path: true`.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/sessions_controller.rb (Secure)
+    class SessionsController < ApplicationController
+      def destroy
+        logout
+        return_to = params[:return_to]
+        
+        # SECURE: (Alternative) Manual check
+        if is_local_url?(return_to)
+          redirect_to return_to
+        else
+          redirect_to root_path
+        end
+      end
+      
+      private
+      def is_local_url?(url)
+        return false if url.blank?
+        # Check for relative paths
+        return true if url.start_with?('/') && !url.start_with?('//')
+        
+        # Check for same host
+        host = URI.parse(url).host
+        host.nil? || host == request.host
+      rescue URI::InvalidURIError
+        false
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. `delete` the session path (logout) and pass a malicious `return_to` param. Assert that the response redirects to the `root_path`.
+    ```ruby
+    # spec/requests/sessions_spec.rb
+    it "prevents open redirect on logout" do
+      login_as(create(:user))
+      malicious_url = "[https://evil.com](https://evil.com)"
+      
+      delete logout_path(return_to: malicious_url)
+      
+      expect(response).to redirect_to(root_path)
+    end
+    ```
+  </Tab>
+</Tabs>
