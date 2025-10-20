@@ -1,0 +1,569 @@
+---
+title: "Insecure Direct Object Reference (IDOR)"
+sidebarTitle: "IDOR (CWE-639)"
+description: "Mitigation for Insecure Direct Object Reference (IDOR / CWE-639) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "fingerprint"
+iconType: "solid"
+---
+
+## Overview
+Insecure Direct Object Reference (IDOR) is a vulnerability where an application provides direct access to objects based on user-supplied input. An attacker can simply change an ID in a URL (e.g., `.../invoice/123` to `.../invoice/124`) to access data that does not belong to them. This flaw occurs because the application checks if the user is *authenticated* (logged in), but fails to check if they are *authorized* (allowed to see that specific item).
+
+## Business Impact
+IDOR is a critical, high-impact vulnerability. It can lead to a complete loss of data confidentiality, allowing attackers to access and exfiltrate all user data in the system, one record at a time. They can also modify or delete other users' data, leading to massive integrity-loss.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-639](https://cwe.mitre.org/data/definitions/639.html) (Authorization Bypass Through User-Controlled Key)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** High
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This is a logical flaw that frameworks cannot prevent automatically. The vulnerability is in the data-access logic. The fix is to **always filter by the authenticated user's ID** in addition to the object's ID. Never retrieve an object by its ID alone.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    A Django view that retrieves an object using `Invoice.objects.get(pk=invoice_id)`.
+
+    #### Vulnerable Scenario 1: A Document Detail View
+    ```python
+    # invoicing/views.py
+    from django.contrib.auth.decorators import login_required
+    from .models import Invoice
+
+    @login_required
+    def get_invoice(request, invoice_id):
+        # DANGEROUS: This fetches *any* invoice by its ID,
+        # regardless of who owns it. An attacker can change `invoice_id`.
+        invoice = Invoice.objects.get(pk=invoice_id)
+        return render(request, 'invoice_detail.html', {'invoice': invoice})
+    ```
+
+    #### Vulnerable Scenario 2: An API Update Endpoint
+    A DRF view that allows updating a user profile, but only checks for authentication.
+    ```python
+    # api/views.py
+    from rest_framework.views import APIView
+    from rest_framework.permissions import IsAuthenticated
+
+    class ProfileUpdateView(APIView):
+        permission_classes = [IsAuthenticated] # Checks login, not ownership
+        
+        def post(request, user_id_from_url):
+            # DANGEROUS: An attacker can be logged in as user 123,
+            # but send a request to this endpoint with user_id_from_url=456
+            # and update another user's profile.
+            user_to_update = User.objects.get(pk=user_id_from_url)
+            user_to_update.email = request.data.get('email')
+            user_to_update.save()
+            return Response(status=200)
+    ```
+
+    #### Mitigation and Best Practices
+    Modify the query to *also* filter on `user=request.user`. For the API, the endpoint should not take a `user_id` from the URL; it should always operate on `request.user`.
+
+    #### Secure Code Example
+    ```python
+    # invoicing/views.py (Secure)
+    from django.contrib.auth.decorators import login_required
+    from django.shortcuts import get_object_or_404
+    from .models import Invoice
+
+    @login_required
+    def get_invoice(request, invoice_id):
+        # SECURE: The query now checks that the invoice's 'user'
+        # field matches the currently authenticated user.
+        invoice = get_object_or_404(Invoice, pk=invoice_id, user=request.user)
+        return render(request, 'invoice_detail.html', {'invoice': invoice})
+        
+    # api/views.py (Secure)
+    class ProfileUpdateView(APIView):
+        permission_classes = [IsAuthenticated]
+        
+        def post(request):
+            # SECURE: The object being modified is the logged-in
+            # user, not one specified in the URL.
+            user_to_update = request.user 
+            user_to_update.email = request.data.get('email')
+            user_to_update.save()
+            return Response(status=200)
+    ```
+
+    #### Testing Strategy
+    Write an integration test. Create two users, `user_a` and `user_b`. Create an invoice that belongs to `user_b`. Log in as `user_a`. Attempt to `GET` the URL for `user_b`'s invoice. Assert the response is a `404 Not Found`.
+    ```python
+    # invoicing/tests.py
+    def test_user_cannot_access_another_users_invoice(self):
+        user_a = User.objects.create_user('user_a', ...)
+        user_b = User.objects.create_user('user_b', ...)
+        invoice_b = Invoice.objects.create(user=user_b, ...)
+        
+        self.client.login(username='user_a', password='...')
+        response = self.client.get(reverse('get-invoice', args=[invoice_b.id]))
+        
+        self.assertEqual(response.status_code, 404)
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    A Spring Data JPA repository method like `findById(invoiceId)` is used without also checking the user.
+
+    #### Vulnerable Scenario 1: A REST API GET Endpoint
+    ```java
+    // controller/InvoiceController.java
+    @GetMapping("/invoices/{id}")
+    public Invoice getInvoice(@PathVariable Long id) {
+        // DANGEROUS: This retrieves any invoice by its ID.
+        // It doesn't check who the authenticated user is.
+        return invoiceRepository.findById(id)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A REST API POST Endpoint
+    An endpoint for adding a note to a project checks for `projectId` but not if the user is a member of that project.
+    ```java
+    // controller/NoteController.java
+    @PostMapping("/notes")
+    public Note createNote(
+        @RequestBody Note note,
+        @RequestParam Long projectId
+    ) {
+        // DANGEROUS: The user (from auth) might not be on this project.
+        // They are adding a note to someone else's project.
+        Project project = projectRepository.findById(projectId).get();
+        note.setProject(project);
+        return noteRepository.save(note);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Create a new method in your `InvoiceRepository` interface: `Optional<Invoice> findByIdAndUserId(Long id, Long userId)`. For the `POST`, you must validate the `projectId` against the user's list of projects.
+
+    #### Secure Code Example
+    ```java
+    // repository/InvoiceRepository.java
+    public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+        // SECURE: This method is the key.
+        Optional<Invoice> findByIdAndUserId(Long id, Long userId);
+    }
+    
+    // controller/InvoiceController.java (Secure)
+    @GetMapping("/invoices/{id}")
+    public Invoice getInvoice(@PathVariable Long id, Authentication auth) {
+        MyUserDetails userDetails = (MyUserDetails) auth.getPrincipal();
+        Long currentUserId = userDetails.getId();
+        
+        // SECURE: The query now checks both ID and user ID.
+        return invoiceRepository.findByIdAndUserId(id, currentUserId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+    }
+    
+    // controller/NoteController.java (Secure)
+    @PostMapping("/notes")
+    public Note createNote(
+        @RequestBody Note note,
+        @RequestParam Long projectId,
+        Authentication auth
+    ) {
+        MyUserDetails userDetails = (MyUserDetails) auth.getPrincipal();
+        
+        // SECURE: Check if the user is authorized for this project.
+        if (!projectService.isUserOnProject(userDetails.getId(), projectId)) {
+             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
+        
+        Project project = projectRepository.findById(projectId).get();
+        note.setProject(project);
+        return noteRepository.save(note);
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test. Create two users. Use `@WithMockUser` to authenticate as `user_a`. Attempt to `GET` the API endpoint for `user_b`'s invoice. Assert the response is `404 Not Found`.
+    ```java
+    @Test
+    @WithMockUser(username = "user_a")
+    void getInvoice_asAnotherUser_shouldBeNotFound() throws Exception {
+        // invoice_b belongs to user_b (ID: 2)
+        mockMvc.perform(get("/api/invoices/" + invoice_b.getId()))
+            .andExpect(status().isNotFound());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    An Entity Framework query that uses `_context.Invoices.FindAsync(id)`.
+
+    #### Vulnerable Scenario 1: An API's GET Method
+    ```csharp
+    // Controllers/InvoicesController.cs
+    [Authorize]
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Invoice>> GetInvoice(int id)
+    {
+        // DANGEROUS: This finds any invoice by ID.
+        var invoice = await _context.Invoices.FindAsync(id);
+
+        if (invoice == null) return NotFound();
+        return invoice;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: An API's PUT Method
+    An endpoint to update a photo, referenced by its ID.
+    ```csharp
+    // Controllers/PhotosController.cs
+    [Authorize]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdatePhoto(int id, [FromBody] PhotoUpdateDto dto)
+    {
+        // DANGEROUS: The user is logged in, but are they the
+        // owner of this photo?
+        var photo = await _context.Photos.FindAsync(id);
+        if (photo == null) return NotFound();
+        
+        photo.Caption = dto.Caption;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Get the current user's ID from the `User.Claims`. Modify the `FirstOrDefaultAsync` query to include a `WHERE` clause that checks both the `id` and the `UserId`.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/InvoicesController.cs (Secure)
+    [Authorize]
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Invoice>> GetInvoice(int id)
+    {
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        
+        // SECURE: The query now checks both ID and user ID.
+        var invoice = await _context.Invoices
+            .FirstOrDefaultAsync(i => i.Id == id && i.UserId == currentUserId);
+
+        if (invoice == null) return NotFound();
+        return invoice;
+    }
+
+    // Controllers/PhotosController.cs (Secure)
+    [Authorize]
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdatePhoto(int id, [FromBody] PhotoUpdateDto dto)
+    {
+        var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        
+        // SECURE: Find the photo *and* check for ownership.
+        var photo = await _context.Photos
+            .FirstOrDefaultAsync(p => p.Id == id && p.OwnerId == currentUserId);
+            
+        if (photo == null) return NotFound(); // Returns 404 for "not found" or "not owned"
+        
+        photo.Caption = dto.Caption;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+    ```
+
+    #### Testing Strategy
+    Write an integration test. Authenticate the client as `user_a`. Attempt to `GET` an invoice ID that belongs to `user_b`. Assert the response is `404 Not Found`.
+    ```csharp
+    [Fact]
+    public async Task GetInvoice_Fails_ForAnotherUser()
+    {
+        // _client is authenticated as user_a
+        // invoice_b belongs to user_b
+        
+        var response = await _client.GetAsync("/api/invoices/" + invoice_b.Id);
+        
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    An Eloquent query that uses `Invoice::find($id)` or `Invoice::findOrFail($id)`.
+
+    #### Vulnerable Scenario 1: A Controller `show` Method
+    ```php
+    // app/Http/Controllers/InvoiceController.php
+    class InvoiceController extends Controller
+    {
+        public function __construct() { $this->middleware('auth'); }
+
+        public function show($id)
+        {
+            // DANGEROUS: This finds any invoice by its ID,
+            // regardless of who is logged in.
+            $invoice = Invoice::findOrFail($id);
+            return view('invoices.show', ['invoice' => $invoice]);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: A Controller `destroy` Method
+    An endpoint that deletes a post, checking only for authentication.
+    ```php
+    // app/Http/Controllers/PostController.php
+    class PostController extends Controller
+    {
+        public function __construct() { $this->middleware('auth'); }
+        
+        public function destroy($id)
+        {
+            // DANGEROUS: A user can delete another user's post
+            // by changing the ID.
+            $post = Post::findOrFail($id);
+            $post->delete();
+            return redirect('/dashboard');
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Add a `where('user_id', auth()->id())` clause to the query. A cleaner "Laravel" way is to use Policies (`php artisan make:policy`) and `Gate`s, or to scope the query through the `User` model.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/InvoiceController.php (Secure)
+    class InvoiceController extends Controller
+    {
+        public function __construct() { $this->middleware('auth'); }
+
+        public function show($id)
+        {
+            // SECURE: The query now checks both ID and the logged-in user's ID.
+            $invoice = Invoice::where('id', $id)
+                              ->where('user_id', auth()->id())
+                              ->firstOrFail(); // Throws 404 if not found
+            
+            return view('invoices.show', ['invoice' => $invoice]);
+        }
+    }
+
+    // app/Http/Controllers/PostController.php (Secure with Policy)
+    class PostController extends Controller
+    {
+        public function destroy($id)
+        {
+            $post = Post::findOrFail($id);
+            
+            // SECURE: Use a Policy to check authorization.
+            // This will throw a 403 Forbidden if the policy fails.
+            $this->authorize('delete', $post); 
+            
+            $post->delete();
+            return redirect('/dashboard');
+        }
+    }
+    
+    // app/Policies/PostPolicy.php
+    public function delete(User $user, Post $post)
+    {
+        return $user->id === $post->user_id; // Check ownership
+    }
+    ```
+
+    #### Testing Strategy
+    Write a feature test. Create two users. `actingAs(user_a)`, then `get` the URL for `user_b`'s invoice. Assert the response is `404 Not Found`.
+    ```php
+    // tests/Feature/InvoiceSecurityTest.php
+    public function test_user_cannot_view_another_users_invoice()
+    {
+        $user_a = User::factory()->create();
+        $user_b = User::factory()->create();
+        $invoice_b = Invoice::factory()->create(['user_id' => $user_b->id]);
+        
+        $response = $this->actingAs($user_a)
+                         ->get('/invoices/' . $invoice_b->id);
+
+        $response->assertStatus(404);
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    A route handler that fetches from a database (e.g., MongoDB) using `db.invoices.findOne({ _id: req.params.id })`.
+
+    #### Vulnerable Scenario 1: An API GET Endpoint
+    ```javascript
+    // routes/invoices.js
+    router.get('/:id', ensureAuthenticated, async (req, res) => {
+        try {
+            // DANGEROUS: This query only uses the invoice ID.
+            const invoice = await Invoice.findById(req.params.id);
+            if (!invoice) return res.status(404).send();
+            res.send(invoice);
+        } catch (e) {
+            res.status(500).send();
+        }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: An API POST Endpoint
+    An endpoint for updating a document by its ID.
+    ```javascript
+    // routes/documents.js
+    router.post('/:id/update', ensureAuthenticated, async (req, res) => {
+        try {
+            // DANGEROUS: Finds the doc by ID, but doesn't check
+            // that req.user._id matches the doc's ownerId.
+            const doc = await Document.findById(req.params.id);
+            if (!doc) return res.status(404).send();
+            
+            doc.content = req.body.content;
+            await doc.save();
+            res.send(doc);
+        } catch (e) {
+            res.status(500).send();
+        }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Modify the database query to also check for the `userId`. The `userId` should be retrieved from the authenticated `req.user` object (added by Passport or other auth middleware).
+
+    #### Secure Code Example
+    ```javascript
+    // routes/invoices.js (Secure)
+    router.get('/:id', ensureAuthenticated, async (req, res) => {
+        try {
+            // SECURE: The query now checks for the invoice ID
+            // AND the logged-in user's ID.
+            const invoice = await Invoice.findOne({
+                _id: req.params.id,
+                userId: req.user._id 
+            });
+            
+            if (!invoice) return res.status(404).send();
+            res.send(invoice);
+        } catch (e) {
+            res.status(500).send();
+        }
+    });
+    
+    // routes/documents.js (Secure)
+    router.post('/:id/update', ensureAuthenticated, async (req, res) => {
+        try {
+            // SECURE: The query checks for ID AND owner
+            const doc = await Document.findOne({
+                _id: req.params.id,
+                ownerId: req.user._id
+            });
+            
+            if (!doc) return res.status(404).send();
+            
+            doc.content = req.body.content;
+            await doc.save();
+            res.send(doc);
+        } catch (e) {
+            res.status(500).send();
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest. Create two users and one invoice for `user_b`. Log in as `user_a` (using a logged-in `userAgent`). `GET` the endpoint for `user_b`'s invoice. Assert the response is `404 Not Found`.
+    ```javascript
+    // tests/invoices.test.js
+    it('should return 404 for another user\'s invoice', async () => {
+        // 'user_a_agent' is a supertest agent logged in as user_a
+        // 'invoice_b' belongs to user_b
+        
+        const response = await user_a_agent
+            .get('/api/invoices/' + invoice_b._id);
+            
+        expect(response.statusCode).toBe(404);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    A controller action that finds a record using `Invoice.find(params[:id])`.
+
+    #### Vulnerable Scenario 1: A `show` Action
+    ```ruby
+    # app/controllers/invoices_controller.rb
+    class InvoicesController < ApplicationController
+      before_action :authenticate_user!
+    
+      def show
+        # DANGEROUS: This finds any invoice by its ID.
+        @invoice = Invoice.find(params[:id])
+        render :show
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: An `update` Action
+    A user can update the title of any project, not just their own.
+    ```ruby
+    # app/controllers/projects_controller.rb
+    class ProjectsController < ApplicationController
+      before_action :authenticate_user!
+      
+      def update
+        # DANGEROUS: Finds any project by ID.
+        @project = Project.find(params[:id])
+        
+        @project.update(title: params[:title])
+        redirect_to @project
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Scope the query to the `current_user`. If you have a `User has_many :invoices` association, you can find the record through the association: `current_user.invoices.find(params[:id])`. This will automatically fail with a 404 if the user doesn't own the record.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/invoices_controller.rb (Secure)
+    class InvoicesController < ApplicationController
+      before_action :authenticate_user!
+    
+      def show
+        # SECURE: This chains the .find() off of the current_user's
+        # invoices. It will 404 if the user doesn't own it.
+        @invoice = current_user.invoices.find(params[:id])
+        render :show
+      end
+    end
+    
+    # app/controllers/projects_controller.rb (Secure)
+    class ProjectsController < ApplicationController
+      before_action :authenticate_user!
+      
+      def update
+        # SECURE: Scope the find to the current user's projects
+        @project = current_user.projects.find(params[:id])
+        
+        @project.update(title: params[:title])
+        redirect_to @project
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. Create `user_a` and `user_b`. Create `invoice_b` for `user_b`. `login_as(user_a)`. `get` the path for `invoice_b`. Assert the response is a `404 Not Found`.
+    ```ruby
+    # spec/requests/invoices_spec.rb
+    it "prevents users from seeing other users' invoices" do
+      user_a = create(:user)
+      user_b = create(:user)
+      invoice_b = create(:invoice, user: user_b)
+      
+      login_as(user_a)
+      
+      # This will raise ActiveRecord::RecordNotFound,
+      # which Rails automatically turns into a 404 response.
+      expect {
+        get invoice_path(invoice_b)
+      }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+    ```
+  </Tab>
+</Tabs>

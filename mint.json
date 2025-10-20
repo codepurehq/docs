@@ -67,7 +67,10 @@
         "vulnerabilities/cwe-284",
         "vulnerabilities/cwe-352",
         "vulnerabilities/cwe-425",
-        "vulnerabilities/cwe-601"
+        "vulnerabilities/cwe-601",
+        "vulnerabilities/cwe-639",
+        "vulnerabilities/cwe-862",
+        "vulnerabilities/cwe-1275"
       ]
     },
     {
