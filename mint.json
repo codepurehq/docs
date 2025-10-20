@@ -77,7 +77,7 @@
       "group": "A02:2021 – Cryptographic Failures",
       "pages": [
         "vulnerabilities/cwe-319",
-        "vulnerabilities/cwe-523",
+        "vulnerabilities/cwe-327",
         "vulnerabilities/cwe-284",
         "vulnerabilities/cwe-352",
         "vulnerabilities/cwe-425",
