@@ -1,0 +1,409 @@
+---
+title: "Cross-Site Request Forgery (CSRF)"
+sidebarTitle: "CSRF (CWE-352)"
+description: "Mitigation for Cross-Site Request Forgery in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "hand-paper"
+iconType: "solid"
+---
+
+## Overview
+Cross-Site Request Forgery (CSRF) is an attack that tricks a victim's browser into submitting an unintended request to an application where they are already authenticated. This can lead to unauthorized actions like changing a password, making a purchase, or deleting an account, all without the user's knowledge. The attack works because the browser automatically sends authentication cookies with the request.
+
+## Business Impact
+CSRF can lead to unauthorized financial transactions, data modification, or full account takeover (if used to change a user's email or password). It erodes user trust and can cause significant financial and reputational damage.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-352](https://cwe.mitre.org/data/definitions/352.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** High
+</Card>
+
+## Framework-Specific Analysis and Remediation
+Modern web frameworks (Rails, Django, Laravel, Spring Security, ASP.NET) have built-in CSRF protection enabled by default. The vulnerability is *not* that the framework is weak, but that a developer *disables* this protection, often for convenience (e.g., in an API). The fix is to re-enable and correctly use the framework's anti-CSRF token mechanism.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Django's `CsrfViewMiddleware` is enabled by default. It requires a `{% csrf_token %}` in all `POST` forms. The vulnerability is using the `@csrf_exempt` decorator on a view.
+
+    #### Vulnerable Scenario 1: `@csrf_exempt`
+    A view that changes data (like a user profile) is exempted from CSRF checks.
+    ```python
+    # users/views.py
+    from django.views.decorators.csrf import csrf_exempt
+    from django.contrib.auth.decorators import login_required
+
+    @login_required
+    @csrf_exempt # DANGEROUS
+    def update_profile(request):
+        if request.method == 'POST':
+            # This action can be triggered from a malicious site
+            request.user.email = request.POST.get('email')
+            request.user.save()
+        return render(request, 'profile.html')
+    ```
+
+    #### Mitigation and Best Practices
+    Remove the `@csrf_exempt` decorator. Ensure your `POST` form in the template includes the `{% csrf_token %}` tag. For AJAX, pass the token in a custom `X-CSRFToken` header.
+
+    #### Secure Code Example
+    ```python
+    # users/views.py (Secure Version)
+    @login_required
+    # @csrf_exempt decorator is REMOVED
+    def update_profile(request):
+        if request.method == 'POST':
+            request.user.email = request.POST.get('email')
+            request.user.save()
+        return render(request, 'profile.html')
+    
+    # templates/profile.html (Secure Version)
+    /*
+    <form method="post">
+        {% csrf_token %} <label>Email:</label>
+        <input type="email" name="email">
+        <button type="submit">Update</button>
+    </form>
+    */
+    ```
+
+    #### Testing Strategy
+    Write an integration test that performs a `POST` request to the endpoint *without* the CSRF token. The test should assert that the response is a `403 Forbidden`.
+    ```python
+    # users/tests.py
+    def test_update_profile_fails_without_csrf_token(self):
+        # self.client is logged in
+        response = self.client.post(reverse('update-profile'), {
+            'email': 'new@example.com'
+        })
+        
+        # A secure endpoint will return 403 Forbidden
+        self.assertEqual(response.status_code, 403)
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Spring Security enables CSRF protection by default. It requires a unique token for all state-changing methods (POST, PUT, DELETE). The vulnerability is disabling it globally.
+
+    #### Vulnerable Scenario 1: Disabling CSRF
+    In the `WebSecurityConfigurerAdapter`, a developer disables CSRF protection.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+            .formLogin()
+                .and()
+            .csrf().disable(); // DANGEROUS: CSRF protection is off
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Remove the `.csrf().disable()` call. Spring will now automatically handle token generation. For Thymeleaf templates, the `th:action` attribute automatically includes the token. For SPAs, you must manually read the token (from a cookie or endpoint) and send it in an `X-CSRF-TOKEN` header.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure Version)
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .anyRequest().authenticated()
+                .and()
+            .formLogin();
+        // SECURE: .csrf().disable() is removed. Protection is ON.
+    }
+    
+    // templates/profile.html (Secure Version)
+    /*
+    <form th:action="@{/update-profile}" method="post">
+        <label>Email:</label>
+        <input type="email" name="email">
+        <button type="submit">Update</button>
+    </form>
+    */
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test using `@WithMockUser`. Perform a `post()` request *without* the `csrf()` request processor. Assert the response is a `403 Forbidden`.
+    ```java
+    @Test
+    @WithMockUser
+    void updateProfile_withoutCsrfToken_shouldBeForbidden() throws Exception {
+        mockMvc.perform(post("/update-profile")
+                .param("email", "new@example.com"))
+            .andExpect(status().isForbidden());
+    }
+    
+    @Test
+    @WithMockUser
+    void updateProfile_withCsrfToken_shouldSucceed() throws Exception {
+        mockMvc.perform(post("/update-profile")
+                .param("email", "new@example.com")
+                .with(csrf())) // SECURE: Adds a valid CSRF token
+            .andExpect(status().isOk());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    ASP.NET Core automatically generates and validates anti-forgery tokens for Razor Pages and MVC forms. The vulnerability is a developer forgetting to add the `[ValidateAntiForgeryToken]` attribute to an `[HttpPost]` action.
+
+    #### Vulnerable Scenario 1: Missing Validation Attribute
+    An endpoint that modifies data is missing the validation attribute.
+    ```csharp
+    // Controllers/ProfileController.cs
+    [Authorize]
+    public class ProfileController : Controller
+    {
+        [HttpPost]
+        // DANGEROUS: This action does not validate the anti-forgery token.
+        public async Task<IActionResult> Update(string email)
+        {
+            // ... update logic
+            return RedirectToAction("Index");
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `[ValidateAntiForgeryToken]` attribute to all `[HttpPost]`, `[HttpPut]`, and `[HttpDelete]` actions. Ensure your `<form>` tag in the Razor view uses `asp-controller` and `asp-action` helpers, which automatically add the token.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/ProfileController.cs (Secure Version)
+    [Authorize]
+    public class ProfileController : Controller
+    {
+        [HttpPost]
+        [ValidateAntiForgeryToken] // SECURE: This attribute enables validation.
+        public async Task<IActionResult> Update(string email)
+        {
+            // ... update logic
+            return RedirectToAction("Index");
+        }
+    }
+    
+    // Views/Profile/Index.cshtml (Secure Version)
+    /*
+    <form asp-controller="Profile" asp-action="Update" method="post">
+        <input type-="email" name="email" />
+        <button type="submit">Update</button>
+    </form>
+    */
+    ```
+
+    #### Testing Strategy
+    Write an integration test that authenticates a client. The test then creates an `HttpRequestMessage` for a `POST` but *does not* include the `__RequestVerificationToken` cookie or form data. Assert the response is a `400 Bad Request` or `403 Forbidden`.
+    ```csharp
+    [Fact]
+    public async Task Update_Without_AntiForgeryToken_ShouldFail()
+    {
+        // _client is authenticated
+        var postRequest = new HttpRequestMessage(HttpMethod.Post, "/Profile/Update");
+        var formData = new Dictionary<string, string> { { "email", "new@example.com" } };
+        postRequest.Content = new FormUrlEncodedContent(formData);
+
+        // We are NOT adding the token, so this should fail
+        var response = await _client.SendAsync(postRequest);
+        
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel's `VerifyCsrfToken` middleware is enabled by default for the `web` route group. The vulnerability is adding a state-changing route to the `$except` array in `App/Http/Middleware/VerifyCsrfToken.php`.
+
+    #### Vulnerable Scenario 1: Exempting a Route
+    A developer exempts the profile update route from CSRF protection.
+    ```php
+    // app/Http/Middleware/VerifyCsrfToken.php
+    class VerifyCsrfToken extends Middleware
+    {
+        protected $except = [
+            // DANGEROUS: This route can now be attacked via CSRF
+            '/profile/update',
+        ];
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Remove the route from the `$except` array. Ensure your Blade template form includes the `@csrf` directive. For SPAs, pass the `X-XSRF-TOKEN` header (Laravel/Axios integrate this automatically).
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Middleware/VerifyCsrfToken.php (Secure Version)
+    class VerifyCsrfToken extends Middleware
+    {
+        // SECURE: The route is no longer in the exception list.
+        protected $except = [
+            //
+        ];
+    }
+    
+    // resources/views/profile.blade.php (Secure Version)
+    /*
+    <form method="POST" action="/profile/update">
+        @csrf <input type="email" name="email">
+        <button type="submit">Update</button>
+    </form>
+    */
+    ```
+
+    #### Testing Strategy
+    Write a feature test. `actingAs` a user, then make a `post` request to the endpoint *without* the `_token` data. Assert the response is a `419` (Session Expired / Token Mismatch).
+    ```php
+    // tests/Feature/ProfileUpdateTest.php
+    public function test_profile_update_fails_without_csrf_token()
+    {
+        $user = User::factory()->create();
+        
+        $response = $this->actingAs($user)
+                         ->post('/profile/update', [
+                             'email' => 'new@example.com'
+                         ]);
+        
+        // 419 is Laravel's status code for CSRF failure
+        $response->assertStatus(419);
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Express has **no built-in CSRF protection**. The vulnerability is simply not using a library to add it. The standard library for this is `csurf`.
+
+    #### Vulnerable Scenario 1: No CSRF Middleware
+    A standard Express app with `cookie-session` but no CSRF middleware.
+    ```javascript
+    // app.js
+    const express = require('express');
+    const app = express();
+    
+    app.use(require('cookie-session')({ keys: ['secret'] }));
+    app.use(express.urlencoded({ extended: false }));
+
+    app.post('/profile/update', (req, res) => {
+        // DANGEROUS: No CSRF token is checked. Any site can
+        // POST to this endpoint and the user's cookie will be sent.
+        req.session.user.email = req.body.email;
+        res.redirect('/profile');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `csurf` middleware. This middleware creates a `req.csrfToken()` function. You must pass this token to your template and include it in your form.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Version)
+    const express = require('express');
+    const csrf = require('csurf'); // Import csurf
+    const app = express();
+    
+    app.use(require('cookie-session')({ keys: ['secret'] }));
+    app.use(express.urlencoded({ extended: false }));
+    app.use(csrf()); // SECURE: Use the csurf middleware
+
+    app.get('/profile', (req, res) => {
+        // SECURE: Pass the token to the render function
+        res.render('profile', { csrfToken: req.csrfToken() });
+    });
+
+    app.post('/profile/update', (req, res) => {
+        // SECURE: The csurf middleware validates the token automatically.
+        req.session.user.email = req.body.email;
+        res.redirect('/profile');
+    });
+    
+    // views/profile.ejs (Secure Version)
+    /*
+    <form method="POST" action="/profile/update">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="email" name="email">
+        <button type="submit">Update</button>
+    </form>
+    */
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest. Get the login cookie, then attempt to `POST` to the update endpoint *without* first GETting the page to scrape the token. The request should fail with a `403 Forbidden`.
+    ```javascript
+    // tests/profile.test.js
+    it('should fail to POST without a CSRF token', async () => {
+        // 'userAgent' is a logged-in supertest agent
+        const response = await userAgent
+            .post('/profile/update')
+            .send({ email: 'new@example.com' });
+            
+        expect(response.statusCode).toBe(403);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Rails has `protect_from_forgery with: :exception` in `ApplicationController` by default. This is secure. The vulnerability is a developer adding `skip_before_action :verify_authenticity_token`.
+
+    #### Vulnerable Scenario 1: Skipping the Filter
+    A controller skips the authenticity check.
+    ```ruby
+    # app/controllers/profile_controller.rb
+    class ProfileController < ApplicationController
+      before_action :authenticate_user!
+      
+      # DANGEROUS: Disables CSRF protection for the update action
+      skip_before_action :verify_authenticity_token, only: [:update]
+    
+      def update
+        if request.post?
+          current_user.update(email: params[:email])
+        end
+        redirect_to profile_path
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Remove the `skip_before_action :verify_authenticity_token` line. Ensure your forms in `.html.erb` files are generated with `form_with` or `form_for`, which automatically include the token.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/profile_controller.rb (Secure Version)
+    class ProfileController < ApplicationController
+      before_action :authenticate_user!
+      
+      # SECURE: The 'skip_before_action' is removed.
+    
+      def update
+        if request.post?
+          current_user.update(email: params[:email])
+        end
+        redirect_to profile_path
+      end
+    end
+    
+    # app/views/profile/show.html.erb (Secure Version)
+    /*
+    <%= form_with url: profile_update_path, method: :post do |form| %>
+      <%= form.email_field :email %>
+      <%= form.submit "Update" %>
+    <% end %>
+    */
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. Log in as a user. Then, `post` to the update path *without* the `authenticity_token`. This is hard to do in request specs as Rails often adds it. A better test is a controller spec where you explicitly disable token verification to see it fail.
+    
+    The easiest way is to test that protection is *on*.
+    ```ruby
+    # spec/controllers/profile_controller_spec.rb
+    it 'is protected from forgery' do
+      # This checks that the 'protect_from_forgery' is active
+      expect(ProfileController).to be_protect_from_forgery
+    end
+    ```
+  </Tab>
+</Tabs>
