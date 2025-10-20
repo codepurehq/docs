@@ -65,7 +65,8 @@
         "vulnerabilities/path-traversal",
         "vulnerabilities/cwe-200",
         "vulnerabilities/cwe-284",
-        "vulnerabilities/cwe-352"
+        "vulnerabilities/cwe-352",
+        "vulnerabilities/cwe-425"
       ]
     },
     {

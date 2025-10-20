@@ -1,0 +1,496 @@
+---
+title: "Forced Browsing"
+sidebarTitle: "Forced Browsing (CWE-425)"
+description: "Mitigation for Forced Browsing vulnerabilities (unprotected pages/endpoints) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "shoe-prints"
+iconType: "solid"
+---
+
+## Overview
+Forced Browsing is a vulnerability where an attacker gains access to a resource (a page, file, or endpoint) simply by knowing or guessing the URL. These resources are "protected" only because no legitimate link points to them, but they lack any access control checks. This is a specific type of Improper Access Control (`CWE-284`).
+
+## Business Impact
+Forced Browsing can lead to the exposure of sensitive administrative panels, internal debug information, configuration files, or un-published content. This can result in data breaches or give an attacker a foothold for further attacks.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-425](https://cwe.mitre.org/data/definitions/425.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** Medium
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This vulnerability is caused by a developer creating a new endpoint and forgetting to apply the framework's authorization controls (middleware, decorators, attributes, or filters). The solution is to ensure every single endpoint has a default "deny" policy, and only explicitly public endpoints are reachable.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    A developer adds a URL pattern in `urls.py` for an admin-only view but forgets to add `@login_required` or `@user_passes_test` to the view.
+
+    #### Vulnerable Scenario 1: Unprotected Admin View
+    A view is created for a special "profit report" that should be admin-only, but no decorator is added.
+    ```python
+    # reporting/views.py
+    def admin_profit_report(request):
+        # DANGEROUS: No check to see if request.user is logged in or is staff.
+        return HttpResponse("This is the secret profit report.")
+        
+    # myproject/urls.py
+    from reporting import views
+    
+    urlpatterns = [
+        # DANGEROUS: Anyone who guesses /reports/profit-panel/
+        # can access this view.
+        path('reports/profit-panel/', views.admin_profit_report),
+    ]
+    ```
+
+    #### Vulnerable Scenario 2: Unprotected Debug Endpoint
+    A developer adds a temporary view to debug system state but forgets to remove it or protect it.
+    ```python
+    # myapp/views.py
+    def debug_system_state(request):
+        # DANGEROUS: This view leaks internal state
+        # and has no authorization checks.
+        return JsonResponse(System.get_debug_info())
+        
+    # myproject/urls.py
+    urlpatterns = [
+        # DANGEROUS: This endpoint is not linked from anywhere,
+        # but an attacker can find it with scanners.
+        path('__debug/system-state/', views.debug_system_state),
+    ]
+    ```
+
+    #### Mitigation and Best Practices
+    Wrap the view in `login_required` and `user_passes_test(lambda u: u.is_staff)` in `urls.py` or apply them as decorators in `views.py`.
+
+    #### Secure Code Example
+    ```python
+    # reporting/views.py (Secure)
+    from django.contrib.auth.decorators import login_required, user_passes_test
+
+    @login_required
+    @user_passes_test(lambda u: u.is_staff)
+    def admin_profit_report(request):
+        # SECURE: Only logged-in staff can see this.
+        return HttpResponse("This is the secret profit report.")
+        
+    # myapp/views.py (Secure)
+    @login_required
+    @user_passes_test(lambda u: u.is_superuser)
+    def debug_system_state(request):
+        # SECURE: Now only superusers can access this.
+        return JsonResponse(System.get_debug_info())
+    ```
+
+    #### Testing Strategy
+    Write an integration test that uses an unauthenticated client to `GET` the `/reports/profit-panel/` URL. Assert that the response is a redirect (to login) or a `403 Forbidden`, not a `200 OK`.
+    ```python
+    # reporting/tests.py
+    def test_admin_report_is_inaccessible_by_anonymous_user(self):
+        # self.client is logged out
+        response = self.client.get('/reports/profit-panel/')
+        # Should redirect to the login page
+        self.assertRedirects(response, '/login/?next=/reports/profit-panel/')
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    A developer adds a new `@GetMapping` to a controller for an admin function but forgets to add method-level security or update the global `HttpSecurity` config.
+
+    #### Vulnerable Scenario 1: Unprotected Admin Endpoint
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+            .antMatchers("/").permitAll()
+            .anyRequest().authenticated(); // This is the default
+    }
+    
+    // controller/AdminController.java
+    @RestController
+    public class AdminController {
+        
+        @GetMapping("/app-metrics")
+        public String getMetrics() {
+            // DANGEROUS: anyRequest().authenticated() means any *logged-in*
+            // user can see this, but it should be for ADMINS only.
+            return "App Metrics Data";
+        }
+    }
+    ```
+    
+    #### Vulnerable Scenario 2: Endpoint with `permitAll()`
+    A developer misconfigures `HttpSecurity`, accidentally leaving an admin endpoint open to the public.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+            // DANGEROUS: Developer meant /actuator/health but
+            // wrote /actuator/**, opening all actuator endpoints.
+            .antMatchers("/actuator/**").permitAll()
+            .anyRequest().authenticated();
+    }
+    // An attacker can now browse to /actuator/env, /actuator/heapdump etc.
+    ```
+
+    #### Mitigation and Best Practices
+    Use a "deny by default" `antMatcher` configuration. Or, more simply, add method-level security (`@PreAuthorize`) to the sensitive endpoint.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure)
+    @Configuration
+    @EnableGlobalMethodSecurity(prePostEnabled = true) // Enable method security
+    public class SecurityConfig extends WebSecurityConfigurerAdapter { 
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.authorizeRequests()
+                // SECURE: Be explicit. Only permit /health
+                .antMatchers("/actuator/health").permitAll()
+                .antMatchers("/actuator/**").hasRole("ADMIN")
+                .anyRequest().authenticated();
+        }
+    }
+
+    // controller/AdminController.java (Secure)
+    @RestController
+    public class AdminController {
+        
+        @GetMapping("/app-metrics")
+        @PreAuthorize("hasRole('ADMIN')") // SECURE: Only admins can access
+        public String getMetrics() {
+            return "App Metrics Data";
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test using `@WithMockUser(roles = "USER")`. `perform` a `get` to `/app-metrics` and assert the status is `403 Forbidden`.
+    ```java
+    @Test
+    @WithMockUser(roles = "USER") // Simulate as a regular user
+    void getMetrics_asUser_shouldBeForbidden() throws Exception {
+        mockMvc.perform(get("/app-metrics"))
+            .andExpect(status().isForbidden());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    A developer creates a new `AdminController` or adds an action, but forgets to add the `[Authorize]` attribute.
+
+    #### Vulnerable Scenario 1: Unprotected Controller
+    ```csharp
+    // Controllers/SiteMonitorController.cs
+    
+    // DANGEROUS: This controller has no [Authorize] attribute.
+    // Anyone who guesses /SiteMonitor/Status can see it.
+    public class SiteMonitorController : Controller
+    {
+        public IActionResult Status()
+        {
+            // ... logic to show server status
+            return View();
+        }
+    }
+    ```
+    
+    #### Vulnerable Scenario 2: Unprotected Action
+    A developer adds a new action to an otherwise public controller, but forgets to protect the new action.
+    ```csharp
+    // Controllers/InfoController.cs
+    public class InfoController : Controller
+    {
+        // This action is public and safe
+        public IActionResult About() { ... }
+        
+        // DANGEROUS: This action should be admin-only,
+        // but it has no [Authorize] attribute.
+        public IActionResult DebugInfo()
+        {
+            return View(GetInternalState());
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `[Authorize(Roles = "Admin")]` attribute to the entire controller or to the specific sensitive action.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/SiteMonitorController.cs (Secure)
+    
+    [Authorize(Roles = "Admin")] // SECURE: Only admins can access this controller.
+    public class SiteMonitorController : Controller
+    {
+        public IActionResult Status()
+        {
+            return View();
+        }
+    }
+    
+    // Controllers/InfoController.cs (Secure)
+    public class InfoController : Controller
+    {
+        public IActionResult About() { ... }
+        
+        [Authorize(Roles = "Admin")] // SECURE: This action is now protected
+        public IActionResult DebugInfo()
+        {
+            return View(GetInternalState());
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write an integration test using the `WebApplicationFactory`. Create an unauthenticated client and `GET` the `/SiteMonitor/Status` URL. Assert the response is a redirect to the login page.
+    ```csharp
+    [Fact]
+    public async Task SiteMonitor_Status_RedirectsAnonymousUser()
+    {
+        var client = _factory.CreateClient(
+            new WebApplicationFactoryClientOptions {
+                AllowAutoRedirect = false // We want to check the redirect
+            });
+
+        var response = await client.GetAsync("/SiteMonitor/Status");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.StartsWith("/Account/Login", response.Headers.Location.OriginalString);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    A developer adds a new route in `routes/web.php` but forgets to put it inside the `auth` or `admin` middleware group.
+
+    #### Vulnerable Scenario 1: Route Outside Group
+    ```php
+    // routes/web.php
+    
+    // This route is for anyone
+    Route::get('/', [HomeController::class, 'index']);
+    
+    // DANGEROUS: This route has no middleware. Anyone who
+    // guesses /admin-logs can access it.
+    Route::get('/admin-logs', [LogController::class, 'index']);
+    
+    // This group is secure
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: Unprotected `livewire` Component
+    A developer creates a `livewire` admin component but forgets to protect the route or the component's `render` method.
+    ```php
+    // routes/web.php
+    
+    // DANGEROUS: This route renders a Livewire component
+    // but isn't wrapped in admin middleware.
+    Route::get('/admin/user-manager', App\Http\Livewire\UserManager::class);
+    
+    // app/Http/Livewire/UserManager.php
+    class UserManager extends Component
+    {
+        public function render()
+        {
+            // The route is unprotected, so this will render
+            // for any user that can guess the URL.
+            return view('livewire.user-manager', [
+                'users' => User::all()
+            ]);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Move the sensitive route into the appropriate middleware group. For Livewire components, you can add `->middleware('admin')` to the route, or add authorization logic to the component's `mount()` or `render()` method.
+
+    #### Secure Code Example
+    ```php
+    // routes/web.php (Secure)
+    
+    Route::get('/', [HomeController::class, 'index']);
+    
+    Route::middleware(['auth', 'admin'])->group(function () {
+        // SECURE: This route is now protected by auth and admin checks
+        Route::get('/admin-logs', [LogController::class, 'index']);
+        
+        // SECURE: This route is also protected
+        Route::get('/admin/user-manager', App\Http\Livewire\UserManager::class);
+    });
+    ```
+
+    #### Testing Strategy
+    Write a feature test. As a logged-out user, `get` the `/admin-logs` URL. Assert that the response is a redirect to the login page.
+    ```php
+    // tests/Feature/AdminLogTest.php
+    public function test_guest_cannot_see_admin_logs()
+    {
+        $response = $this->get('/admin-logs');
+
+        // Asserts a redirect to the login route
+        $response->assertRedirect('/login');
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    An Express developer adds a new route `app.get(...)` but forgets to add the `ensureAuthenticated` or `ensureAdmin` middleware function.
+
+    #### Vulnerable Scenario 1: Missing Route Middleware
+    ```javascript
+    // app.js
+    const ensureAuthenticated = (req, res, next) => { ... };
+    
+    // This route is secure
+    app.get('/dashboard', ensureAuthenticated, (req, res) => {
+        res.render('dashboard');
+    });
+    
+    // DANGEROUS: This route is missing the ensureAuthenticated middleware.
+    app.get('/admin/debug-info', (req, res) => {
+        res.send({ internal_data: "..." });
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: `express.static` Misconfiguration
+    A developer exposes the entire project root or a sensitive folder via `express.static`.
+    ```javascript
+    // app.js
+    
+    // DANGEROUS: This serves the *entire* project directory.
+    // An attacker can browse to /package.json, /.env, etc.
+    app.use(express.static(__dirname));
+    
+    // DANGEROUS: This serves a folder that might contain
+    // sensitive logs or user uploads.
+    app.use('/logs', express.static(path.join(__dirname, 'logs')));
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `ensureAuthenticated` (and/or `ensureAdmin`) middleware to the route. Only serve a dedicated, safe `public` directory with `express.static`. Never serve `__dirname` or sensitive data folders.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    const ensureAuthenticated = (req, res, next) => { ... };
+    const ensureAdmin = (req, res, next) => { ... };
+
+    // SECURE: Only serve the 'public' folder
+    app.use(express.static(path.join(__dirname, 'public')));
+    
+    app.get('/dashboard', ensureAuthenticated, (req, res) => {
+        res.render('dashboard');
+    });
+    
+    // SECURE: This route now has the correct middleware
+    app.get('/admin/debug-info', ensureAuthenticated, ensureAdmin, (req, res) => {
+        res.send({ internal_data: "..." });
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest. Make a `get` request to `/admin/debug-info` with an unauthenticated agent. Assert the response is a `401 Unauthorized` or `403 Forbidden` (or a redirect).
+    ```javascript
+    // tests/admin.test.js
+    it('should block anonymous access to debug info', async () => {
+        // 'request(app)' is an unauthenticated agent
+        const response = await request(app).get('/admin/debug-info');
+        
+        // Assuming it redirects to login
+        expect(response.statusCode).toBe(302);
+        expect(response.headers.location).toBe('/login');
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    A developer adds a new `AdminController` to `routes.rb` but forgets to add a `before_action` filter in the controller file.
+
+    #### Vulnerable Scenario 1: Controller with no Filter
+    ```ruby
+    # config/routes.rb
+    get '/system/health', to: 'system#health'
+    
+    # app/controllers/system_controller.rb
+    # DANGEROUS: This controller has no `before_action` filter.
+    class SystemController < ApplicationController
+      def health
+        # ... logic
+        render plain: "OK"
+      end
+    end
+    ```
+    
+    #### Vulnerable Scenario 2: Action Bypasses Filter
+    A `before_action` is applied, but the new, dangerous action is forgotten.
+    ```ruby
+    # app/controllers/admin_controller.rb
+    class AdminController < ApplicationController
+      before_action :require_admin, only: [:index]
+    
+      def index
+        # This is protected
+      end
+    
+      def view_logs
+        # DANGEROUS: This action is not in the `only` list,
+        # so it has no `before_action` filter.
+        render plain: File.read(Rails.root.join('log', 'production.log'))
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Add a `before_action` to the controller to check for authorization. It's safer to apply `before_action` to the whole controller (deny by default) and use `skip_before_action` for public actions.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/admin_controller.rb (Secure)
+    class AdminController < ApplicationController
+      # SECURE: This filter applies to EVERY action in this controller.
+      before_action :require_admin
+      
+      # (if index was public, you'd add this)
+      # skip_before_action :require_admin, only: [:index]
+    
+      def index
+        # ...
+      end
+      
+      def view_logs
+        # This action is now protected
+        render plain: File.read(Rails.root.join('log', 'production.log'))
+      end
+      
+      private
+      def require_admin
+        redirect_to root_path unless current_user&.admin?
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. `get` the `/system/health` path as a logged-out user. Assert the response is a redirect to the login page.
+    ```ruby
+    # spec/requests/system_spec.rb
+    it "prevents anonymous access to system health" do
+      get system_health_path
+      
+      expect(response).to redirect_to(new_user_session_path)
+    end
+    
+    it "prevents non-admin access to view_logs" do
+      login_as(create(:user, admin: false))
+      get admin_view_logs_path
+      
+      expect(response).to redirect_to(root_path)
+    end
+    ```
+  </Tab>
+</Tabs>
