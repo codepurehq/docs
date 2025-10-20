@@ -62,7 +62,8 @@
     {
       "group": "A01:2021 – Broken Access Control",
       "pages": [
-        "vulnerabilities/path-traversal"
+        "vulnerabilities/path-traversal",
+        "vulnerabilities/cwe-200"
       ]
     },
     {

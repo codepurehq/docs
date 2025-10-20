@@ -1,0 +1,504 @@
+---
+title: "Sensitive Data Exposure"
+sidebarTitle: "Data Exposure (CWE-200)"
+description: "Mitigation for exposing sensitive data (stack traces, PII, config) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "eye-slash"
+iconType: "solid"
+---
+
+## Overview
+Sensitive Data Exposure occurs when an application unintentionally reveals sensitive information to an unauthorized party. This can include PII, financial data, internal system details, or credentials. This weakness is often the result of misconfiguration (like running in "debug" mode) or failing to filter sensitive data from API responses.
+
+## Business Impact
+This vulnerability can lead to massive data breaches, loss of user trust, and severe regulatory fines (e.g., under GDPR, CCPA). Leaked system information and stack traces also provide attackers with a detailed map of your application, making other attacks (like Injection or Access Control bypass) much easier.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-200](https://cwe.mitre.org/data/definitions/200.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** Medium
+</Card>
+
+## Framework-Specific Analysis and Remediation
+All frameworks have a "debug" or "development" mode that is intentionally verbose. The most common vulnerability is a simple failure to disable this mode in production. The second most common is serializing entire data models (like a `User` object) directly to an API response, which accidentally includes password hashes, tokens, or PII.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Django's `DEBUG = True` setting is the primary culprit. For Django Rest Framework (DRF), `ModelSerializer` can over-share data if not explicitly configured.
+
+    #### Vulnerable Scenario 1: Debug Mode in Production
+    Leaving `DEBUG = True` in `settings.py` on a production server will show detailed stack traces to the public.
+    ```python
+    # settings.py
+    # DANGEROUS: This will leak all settings, stack traces, and more.
+    DEBUG = True
+    ```
+
+    #### Vulnerable Scenario 2: Over-sharing in API
+    A `ModelSerializer` for the `User` model that doesn't restrict fields.
+    ```python
+    # users/serializers.py
+    from django.contrib.auth.models import User
+    from rest_framework import serializers
+
+    class UserSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = User
+            # DANGEROUS: This will serialize ALL fields, including 'password' (hash),
+            # 'is_staff', 'is_superuser', and 'date_joined'.
+            fields = '__all__'
+    ```
+
+    #### Mitigation and Best Practices
+    Set `DEBUG = False` in production. Use environment variables to control this. For DRF, explicitly list fields using the `fields` tuple or use `exclude` to blacklist sensitive ones.
+
+    #### Secure Code Example
+    Use a DTO (Data Transfer Object) pattern, which DRF serializers provide, to create a "whitelist" of safe fields.
+    ```python
+    # users/serializers.py (Secure Version)
+    class UserSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = User
+            # SECURE: Only the 'id' and 'username' are exposed.
+            fields = ('id', 'username', 'email')
+            
+    # Or, using exclude:
+    class UserAdminSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = User
+            # SECURE: Excludes the password hash, even for an admin view.
+            exclude = ('password',)
+    ```
+
+    #### Testing Strategy
+    Write a test to ensure `DEBUG` is `False`. For APIs, write a unit test for the serializer or an integration test for the endpoint and assert that sensitive keys are not in the response.
+    ```python
+    # users/tests.py
+    from django.conf import settings
+    
+    def test_debug_is_off_in_production_settings(self):
+        # Assuming you load a 'production.py' settings file for this test
+        self.assertFalse(settings.DEBUG)
+
+    def test_user_api_does_not_leak_password_hash(self):
+        response = self.client.get(reverse('user-detail', args=[self.user.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('password', response.json())
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Spring Boot's `server.error.include-stacktrace=always` is the equivalent of a debug mode. For APIs, serializing an entire JPA Entity object can leak sensitive fields or trigger lazy-loading exceptions.
+
+    #### Vulnerable Scenario 1: Verbose Error Messages
+    An exception handler that reveals the internal stack trace.
+    ```java
+    // controller/SomeController.java
+    @GetMapping("/error-example")
+    public String throwError() {
+        throw new RuntimeException("This is a detailed error message!");
+    }
+    
+    // application.properties
+    # DANGEROUS: This will show a full stack trace to the user.
+    server.error.include-stacktrace=always
+    ```
+
+    #### Vulnerable Scenario 2: Leaking Model Data
+    Returning a JPA `@Entity` directly, which includes fields that *should* be ignored.
+    ```java
+    // model/User.java
+    @Entity
+    public class User {
+        public String username;
+        public String passwordHash; // DANGEROUS: This will be serialized
+        public String ssn;          // DANGEROUS: This will be serialized
+    }
+    
+    // controller/UserController.java
+    @GetMapping("/users/{id}")
+    public User getUser(@PathVariable Long id) {
+        // DANGEROUS: Returning the full entity leaks passwordHash and ssn
+        return userRepository.findById(id).get();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Set `server.error.include-stacktrace=on_param` or `never` in production. Use DTOs (Data Transfer Objects) to separate your internal models from your external API representation. Use `@JsonIgnore` on sensitive fields in the model as a defense-in-depth.
+
+    #### Secure Code Example
+    Create a DTO (`UserDTO`) that only contains the safe fields. Use `@JsonIgnore` on the sensitive model field.
+    ```java
+    // model/User.java (Secure Version)
+    @Entity
+    public class User {
+        public String username;
+        @JsonIgnore // Defense-in-depth
+        public String passwordHash;
+        @JsonIgnore
+        public String ssn;
+    }
+    
+    // dto/UserDTO.java
+    public class UserDTO {
+        public String username;
+        // No passwordHash or ssn field
+    }
+
+    // controller/UserController.java (Secure Version)
+    @GetMapping("/users/{id}")
+    public UserDTO getUser(@PathVariable Long id) {
+        User user = userRepository.findById(id).get();
+        // SECURE: Manually mapping to a safe DTO
+        UserDTO dto = new UserDTO();
+        dto.username = user.username;
+        return dto;
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test for an endpoint that fails. Assert the response JSON does *not* contain a "trace" field. Write another test for the API and assert the response DTO does not contain sensitive fields.
+    ```java
+    @Test
+    void userEndpoint_doesNot_leakSensitiveData() throws Exception {
+        mockMvc.perform(get("/api/users/1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.username").value("testuser"))
+            .andExpect(jsonPath("$.passwordHash").doesNotExist())
+            .andExpect(jsonPath("$.ssn").doesNotExist());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    The `UseDeveloperExceptionPage()` middleware in `Startup.cs` is the primary source of stack trace leaks. Serializing entire Entity Framework models is the primary source of data leaks.
+
+    #### Vulnerable Scenario 1: Developer Exception Page
+    The `Startup.cs` `Configure` method often has logic to show a detailed error page, but it's easy to misconfigure.
+    ```csharp
+    // Startup.cs
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // DANGEROUS: If env is not correctly set to "Production",
+        // or if this line is outside the `if` block, this will leak stack traces.
+        app.UseDeveloperExceptionPage();
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Serializing EF Model
+    An API controller returns the database model directly.
+    ```csharp
+    // Models/User.cs
+    public class User
+    {
+        public int Id { get; set; }
+        public string Username { get; set; }
+        public string PasswordHash { get; set; } // DANGEROUS
+    }
+
+    // Controllers/UsersController.cs
+    [HttpGet("{id}")]
+    public async Task<ActionResult<User>> GetUser(int id)
+    {
+        var user = await _context.Users.FindAsync(id);
+        // DANGEROUS: Returning the 'User' object directly
+        return user;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure the `UseDeveloperExceptionPage()` is *only* called within `if (env.IsDevelopment())`. Use DTOs (Data Transfer Objects) and `AutoMapper` (or manual mapping) to create API-safe objects. Use the `[JsonIgnore]` attribute on sensitive model properties.
+
+    #### Secure Code Example
+    Use a DTO and a secure `Startup.cs` configuration.
+    ```csharp
+    // Startup.cs (Secure Version)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            // SECURE: Use a generic error handler for production
+            app.UseExceptionHandler("/Home/Error");
+        }
+        // ...
+    }
+    
+    // Dtos/UserDto.cs
+    public class UserDto
+    {
+        public int Id { get; set; }
+        public string Username { get; set; }
+        // PasswordHash is intentionally omitted
+    }
+
+    // Controllers/UsersController.cs (Secure Version)
+    [HttpGet("{id}")]
+    public async Task<ActionResult<UserDto>> GetUser(int id)
+    {
+        var user = await _context.Users.FindAsync(id);
+        // SECURE: Map to a DTO (manual example)
+        var userDto = new UserDto { Id = user.Id, Username = user.Username };
+        return userDto;
+    }
+    ```
+    
+    #### Testing Strategy
+    Write an integration test that forces an exception and asserts the response is the generic error page, not the developer exception page. Write an API test and check the JSON response for the absence of sensitive fields.
+    ```csharp
+    [Fact]
+    public async Task GetUser_DoesNot_ReturnPasswordHash()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/users/1");
+        response.EnsureSuccessStatusCode();
+        var content = await response.Content.ReadAsStringAsync();
+        
+        Assert.DoesNotContain("passwordHash", content, StringComparison.OrdinalIgnoreCase);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel's `APP_DEBUG=true` in the `.env` file is the primary culprit, showing verbose error pages via the "Ignition" error handler. Eloquent models can leak data if the `$hidden` property is not used.
+
+    #### Vulnerable Scenario 1: Debug Mode in Production
+    Setting `APP_DEBUG=true` in the `.env` file on a production server.
+    ```ini
+    # .env
+    # DANGEROUS: Will show full stack traces and environment variables
+    APP_DEBUG=true
+    ```
+
+    #### Vulnerable Scenario 2: Leaking Model Data
+    An Eloquent model that does not hide sensitive attributes.
+    ```php
+    // app/Models/User.php
+    class User extends Authenticatable
+    {
+        // DANGEROUS: password and remember_token will be included
+        // when this model is converted to JSON or an array.
+    }
+    
+    // app/Http/Controllers/UserController.php
+    public function show($id)
+    {
+        // DANGEROUS: This response will include the user's password hash.
+        return User::findOrFail($id);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Set `APP_DEBUG=false` in your production `.env` file. On your Eloquent models, use the `$hidden` array to specify attributes that should *never* be included in JSON responses.
+
+    #### Secure Code Example
+    Set the `$hidden` property in the model.
+    ```php
+    // app/Models/User.php (Secure Version)
+    class User extends Authenticatable
+    {
+        /**
+         * The attributes that should be hidden for serialization.
+         *
+         * @var array
+         */
+        protected $hidden = [
+            'password',
+            'remember_token',
+        ];
+    }
+    
+    // app/Http/Controllers/UserController.php (Secure Version)
+    public function show($id)
+    {
+        // SECURE: The response will automatically filter out fields in $hidden.
+        return User::findOrFail($id);
+    }
+    ```
+
+    #### Testing Strategy
+    Write a test that checks the production environment configuration. Write a feature test that calls the API endpoint and asserts that the sensitive keys are not present in the JSON response.
+    ```php
+    // tests/Feature/ConfigurationTest.php
+    public function test_debug_is_disabled_in_production()
+    {
+        // This test assumes 'testing' env mirrors 'production' for config
+        $this->assertFalse(config('app.debug'));
+    }
+
+    // tests/Feature/UserApiTest.php
+    public function test_user_api_does_not_return_password()
+    {
+        $user = User::factory()->create();
+        $response = $this->get('/api/users/' . $user->id);
+
+        $response->assertStatus(200);
+        $response->assertJsonMissing(['password']);
+        $response->assertJsonPath('username', $user->username);
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Express has no default "debug" mode, but developers often create one by sending the full error object in an error-handling middleware. Sending a full database model object to the response is also common.
+
+    #### Vulnerable Scenario 1: Leaky Error Handler
+    An error-handling middleware that sends the entire error stack to the client.
+    ```javascript
+    // app.js
+    app.get('/error', (req, res) => {
+        throw new Error("Database connection failed!");
+    });
+
+    // DANGEROUS: This middleware sends the full error, including the stack trace.
+    app.use((err, req, res, next) => {
+        res.status(500).send({
+            message: err.message,
+            stack: err.stack // The leak is here
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Serializing Full Model
+    Sending a full Mongoose or Sequelize model object directly.
+    ```javascript
+    // routes/users.js
+    router.get('/:id', async (req, res) => {
+        const user = await User.findById(req.params.id);
+        // DANGEROUS: If the 'user' object from the ORM has passwordHash,
+        // it will be sent to the client.
+        res.send(user);
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Use an environment variable to control error handling. In production, send a generic error message. When sending user data, either manually map it to a "safe" object or use `toJSON()` overrides in your model.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Error Handler)
+    app.use((err, req, res, next) => {
+        res.status(500);
+        if (process.env.NODE_ENV === 'production') {
+            res.send({ message: 'An internal server error occurred.' });
+        } else {
+            // Only send details in development
+            res.send({ message: err.message, stack: err.stack });
+        }
+    });
+    
+    // models/User.js (Secure Mongoose Model)
+    userSchema.methods.toJSON = function() {
+        var obj = this.toObject();
+        delete obj.passwordHash; // Remove sensitive field
+        delete obj.salt;
+        return obj;
+    }
+    
+    // routes/users.js (Secure Route)
+    router.get('/:id', async (req, res) => {
+        const user = await User.findById(req.params.id);
+        // SECURE: The toJSON method is called automatically by res.send()
+        res.send(user); 
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest to hit an endpoint that throws an error. Set `NODE_ENV=production` and assert the response body does not contain "stack". Test the user API and assert the response does not contain the "passwordHash" key.
+    ```javascript
+    // tests/error.test.js
+    process.env.NODE_ENV = 'production';
+    it('should not return stack trace in production', async () => {
+        const response = await request(app).get('/error');
+        expect(response.status).toBe(500);
+        expect(response.body.stack).toBeUndefined();
+        expect(response.body.message).toBe('An internal server error occurred.');
+    });
+    
+    // tests/user.test.js
+    it('should not return password hash', async () => {
+        const response = await request(app).get('/api/users/123');
+        expect(response.body.passwordHash).toBeUndefined();
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Rails' `config.consider_all_requests_local = true` in production will show detailed error pages. Rendering a full `ActiveRecord` model as JSON can also leak data.
+
+    #### Vulnerable Scenario 1: Debug Pages in Production
+    Setting `config.consider_all_requests_local = true` in `config/environments/production.rb`.
+    ```ruby
+    # config/environments/production.rb
+    # DANGEROUS: This will show public error pages with stack traces.
+    config.consider_all_requests_local = true
+    ```
+
+    #### Vulnerable Scenario 2: Serializing Full Model
+    A controller action that renders the full model as JSON.
+    ```ruby
+    # app/controllers/users_controller.rb
+    class UsersController < ApplicationController
+      def show
+        @user = User.find(params[:id])
+        # DANGEROUS: This will serialize all attributes, including
+        # password_digest, tokens, etc.
+        render json: @user
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure `config.consider_all_requests_local = false` in production. Use a "view model" pattern with tools like `jbuilder` or `ActiveModel::Serializer` to create a whitelist of attributes to be rendered.
+
+    #### Secure Code Example
+    Using `jbuilder` (which is included with Rails).
+    ```ruby
+    # config/environments/production.rb (Secure)
+    # SECURE: This serves static error files (e.g., public/500.html)
+    config.consider_all_requests_local = false
+    ```
+    
+    ```ruby
+    # app/views/users/show.json.jbuilder
+    # SECURE: We are explicitly stating which attributes to include.
+    json.extract! @user, :id, :username, :email
+    ```
+    
+    ```ruby
+    # app/controllers/users_controller.rb (Secure)
+    class UsersController < ApplicationController
+      def show
+        @user = User.find(params[:id])
+        # This will now use the show.json.jbuilder template
+        render :show
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write a test to ensure production config is secure. Write a request spec to check the JSON response for the absence of sensitive fields.
+    ```ruby
+    # spec/config/production_spec.rb
+    it 'disables local request debugging in production' do
+      expect(Rails.application.config.consider_all_requests_local).to be(false)
+    end
+    
+    # spec/requests/users_api_spec.rb
+    it 'does not return sensitive user data' do
+      user = create(:user)
+      get user_path(user, format: :json)
+      
+      expect(response).to have_http_status(:ok)
+      json_response = JSON.parse(response.body)
+      
+      expect(json_response.keys).to include('id', 'username')
+      expect(json_response.keys).not_to include('password_digest')
+    end
+    ```
+  </Tab>
+</Tabs>
