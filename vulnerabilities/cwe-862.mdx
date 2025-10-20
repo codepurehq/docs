@@ -1,0 +1,476 @@
+---
+title: "Missing Authorization"
+sidebarTitle: "Missing Authorization (CWE-862)"
+description: "Mitigation for missing authorization (unprotected functions/endpoints) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "door-open"
+iconType: "solid"
+---
+
+## Overview
+Missing Authorization is a critical vulnerability where a sensitive function, endpoint, or resource lacks *any* check to verify if the user is allowed to access it. This often happens when a developer assumes an endpoint is "hidden" or "obscure" and can't be found, so they don't add authentication or authorization checks. An attacker can simply discover and call this endpoint directly.
+
+## Business Impact
+This is one of the most direct and severe vulnerabilities. It can allow any anonymous or low-privilege user to perform high-privilege actions, such as deleting users, changing site-wide settings, or gaining full administrative access, leading to a complete system compromise.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-862](https://cwe.mitre.org/data/definitions/862.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** Critical
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This is a flaw of omission. The developer simply forgot to add a security control. The fix is to add the appropriate framework-level protection (middleware, decorator, filter, attribute) to the vulnerable endpoint, enforcing a "deny by default" policy.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    A developer adds a new view in `views.py` and a new path in `urls.py` but forgets to add the `@login_required` or `@permission_required` decorator.
+
+    #### Vulnerable Scenario 1: A "Hidden" Admin Action
+    ```python
+    # myapp/views.py
+    def delete_user_view(request, user_id):
+        # DANGEROUS: There are NO checks here. Any anonymous user
+        # who finds /admin/delete-user/5/ can delete a user.
+        user = User.objects.get(pk=user_id)
+        user.delete()
+        return redirect('/admin/users')
+        
+    # myproject/urls.py
+    urlpatterns = [
+        path('admin/delete-user/<int:user_id>/', views.delete_user_view),
+    ]
+    ```
+
+    #### Vulnerable Scenario 2: A DRF ViewSet with `AllowAny`
+    A developer creates a `ViewSet` for managing `Project` models and accidentally sets the default permission to `AllowAny`.
+    ```python
+    # api/views.py
+    from rest_framework import viewsets
+    from rest_framework.permissions import AllowAny
+    
+    class ProjectViewSet(viewsets.ModelViewSet):
+        queryset = Project.objects.all()
+        serializer_class = ProjectSerializer
+        # DANGEROUS: Any anonymous user can now send
+        # POST, PUT, DELETE requests to /api/projects/
+        permission_classes = [AllowAny] 
+    ```
+
+    #### Mitigation and Best Practices
+    Apply the necessary decorators (e.g., `@permission_required`) to the view. For DRF, set a restrictive default permission policy (like `IsAuthenticated`) and be explicit with `permission_classes = [IsAdminUser]`.
+
+    #### Secure Code Example
+    ```python
+    # myapp/views.py (Secure)
+    from django.contrib.auth.decorators import login_required, permission_required
+
+    @login_required
+    @permission_required('auth.delete_user', raise_exception=True)
+    def delete_user_view(request, user_id):
+        # SECURE: This view is now protected.
+        user = User.objects.get(pk=user_id)
+        user.delete()
+        return redirect('/admin/users')
+        
+    # api/views.py (Secure)
+    from rest_framework.permissions import IsAdminUser
+    
+    class ProjectViewSet(viewsets.ModelViewSet):
+        # ...
+        # SECURE: Only admin users can access this endpoint.
+        permission_classes = [IsAdminUser]
+    ```
+
+    #### Testing Strategy
+    Write an integration test. As an anonymous client, `POST` to the `/admin/delete-user/5/` URL. Assert that the user count has not changed and that the response was a redirect to the login page.
+    ```python
+    # myapp/tests.py
+    def test_anonymous_user_cannot_delete_users(self):
+        user_to_delete = User.objects.create_user('test')
+        
+        response = self.client.post(reverse('delete-user', args=[user_to_delete.id]))
+        
+        self.assertTrue(User.objects.filter(pk=user_to_delete.id).exists())
+        self.assertRedirects(response, f'/login/?next=/admin/delete-user/{user_to_delete.id}/')
+    ```
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    A developer adds a `@PostMapping` to a `@RestController` but forgets to add `@PreAuthorize` or configure it in `HttpSecurity`.
+
+    #### Vulnerable Scenario 1: Endpoint Missing from `HttpSecurity`
+    The global config secures `/admin/**` but the developer names a new admin endpoint `/system/reboot`.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.authorizeRequests()
+            .antMatchers("/admin/**").hasRole("ADMIN")
+            .antMatchers("/").permitAll()
+            .anyRequest().authenticated();
+    }
+    
+    // controller/SystemController.java
+    @RestController
+    public class SystemController {
+        @PostMapping("/system/reboot")
+        public String reboot() {
+            // DANGEROUS: This path is not /admin/**, so it only
+            // falls under anyRequest().authenticated(). Any logged-in
+            // user can reboot the server.
+            // ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unprotected Method in Secured Controller
+    A developer secures a controller with `.antMatchers("/users/**").authenticated()` but one method should be admin-only.
+    ```java
+    // controller/UserController.java
+    @RestController
+    @RequestMapping("/api/users")
+    public class UserController {
+        // This is fine, covered by .authenticated()
+        @GetMapping("/me")
+        public User getMe(Authentication auth) { ... }
+        
+        @PostMapping("/delete-all")
+        public void deleteAllUsers() {
+            // DANGEROUS: This endpoint is accessible to *any*
+            // authenticated user, but should be ADMIN-only.
+            // Method-level security is missing.
+            userRepository.deleteAll();
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Apply method-level security (`@PreAuthorize`) to all sensitive endpoints. This is safer than relying only on global `antMatchers`.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure)
+    @Configuration
+    @EnableGlobalMethodSecurity(prePostEnabled = true) // Enable method security
+    public class SecurityConfig extends WebSecurityConfigurerAdapter { ... }
+    
+    // controller/UserController.java (Secure)
+    @RestController
+    @RequestMapping("/api/users")
+    public class UserController {
+        @GetMapping("/me")
+        public User getMe(Authentication auth) { ... }
+        
+        @PostMapping("/delete-all")
+        @PreAuthorize("hasRole('ADMIN')") // SECURE: Only admins can call this.
+        public void deleteAllUsers() {
+            userRepository.deleteAll();
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write a MockMVC test. Use `@WithMockUser(roles = "USER")` (a non-admin). `perform` a `post` to `/api/users/delete-all`. Assert the response is `403 Forbidden`.
+    ```java
+    @Test
+    @WithMockUser(roles = "USER")
+    void deleteAllUsers_asNonAdmin_isForbidden() throws Exception {
+        mockMvc.perform(post("/api/users/delete-all"))
+            .andExpect(status().isForbidden());
+    }
+    ```
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    A developer creates a new `Controller` or `Action` but forgets the `[Authorize]` attribute.
+
+    #### Vulnerable Scenario 1: Unprotected Action Method
+    An admin-only action is added to a public controller.
+    ```csharp
+    // Controllers/HomeController.cs
+    public class HomeController : Controller
+    {
+        // This is public and fine.
+        public IActionResult Index() { ... }
+        
+        [HttpPost]
+        // DANGEROUS: This action is missing [Authorize]
+        // Any anonymous user can call it.
+        public IActionResult ClearCache()
+        {
+            // ... very dangerous logic
+            return View("Index");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unprotected Controller
+    A developer creates a new controller for admin tasks and forgets to add any attributes.
+    ```csharp
+    // Controllers/AdminToolsController.cs
+    
+    // DANGEROUS: This entire controller is public.
+    public class AdminToolsController : Controller
+    {
+        public IActionResult Index() { ... }
+        
+        [HttpPost]
+        public IActionResult RunMigration() { ... }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `[Authorize(Roles = "Admin")]` attribute to the specific action. For controllers where *all* actions are admin-only, apply it at the class level.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/HomeController.cs (Secure)
+    public class HomeController : Controller
+    {
+        public IActionResult Index() { ... }
+        
+        [HttpPost]
+        [Authorize(Roles = "Admin")] // SECURE: Only admins can call this.
+        public IActionResult ClearCache()
+        {
+            // ...
+            return View("Index");
+        }
+    }
+
+    // Controllers/AdminToolsController.cs (Secure)
+    [Authorize(Roles = "Admin")] // SECURE: Entire controller is protected.
+    public class AdminToolsController : Controller
+    {
+        // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Write an integration test. Create an unauthenticated client. `POST` to the `/Home/ClearCache` action. Assert the response is a redirect to the login page (not a `200 OK`).
+    ```csharp
+    [Fact]
+    public async Task ClearCache_ForbiddenForAnonymousUser()
+    {
+        // _client is unauthenticated
+        var response = await _client.PostAsync("/Home/ClearCache", null);
+        
+        // Asserts a redirect to the login page
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+    }
+    ```
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    A developer adds a `Route::post(...)` to `routes/web.php` but forgets to place it inside the `admin` middleware group.
+
+    #### Vulnerable Scenario 1: Route Outside Group
+    ```php
+    // routes/web.php
+    
+    // DANGEROUS: This route is defined in the global scope
+    // with no middleware. Any anonymous user can POST to it.
+    Route::post('/users/create-admin', [UserController::class, 'createAdmin']);
+    
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+    });
+    ```
+    
+    #### Vulnerable Scenario 2: Misconfigured Route Controller
+    A developer uses `Route::controller` to group routes and forgets to apply middleware to the group.
+    ```php
+    // routes/web.php
+    
+    // DANGEROUS: The middleware is applied to the 'dashboard'
+    // route, but not to the controller group.
+    Route::get('/dashboard', ...)->middleware('auth');
+    
+    Route::controller(AdminPanelController::class)->group(function () {
+        Route::get('/admin/users', 'listUsers');
+        Route::get('/admin/settings', 'showSettings');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Move the sensitive route into a middleware group that provides authentication and authorization (e.g., `['auth', 'admin']`).
+
+    #### Secure Code Example
+    ```php
+    // routes/web.php (Secure)
+    
+    Route::middleware(['auth', 'admin'])->group(function () {
+        // SECURE: This route is now protected
+        Route::post('/users/create-admin', [UserController::class, 'createAdmin']);
+        
+        Route::controller(AdminPanelController::class)->group(function () {
+            Route::get('/admin/users', 'listUsers');
+            Route::get('/admin/settings', 'showSettings');
+        });
+    });
+    
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+    });
+    ```
+
+    #### Testing Strategy
+    Write a feature test. As an unauthenticated user, `post` to `/users/create-admin`. Assert that the user was not created and the response was a redirect to the login page.
+    ```php
+    // tests/Feature/CreateAdminTest.php
+    public function test_guest_cannot_create_admin_user()
+    {
+        $response = $this->post('/users/create-admin', [
+            'email' => 'hacker@example.com',
+            'password' => 'password'
+        ]);
+        
+        $this->assertDatabaseMissing('users', ['email' => 'hacker@example.com']);
+        $response->assertRedirect('/login');
+    }
+    ```
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    An Express developer defines a new route `app.post(...)` but forgets to add the `ensureAdmin` middleware.
+
+    #### Vulnerable Scenario 1: Unprotected Route
+    ```javascript
+    // app.js
+    const ensureAdmin = (req, res, next) => { ... };
+    
+    // DANGEROUS: This route has no middleware at all.
+    // It's completely public.
+    app.post('/api/v1/system/reboot', (req, res) => {
+        // ... logic to reboot the server
+        res.send('Rebooting...');
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Incorrect Middleware Order
+    A developer applies middleware, but does so *after* the route has already been defined.
+    ```javascript
+    // app.js
+    const ensureAdmin = (req, res, next) => { ... };
+    
+    // DANGEROUS: This route is defined before the middleware
+    // that is supposed to protect /admin/*
+    app.get('/admin/sensitive-logs', (req, res) => {
+        res.send("sensitive logs...");
+    });
+    
+    // This middleware will not apply to the route above it
+    app.use('/admin', ensureAdmin);
+    ```
+
+    #### Mitigation and Best Practices
+    Add the `ensureAdmin` (or at least `ensureAuthenticated`) middleware function to the route definition. Ensure global middleware (`app.use`) is defined *before* the routes it needs to protect.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    const ensureAdmin = (req, res, next) => { ... };
+    
+    // SECURE: Apply middleware before the route
+    app.use('/admin', ensureAdmin);
+    
+    app.get('/admin/sensitive-logs', (req, res) => {
+        res.send("sensitive logs...");
+    });
+
+    // SECURE: Or apply it directly to the route
+    app.post('/api/v1/system/reboot', ensureAdmin, (req, res) => {
+        res.send('Rebooting...');
+    });
+    ```
+
+    #### Testing Strategy
+    Use Jest/Supertest. Make a `post` request as an unauthenticated agent to `/api/v1/system/reboot`. Assert the response is `403 Forbidden` (or whatever the middleware sends).
+    ```javascript
+    // tests/system.test.js
+    it('should block anonymous user from rebooting', async () => {
+        // request(app) is an unauthenticated agent
+        const response = await request(app).post('/api/v1/system/reboot');
+        
+        expect(response.statusCode).toBe(403);
+    });
+    ```
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    A developer adds a new action to a controller but forgets to add it to the `before_action` filter's `only` list, or the filter is missing entirely.
+
+    #### Vulnerable Scenario 1: Controller Without Filter
+    ```ruby
+    # config/routes.rb
+    post '/users/promote_to_admin', to: 'users#promote'
+    
+    # app/controllers/users_controller.rb
+    # DANGEROUS: This controller has no filters at all.
+    class UsersController < ApplicationController
+      def promote
+        user = User.find(params[:user_id])
+        user.update(admin: true)
+        redirect_to root_path
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Misconfigured `skip_before_action`
+    A developer adds a new admin action `run_reports` but accidentally adds it to a `skip_before_action` list.
+    ```ruby
+    # app/controllers/admin_controller.rb
+    class AdminController < ApplicationController
+      before_action :require_admin
+      
+      # DANGEROUS: Developer meant to skip a filter for `index`,
+      # but accidentally skipped the admin check for `run_reports`.
+      skip_before_action :require_admin, only: [:run_reports]
+      
+      def run_reports
+        # This is now accessible to non-admins
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Add a `before_action` to the controller (or to `ApplicationController` for global protection) that checks for authorization. Be very careful with `skip_before_action`.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/users_controller.rb (Secure)
+    class UsersController < ApplicationController
+      # SECURE: Add a filter to check for admin status
+      before_action :require_admin
+    
+      def promote
+        user = User.find(params[:user_id])
+        user.update(admin: true)
+        redirect_to root_path
+      end
+      
+      private
+      def require_admin
+        redirect_to root_path unless current_user&.admin?
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write an RSpec request spec. `post` to the `/users/promote_to_admin` path as a non-admin user. Assert that the target user's `admin` status is still `false` and the response was a redirect.
+    ```ruby
+    # spec/requests/users_spec.rb
+    it "prevents non-admins from promoting users" do
+      user_to_promote = create(:user, admin: false)
+      non_admin = create(:user, admin: false)
+      login_as(non_admin)
+      
+      post promote_to_admin_path, params: { user_id: user_to_promote.id }
+      
+      expect(user_to_promote.reload.admin).to be(false)
+      expect(response).to redirect_to(root_path)
+    end
+    ```
+  </Tab>
+</Tabs>

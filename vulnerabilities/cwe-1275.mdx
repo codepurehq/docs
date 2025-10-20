@@ -1,0 +1,316 @@
+---
+title: "Improper SameSite Attribute"
+sidebarTitle: "SameSite Cookie (CWE-1275)"
+description: "Mitigation for sensitive cookies missing the SameSite attribute in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "cookie-bite"
+iconType: "solid"
+---
+
+## Overview
+This vulnerability occurs when a sensitive cookie (like a session cookie) is set without a `SameSite` attribute, or with `SameSite=None` without the `Secure` attribute. The `SameSite` attribute is a security measure that tells the browser whether to send a cookie with cross-site requests. Without it, or with a weak setting, the browser will send the session cookie with requests from other domains, making the application vulnerable to Cross-Site Request Forgery (CSRF).
+
+## Business Impact
+A missing or weak `SameSite` attribute is a direct enabler for CSRF attacks. This can allow an attacker to perform unauthorized actions on behalf of a logged-in user, such as changing their password, making purchases, or deleting their account.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-1275](https://cwe.mitre.org/data/definitions/1275.html)
+  **OWASP Top 10 (2021):** A01:2021 - Broken Access Control
+  **Severity:** Medium
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This is almost always a configuration-level vulnerability. All modern frameworks default to a secure setting (like `Lax` or `Strict`). The vulnerability is introduced if a developer (or an old framework version) explicitly sets this to `None` or disables it. The fix is to configure all sensitive cookies, especially session cookies, with `SameSite=Strict`.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    This is controlled by the `SESSION_COOKIE_SAMESITE` setting in `settings.py`. Django's default is `'Lax'`, which is good.
+
+    #### Vulnerable Scenario 1: `SameSite=None` without `Secure`
+    A developer sets `SameSite` to `None` (e.g., for cross-domain API use) but forgets to also set `SESSION_COOKIE_SECURE`.
+    ```python
+    # settings.py
+    # DANGEROUS: 'None' allows the cookie to be sent cross-site.
+    # Modern browsers will block this if `SECURE` is not also True.
+    SESSION_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SECURE = False 
+    ```
+    
+    #### Vulnerable Scenario 2: Disabling `SameSite`
+    A developer sets the value to `None` (the Python object, not the string) to disable the attribute, reverting to old browser behavior.
+    ```python
+    # settings.py
+    # DANGEROUS: This removes the SameSite attribute entirely,
+    # leaving the cookie open to CSRF.
+    SESSION_COOKIE_SAMESITE = None
+    ```
+
+    #### Mitigation and Best Practices
+    For most applications, `Strict` is the best setting. This prevents the cookie from being sent on *any* cross-site request, even top-level navigation.
+    
+    * `Strict`: Best security.
+    * `Lax`: Good security (default). Allows cookie on top-level GET navigation.
+    * `None`: Requires `SESSION_COOKIE_SECURE = True`. Only use if you need cross-domain authenticated requests.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Secure)
+    
+    # SECURE: This is the most secure setting.
+    SESSION_COOKIE_SAMESITE = 'Strict'
+    
+    # Ensure this is True in production
+    SESSION_COOKIE_SECURE = True 
+    CSRF_COOKIE_SECURE = True
+    ```
+
+    #### Testing Strategy
+    This is best tested with a browser's developer tools. Log in to the application, go to the "Application" (Chrome) or "Storage" (Firefox) tab, and inspect the session cookie (`sessionid`). Verify that its `SameSite` attribute is set to `Strict` or `Lax`.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    This is controlled in `application.properties` for Spring Boot. The default is `Lax`.
+
+    #### Vulnerable Scenario 1: Setting to `None` without `Secure`
+    A developer sets `SameSite` to `None` for a cross-site iFrame, but forgets to enable `secure`.
+    ```properties
+    # application.properties
+    # DANGEROUS: 'None' is set, but 'secure=true' is missing.
+    # Browsers will reject this, or it will be insecure.
+    server.servlet.session.cookie.same-site=None
+    server.servlet.session.cookie.secure=false
+    ```
+    
+    #### Vulnerable Scenario 2: Disabling the Attribute
+    A developer explicitly sets the attribute to `null` to support old browsers.
+    ```properties
+    # application.properties
+    # DANGEROUS: This might disable the attribute, reverting
+    # to insecure default browser behavior.
+    server.servlet.session.cookie.same-site=
+    ```
+
+    #### Mitigation and Best Practices
+    Explicitly set the `SameSite` attribute to `Strict` in your `application.properties` file.
+
+    #### Secure Code Example
+    ```properties
+    # application.properties (Secure)
+    
+    # SECURE: Explicitly set to 'Strict'
+    server.servlet.session.cookie.same-site=Strict
+    
+    # Also ensure cookies are secure in production
+    server.servlet.session.cookie.secure=true
+    ```
+
+    #### Testing Strategy
+    Inspect the `JSESSIONID` cookie in your browser's developer tools after logging in. Verify the `SameSite` attribute is `Strict`.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    This is configured in `Startup.cs` when setting up cookie policies.
+
+    #### Vulnerable Scenario 1: Setting to `None`
+    A developer configures the cookie policy to be `None` without `Secure`.
+    ```csharp
+    // Startup.cs
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.Configure<CookiePolicyOptions>(options =>
+        {
+            // DANGEROUS: Setting to 'None' without also
+            // forcing cookies to be secure.
+            options.MinimumSameSitePolicy = SameSiteMode.None;
+            options.Secure = CookieSecurePolicy.None;
+        });
+    }
+    ```
+    
+    #### Vulnerable Scenario 2: Setting a Custom Cookie
+    A developer sets a custom "remember me" cookie and forgets to set the `SameSite` property.
+    ```csharp
+    // Controllers/AccountController.cs
+    public void SetRememberMeCookie(string token)
+    {
+        Response.Cookies.Append("remember_me", token, new CookieOptions
+        {
+            HttpOnly = true,
+            // DANGEROUS: 'SameSite' is not specified.
+            // Default may be 'None' in some configurations.
+        });
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Set the `MinimumSameSitePolicy` to `SameSiteMode.Strict`. This enforces the most secure setting for all cookies. Always set `SameSite` and `Secure` properties on custom cookies.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (Secure)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.Configure<CookiePolicyOptions>(options =>
+        {
+            // SECURE: Enforces Strict for all cookies
+            options.MinimumSameSitePolicy = SameSiteMode.Strict;
+            options.Secure = CookieSecurePolicy.Always; // Ensure secure
+        });
+    }
+    
+    // Controllers/AccountController.cs (Secure)
+    public void SetRememberMeCookie(string token)
+    {
+        Response.Cookies.Append("remember_me", token, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict, // SECURE
+            Secure = true // SECURE
+        });
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the `.AspNetCore.Identity.Application` or custom cookie in your browser's developer tools. Verify the `SameSite` attribute is `Strict`.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    This is controlled in `config/session.php`. The default is `lax`, which is good.
+
+    #### Vulnerable Scenario 1: Setting to `null`
+    A developer changes the session config to `null` to support old browsers.
+    ```php
+    // config/session.php
+    'samesite' => null, // DANGEROUS
+    'secure' => false,
+    ```
+    
+    #### Vulnerable Scenario 2: Setting `None` without `Secure`
+    A developer configures `samesite` to `none` but forgets to force the `secure` flag.
+    ```php
+    // config/session.php
+    'samesite' => 'none', // DANGEROUS
+    'secure' => false,
+    ```
+
+    #### Mitigation and Best Practices
+    Set `'samesite'` to `'strict'` in `config/session.php` and ensure `'secure'` is `true` for production by linking it to an environment variable.
+
+    #### Secure Code Example
+    ```php
+    // config/session.php (Secure)
+    'samesite' => 'strict',
+    
+    'secure' => env('SESSION_SECURE_COOKIE', true),
+    ```
+    
+    ```ini
+    # .env (Production)
+    SESSION_SECURE_COOKIE=true
+    ```
+
+    #### Testing Strategy
+    Inspect the `laravel_session` cookie in your browser's developer tools. Verify the `SameSite` attribute is `Strict`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    This is set in the options for `express-session` or when manually setting a cookie with `res.cookie()`. The default for `express-session` `sameSite` was not `lax` in older versions.
+
+    #### Vulnerable Scenario 1: `express-session` Default
+    The `express-session` library's default for `sameSite` is `false` (in versions < 1.17.0) or not set, which is insecure.
+    ```javascript
+    // app.js
+    const session = require('express-session');
+    
+    app.use(session({
+        secret: 'my-secret',
+        // DANGEROUS: sameSite is not specified.
+        cookie: { } 
+    }));
+    ```
+    
+    #### Vulnerable Scenario 2: Manual Cookie Set
+    A developer sets a custom cookie and forgets the `sameSite` option.
+    ```javascript
+    // app.js
+    app.post('/login', (req, res) => {
+        // ... login logic ...
+        res.cookie('auth_token', 'my-token', {
+            httpOnly: true,
+            // DANGEROUS: 'sameSite' is missing.
+        });
+        res.send('Logged in');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Explicitly set `cookie.sameSite` to `'strict'` in the `express-session` configuration and for all manual `res.cookie()` calls.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    const session = require('express-session');
+    
+    app.use(session({
+        secret: 'my-secret',
+        cookie: { 
+            sameSite: 'strict', // SECURE
+            secure: (process.env.NODE_ENV === 'production')
+        }
+    }));
+    
+    app.post('/login', (req, res) => {
+        // ... login logic ...
+        res.cookie('auth_token', 'my-token', {
+            httpOnly: true,
+            sameSite: 'strict', // SECURE
+            secure: (process.env.NODE_ENV === 'production')
+        });
+        res.send('Logged in');
+    });
+    ```
+
+    #### Testing Strategy
+    Inspect the `connect.sid` (or your custom session cookie name) in your browser's developer tools. Verify the `SameSite` attribute is `Strict`.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    This is controlled in `config/initializers/session_store.rb` or `config/application.rb`. The Rails default is `Lax`.
+
+    #### Vulnerable Scenario 1: Setting to `None`
+    A developer sets the `same_site` policy to `:none` for a cross-domain requirement but forgets `:secure`.
+    ```ruby
+    # config/initializers/session_store.rb
+    # DANGEROUS: Setting to :none without :secure
+    Rails.application.config.session_store :cookie_store, 
+        key: '_my_app_session', 
+        same_site: :none,
+        secure: false
+    ```
+    
+    #### Vulnerable Scenario 2: Disabling `SameSite`
+    A developer sets the `same_site` policy to `nil` to disable it.
+    ```ruby
+    # config/initializers/session_store.rb
+    # DANGEROUS: Disables the SameSite attribute entirely.
+    Rails.application.config.session_store :cookie_store, 
+        key: '_my_app_session', 
+        same_site: nil
+    ```
+
+    #### Mitigation and Best Practices
+    Set the `same_site` policy to `:strict` in your configuration.
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/session_store.rb (Secure)
+    Rails.application.config.session_store :cookie_store, 
+        key: '_my_app_session', 
+        same_site: :strict, // SECURE
+        secure: Rails.env.production?
+    ```
+
+    #### Testing Strategy
+    Inspect the `_my_app_session` cookie in your browser's developer tools. Verify the `SameSite` attribute is `Strict`.
+  </Tab>
+</Tabs>
