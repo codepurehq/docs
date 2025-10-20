@@ -74,6 +74,20 @@
       ]
     },
     {
+      "group": "A02:2021 – Cryptographic Failures",
+      "pages": [
+        "vulnerabilities/cwe-319",
+        "vulnerabilities/cwe-523",
+        "vulnerabilities/cwe-284",
+        "vulnerabilities/cwe-352",
+        "vulnerabilities/cwe-425",
+        "vulnerabilities/cwe-601",
+        "vulnerabilities/cwe-639",
+        "vulnerabilities/cwe-862",
+        "vulnerabilities/cwe-1275"
+      ]
+    },
+    {
       "group": "A03:2021 – Injection",
       "pages": [
         "vulnerabilities/sql-injection",

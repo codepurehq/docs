@@ -1,0 +1,418 @@
+---
+title: "Cleartext Transmission of Sensitive Information"
+sidebarTitle: "Cleartext Transmission (CWE-319)"
+description: "Mitigation for transmitting sensitive data in cleartext (HTTP) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
+icon: "network-wired"
+iconType: "solid"
+---
+
+## Overview
+This vulnerability occurs when an application transmits sensitive data, such as passwords, session tokens, or personal information, over an unencrypted channel (like HTTP). An attacker on the same network (e.g., public Wi-Fi) can "sniff" this traffic and steal the data, leading to account compromise or data breaches.
+
+## Business Impact
+Transmitting data in cleartext is a critical failure of confidentiality. It can lead to the widespread theft of user credentials, session hijacking, and the exposure of all data your application handles. This directly violates compliance standards like PCI-DSS and GDPR, leading to severe fines and a complete loss of user trust.
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-319](https://cwe.mitre.org/data/definitions/319.html)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+## Framework-Specific Analysis and Remediation
+This is a deployment and configuration issue. The fix is to enforce **HTTPS-only** communication. This involves:
+1.  Setting up a TLS/SSL certificate on your web server (e.g., Nginx, Apache) or load balancer.
+2.  Configuring your application framework to redirect all HTTP traffic to HTTPS.
+3.  Setting the `Secure` flag on all sensitive cookies.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    This is controlled by `SECURE_SSL_REDIRECT` in `settings.py`. In a production deployment behind a reverse proxy (like Nginx), you must also ensure the proxy is configured to pass the correct headers.
+
+    #### Vulnerable Scenario 1: `SECURE_SSL_REDIRECT = False`
+    The application is deployed without SSL redirection, allowing users to access the site and submit forms over HTTP.
+    ```python
+    # settings.py (Production)
+    
+    # DANGEROUS: The application will not redirect HTTP requests to HTTPS.
+    # If a user bookmarks or types "http://...", they will be insecure.
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False 
+    ```
+
+    #### Vulnerable Scenario 2: Misconfigured Proxy
+    The `SECURE_SSL_REDIRECT` is `True`, but the reverse proxy (Nginx) doesn't set the `X-Forwarded-Proto` header. Django won't know it's behind a secure connection and may cause a redirect loop or serve insecure content.
+    ```nginx
+    # /etc/nginx/sites-available/myapp
+    
+    location / {
+        proxy_pass [http://127.0.0.1:8000](http://127.0.0.1:8000);
+        proxy_set_header Host $host;
+        # DANGEROUS: Missing X-Forwarded-Proto header.
+        # Django won't know the client connection is HTTPS.
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    In your production `settings.py`, set `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, and `CSRF_COOKIE_SECURE` to `True`. Configure your proxy to pass the `X-Forwarded-Proto` header and enable `SECURE_PROXY_SSL_HEADER`.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Production)
+    
+    # SECURE: Tell Django to trust the proxy's header
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    
+    # SECURE: Enforce HTTPS
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+    # Optional: Enable HSTS for extra security
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    ```
+    ```nginx
+    # /etc/nginx/sites-available/myapp (Secure)
+    
+    location / {
+        proxy_pass [http://127.0.0.1:8000](http://127.0.0.1:8000);
+        proxy_set_header Host $host;
+        # SECURE: This header tells Django the connection is secure.
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    ```
+
+    #### Testing Strategy
+    Use a tool like `curl -I http://your-domain.com`. Assert that the response is a `301 Moved Permanently` with a `Location` header pointing to `https://your-domain.com`. Also, check your session cookies in a browser to ensure the "Secure" flag is set.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    In Spring Boot, this is handled by requiring a secure channel in `HttpSecurity` or by reverse proxy configuration.
+
+    #### Vulnerable Scenario 1: No SSL in `HttpSecurity`
+    The `SecurityConfig` does not enforce a secure channel, allowing the app to serve requests over HTTP.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .anyRequest().permitAll();
+        // DANGEROUS: No `.requiresChannel().anyRequest().requiresSecure()`
+        // The app will happily serve sensitive data over HTTP.
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `secure` Flag Missing on Cookies
+    The `application.properties` file does not set the `secure` flag on session cookies, so they will be sent over HTTP.
+    ```properties
+    # application.properties
+    # DANGEROUS: The JSESSIONID cookie will be sent over HTTP.
+    server.servlet.session.cookie.secure=false
+    ```
+
+    #### Mitigation and Best Practices
+    Enforce HTTPS at the proxy (Nginx) level. If the app itself handles SSL, use `.requiresChannel()`. Always set the cookie secure flag in production.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure)
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            // SECURE: This forces all requests to be over HTTPS.
+            .requiresChannel()
+                .anyRequest().requiresSecure()
+            .and()
+            .authorizeRequests()
+                .anyRequest().permitAll();
+    }
+    ```
+    ```properties
+    # application.properties (Secure)
+    # SECURE: Tell Spring to trust the X-Forwarded-* headers from the proxy
+    server.forward-headers-strategy=FRAMEWORK
+    
+    # SECURE: Ensure cookies are only sent over HTTPS
+    server.servlet.session.cookie.secure=true
+    ```
+
+    #### Testing Strategy
+    Use `curl -I http://your-domain.com`. Assert the response is a `302 Found` with a `Location` header pointing to `https://your-domain.com`. Check the `Set-Cookie` header for the `JSESSIONID` cookie and verify it contains the `Secure` flag.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    This is controlled in `Startup.cs` using `app.UseHttpsRedirection()` and configuring cookie policies.
+
+    #### Vulnerable Scenario 1: Missing HTTPS Redirection
+    The developer comments out or forgets to add `app.UseHttpsRedirection()` in `Startup.cs`.
+    ```csharp
+    // Startup.cs - Configure()
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error");
+        }
+        
+        // DANGEROUS: The line below is missing.
+        // app.UseHttpsRedirection();
+        
+        app.UseStaticFiles();
+        app.UseRouting();
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Cookie Policy
+    The cookie policy is set to `None`, allowing cookies to be sent over HTTP.
+    ```csharp
+    // Startup.cs - ConfigureServices()
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddSession(options =>
+        {
+            // DANGEROUS: Cookies will be sent over insecure channels.
+            options.Cookie.SecurePolicy = CookieSecurePolicy.None;
+        });
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure `app.UseHttpsRedirection()` is present in your `Configure` method. Set all cookie policies to `CookieSecurePolicy.Always` in production. If behind a proxy, configure `ForwardedHeadersOptions`.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs - ConfigureServices()
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddSession(options =>
+        {
+            // SECURE: Cookies are only sent over HTTPS.
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+        });
+        
+        // For HSTS
+        services.AddHsts(options =>
+        {
+            options.MaxAge = TimeSpan.FromDays(365);
+            options.IncludeSubDomains = true;
+        });
+    }
+    
+    // Startup.cs - Configure()
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (!env.IsDevelopment())
+        {
+            app.UseExceptionHandler("/Home/Error");
+            // SECURE: Enforce HSTS
+            app.UseHsts();
+        }
+        
+        // SECURE: Enforce HTTP to HTTPS redirection
+        app.UseHttpsRedirection();
+        
+        app.UseStaticFiles();
+        app.UseRouting();
+        // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Use `curl -I http://your-domain.com`. Assert the response is a `301 Moved Permanently` (or `307 Temporary Redirect`) with a `Location` header pointing to `https://your-domain.com`. Check the `Set-Cookie` header for your session cookie and verify the `Secure` flag.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel handles this at the reverse proxy (Nginx) level. You can also force HTTPS using middleware.
+
+    #### Vulnerable Scenario 1: No Proxy Redirect
+    The Nginx configuration for the site listens on port 80 but does not redirect to 443 (HTTPS).
+    ```nginx
+    # /etc/nginx/sites-available/myapp
+    server {
+        listen 80; # DANGEROUS: Listens on HTTP
+        server_name myapp.com;
+        root /var/www/myapp/public;
+        
+        # ... (location block) ...
+        # No redirect to HTTPS is defined.
+    }
+    
+    server {
+        listen 443 ssl;
+        # ... (ssl config) ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Cookie Config
+    The `secure` option in `config/session.php` is set to `false` in production.
+    ```php
+    // config/session.php
+    
+    'secure' => false, // DANGEROUS
+    
+    // This allows the session cookie to be sent over HTTP,
+    // even if the user just visits one page insecurely.
+    ```
+
+    #### Mitigation and Best Practices
+    Your Nginx config should redirect all port 80 traffic to 443. Set the `SESSION_SECURE_COOKIE` variable to `true` in your `.env` file for production.
+
+    #### Secure Code Example
+    ```nginx
+    # /etc/nginx/sites-available/myapp (Secure)
+    server {
+        listen 80;
+        server_name myapp.com;
+        # SECURE: Redirect all HTTP traffic to HTTPS
+        return 301 https://$host$request_uri;
+    }
+    
+    server {
+        listen 443 ssl;
+        # ... (ssl config) ...
+    }
+    ```
+    ```ini
+    # .env (Production)
+    
+    APP_URL=[https://myapp.com](https://myapp.com)
+    # SECURE: This tells Laravel to set the 'Secure' flag on cookies
+    SESSION_SECURE_COOKIE=true
+    ```
+    ```php
+    // config/session.php
+    // This reads the value from .env
+    'secure' => env('SESSION_SECURE_COOKIE', false),
+    ```
+
+    #### Testing Strategy
+    Use `curl -I http://your-domain.com`. Assert the response is a `301 Moved Permanently` with a `Location` header pointing to `https://your-domain.com`. Check the `Set-Cookie` header for `laravel_session` and verify the `Secure` flag.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    In Express, this is handled by checking the `req.secure` flag (or `x-forwarded-proto` header) and issuing a redirect. Cookie security is set in `express-session`.
+
+    #### Vulnerable Scenario 1: No HTTPS Redirect Middleware
+    The application runs and serves traffic over HTTP without any logic to redirect to HTTPS.
+    ```javascript
+    // app.js
+    const express = require('express');
+    const app = express();
+    
+    app.get('/', (req, res) => {
+        // DANGEROUS: This will be served over HTTP if requested.
+        res.send('Welcome!');
+    });
+    
+    app.listen(80);
+    ```
+
+    #### Vulnerable Scenario 2: Insecure `express-session` Cookie
+    The session middleware is configured, but `cookie.secure` is not set to `true` for production.
+    ```javascript
+    // app.js
+    const session = require('express-session');
+    
+    app.use(session({
+        secret: 'my-secret',
+        cookie: { 
+            // DANGEROUS: The session cookie will be sent over HTTP.
+            secure: false 
+        } 
+    }));
+    ```
+
+    #### Mitigation and Best Practices
+    Add a middleware at the *top* of your stack that checks for a secure connection and redirects if it's not. Set `cookie.secure` to `true` in production.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    const express = require('express');
+    const session = require('express-session');
+    const app = express();
+    
+    const isProd = (process.env.NODE_ENV === 'production');
+    
+    // SECURE: Trust the proxy header
+    app.enable('trust proxy'); 
+    
+    // SECURE: Redirect middleware
+    app.use((req, res, next) => {
+        if (isProd && !req.secure) {
+            return res.redirect('https://' + req.headers.host + req.url);
+        }
+        next();
+    });
+    
+    app.use(session({
+        secret: 'my-secret',
+        cookie: { 
+            // SECURE: Set to true in production
+            secure: isProd,
+            sameSite: 'strict'
+        } 
+    }));
+    
+    app.listen(process.env.PORT || 3000);
+    ```
+
+    #### Testing Strategy
+    Use `curl -I http://your-domain.com`. Assert the response is a `302 Found` with a `Location` header pointing to `https://your-domain.com`. Check the `Set-Cookie` header for `connect.sid` and verify the `Secure` flag.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Rails controls this with `config.force_ssl = true` in the production environment config.
+
+    #### Vulnerable Scenario 1: `config.force_ssl = false`
+    The production config does not enforce SSL.
+    ```ruby
+    # config/environments/production.rb
+    
+    # DANGEROUS: This is the default, but it should be true.
+    # The app will not redirect HTTP to HTTPS.
+    config.force_ssl = false
+    ```
+    
+    #### Vulnerable Scenario 2: Insecure `session_store`
+    The `session_store` initializer does not set the `secure` flag.
+    ```ruby
+    # config/initializers/session_store.rb
+    
+    # DANGEROUS: 'secure' is not set to true, so the session
+    # cookie will be sent over HTTP.
+    Rails.application.config.session_store :cookie_store, 
+        key: '_my_app_session'
+    ```
+
+    #### Mitigation and Best Practices
+    Set `config.force_ssl = true` in `config/environments/production.rb`. This one setting handles HTTP-to-HTTPS redirection, HSTS, and sets the `Secure` flag on cookies.
+
+    #### Secure Code Example
+    ```ruby
+    # config/environments/production.rb (Secure)
+    
+    Rails.application.configure do
+      # ...
+      
+      # SECURE: This one setting enforces HTTPS redirection,
+      # HSTS, and secure cookies.
+      config.force_ssl = true
+    
+      # ...
+    end
+    ```
+
+    #### Testing Strategy
+    Use `curl -I http://your-domain.com`. Assert the response is a `301 Moved Permanently` with a `Location` header pointing to `https://your-domain.com`. Check the `Set-Cookie` header for `_my_app_session` and verify the `Secure` flag.
+  </Tab>
+</Tabs>
