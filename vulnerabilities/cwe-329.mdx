@@ -1,0 +1,547 @@
+---
+title: "Use of Predictable IV with CBC Mode"
+sidebarTitle: "Predictable IV (CWE-329)"
+description: "Mitigation for using static, null, or predictable Initialization Vectors (IVs) with CBC mode encryption."
+icon: "cubes-stacked"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when using a block cipher mode like Cipher Block Chaining (CBC) with an Initialization Vector (IV) that is **not random** and **unpredictable** for each encryption operation. Common mistakes include using a static (hard-coded) IV, a null IV (all zeros), or an IV derived predictably from data like a timestamp or username. Using the same IV to encrypt different messages with the same key completely undermines CBC's security, allowing attackers to infer information about the plaintext. 🧊⛓️
+
+---
+
+## Business Impact
+
+A predictable IV in CBC mode can allow an attacker to determine if two different encrypted messages start with the same block of plaintext. In some cases, depending on how the application uses the encryption, it can leak partial or full information about the plaintext messages, especially if parts of the message structure are known. This compromises data confidentiality.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-329](https://cwe.mitre.org/data/definitions/329.html)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Modern cryptographic libraries often generate a random IV automatically when using modes like CBC or GCM. This vulnerability usually arises when developers manually manage the IV and make mistakes. The fix is to **always generate a new, cryptographically random IV** for every single encryption operation using the same key, and typically **prepend the IV to the ciphertext** so it can be retrieved for decryption.
+
+**Note:** Authenticated Encryption modes like **AES-GCM** are generally preferred over CBC + HMAC as they handle both confidentiality and integrity together and often manage the nonce (similar to an IV) generation more seamlessly.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using `pycryptodome`'s `AES.new()` in CBC mode but providing a static or null IV.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```python
+    # utils/encryption.py
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad
+    import os
+
+    # DANGEROUS: Using a fixed, hard-coded IV for all encryptions.
+    STATIC_IV = b'0123456789abcdef' # Must be 16 bytes for AES
+
+    def encrypt_static_iv(key, data):
+        cipher = AES.new(key, AES.MODE_CBC, STATIC_IV)
+        padded_data = pad(data.encode(), AES.block_size)
+        ciphertext = cipher.encrypt(padded_data)
+        # Storing IV is usually needed, but here it's static anyway.
+        return ciphertext
+    ```
+
+    #### Vulnerable Scenario 2: Null IV (All Zeros)
+    ```python
+    # utils/encryption.py
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad
+
+    NULL_IV = b'\x00' * 16 # DANGEROUS: Using an IV of all zeros.
+
+    def encrypt_null_iv(key, data):
+        cipher = AES.new(key, AES.MODE_CBC, NULL_IV)
+        padded_data = pad(data.encode(), AES.block_size)
+        ciphertext = cipher.encrypt(padded_data)
+        return ciphertext
+    ```
+
+    #### Mitigation and Best Practices
+    Generate a fresh, random IV for each encryption using `os.urandom(AES.block_size)` or `Crypto.Random.get_random_bytes(AES.block_size)`. Prepend the IV to the ciphertext.
+
+    #### Secure Code Example
+    ```python
+    # utils/encryption.py (Secure)
+    from Crypto.Cipher import AES
+    from Crypto.Random import get_random_bytes
+    from Crypto.Util.Padding import pad, unpad
+
+    def encrypt_random_iv(key, data):
+        # SECURE: Generate a new random IV for each encryption.
+        iv = get_random_bytes(AES.block_size) # 16 bytes for AES
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        padded_data = pad(data.encode(), AES.block_size)
+        ciphertext = cipher.encrypt(padded_data)
+        # SECURE: Prepend the IV to the ciphertext before returning/storing.
+        return iv + ciphertext
+
+    def decrypt_random_iv(key, iv_and_ciphertext):
+        iv = iv_and_ciphertext[:AES.block_size]
+        ciphertext = iv_and_ciphertext[AES.block_size:]
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+        padded_plaintext = cipher.decrypt(ciphertext)
+        plaintext = unpad(padded_plaintext, AES.block_size)
+        return plaintext.decode()
+    ```
+
+    #### Testing Strategy
+    Review code using `AES.new` with `MODE_CBC`. Ensure the `iv` parameter is generated using `get_random_bytes` or `os.urandom` *inside* the encryption function (or passed in as a unique value per call). Check that the IV is stored/transmitted alongside the ciphertext.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `javax.crypto.Cipher` with `AES/CBC/PKCS5Padding` but initializing `IvParameterSpec` with a static or null byte array.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```java
+    // service/EncryptionService.java
+    import javax.crypto.Cipher;
+    import javax.crypto.spec.IvParameterSpec;
+    import javax.crypto.spec.SecretKeySpec;
+
+    public class EncryptionService {
+        // DANGEROUS: Static, predictable IV.
+        private static final byte[] STATIC_IV = "0123456789abcdef".getBytes();
+
+        public byte[] encryptStaticIv(byte[] keyBytes, byte[] data) throws Exception {
+            SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+            // Using the static IV
+            IvParameterSpec ivSpec = new IvParameterSpec(STATIC_IV);
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, key, ivSpec);
+            return cipher.doFinal(data);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Null IV (All Zeros)
+    ```java
+    // service/EncryptionService.java
+    public byte[] encryptNullIv(byte[] keyBytes, byte[] data) throws Exception {
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+        // DANGEROUS: Using a zero-byte IV.
+        byte[] nullIv = new byte[16]; // Defaults to all zeros
+        IvParameterSpec ivSpec = new IvParameterSpec(nullIv);
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        cipher.init(Cipher.ENCRYPT_MODE, key, ivSpec);
+        return cipher.doFinal(data);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Generate a new random IV using `java.security.SecureRandom` for each encryption. Prepend the IV to the ciphertext. Consider using AES-GCM (`AES/GCM/NoPadding`) which is generally preferred.
+
+    #### Secure Code Example
+    ```java
+    // service/EncryptionService.java (Secure)
+    import javax.crypto.Cipher;
+    import javax.crypto.spec.IvParameterSpec;
+    import javax.crypto.spec.SecretKeySpec;
+    import java.security.SecureRandom;
+
+    public class EncryptionService {
+        public byte[] encryptRandomIv(byte[] keyBytes, byte[] data) throws Exception {
+            SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+
+            // SECURE: Generate a new random IV for each encryption.
+            byte[] iv = new byte[16]; // AES block size is 128 bits = 16 bytes
+            new SecureRandom().nextBytes(iv);
+            IvParameterSpec ivSpec = new IvParameterSpec(iv);
+
+            cipher.init(Cipher.ENCRYPT_MODE, key, ivSpec);
+            byte[] ciphertext = cipher.doFinal(data);
+
+            // SECURE: Prepend IV to ciphertext.
+            byte[] result = new byte[iv.length + ciphertext.length];
+            System.arraycopy(iv, 0, result, 0, iv.length);
+            System.arraycopy(ciphertext, 0, result, iv.length, ciphertext.length);
+            return result;
+        }
+
+        public byte[] decryptRandomIv(byte[] keyBytes, byte[] ivAndCiphertext) throws Exception {
+            SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+
+            byte[] iv = Arrays.copyOfRange(ivAndCiphertext, 0, 16);
+            byte[] ciphertext = Arrays.copyOfRange(ivAndCiphertext, 16, ivAndCiphertext.length);
+            IvParameterSpec ivSpec = new IvParameterSpec(iv);
+
+            cipher.init(Cipher.DECRYPT_MODE, key, ivSpec);
+            return cipher.doFinal(ciphertext);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Review code initializing `IvParameterSpec`. Ensure the byte array comes from `SecureRandom.nextBytes()` generated *within* the encryption method or passed uniquely per call. Verify the IV is prepended/stored.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using classes like `AesCryptoServiceProvider` or `Aes.Create()` in CBC mode but setting the `IV` property to a static or null value.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```csharp
+    // Services/EncryptionHelper.cs
+    using System.Security.Cryptography;
+    using System.Text;
+
+    public class EncryptionHelper
+    {
+        private readonly byte[] _key;
+        // DANGEROUS: Static IV used for all encryptions.
+        private static readonly byte[] StaticIv = Encoding.UTF8.GetBytes("myStaticIv123456"); // 16 bytes
+
+        public EncryptionHelper(byte[] key) { _key = key; }
+
+        public byte[] EncryptStaticIv(byte[] data)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = _key;
+                aes.IV = StaticIv; // Using static IV
+                aes.Mode = CipherMode.CBC;
+                using (var encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+                // ... encryption logic ...
+            }
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Default (Null) IV
+    Forgetting to set the IV property, which might default to zeros.
+    ```csharp
+    // Services/EncryptionHelper.cs
+    public byte[] EncryptDefaultIv(byte[] data)
+    {
+        using (var aes = Aes.Create())
+        {
+            aes.Key = _key;
+            // DANGEROUS: IV is not explicitly set. Depending on the provider,
+            // it might default to zeros or be reused if the Aes object is reused.
+            // aes.GenerateIV(); // This line is missing
+            aes.Mode = CipherMode.CBC;
+            // The IV used here is unpredictable/potentially zero
+            using (var encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+            // ... encryption logic ...
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Let the `Aes.Create()` or provider generate a random IV automatically (`aes.GenerateIV()` is often called by default, but relying on it implicitly can be risky). Retrieve the generated `aes.IV` *after* creating the encryptor/decryptor and prepend it to the ciphertext. Consider `AesGcm`.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/EncryptionHelper.cs (Secure)
+    using System.Security.Cryptography;
+    using System.IO;
+
+    public class EncryptionHelper
+    {
+        private readonly byte[] _key;
+        public EncryptionHelper(byte[] key) { _key = key; } // Ensure key is strong & externalized
+
+        public byte[] EncryptRandomIv(byte[] data)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = _key;
+                aes.Mode = CipherMode.CBC;
+                // SECURE: GenerateIV() creates a cryptographically random IV.
+                // It's often called implicitly, but call explicitly for clarity if needed.
+                aes.GenerateIV();
+                byte[] iv = aes.IV; // Get the generated IV
+
+                using (var encryptor = aes.CreateEncryptor(aes.Key, iv)) // Use the generated IV
+                using (var ms = new MemoryStream())
+                {
+                    // SECURE: Prepend the IV to the output stream.
+                    ms.Write(iv, 0, iv.Length);
+                    using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                    {
+                        cs.Write(data, 0, data.Length);
+                    } // cs.FlushFinalBlock() is called automatically
+                    return ms.ToArray();
+                }
+            }
+        }
+
+        public byte[] DecryptRandomIv(byte[] ivAndCiphertext)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = _key;
+                aes.Mode = CipherMode.CBC;
+
+                byte[] iv = new byte[aes.BlockSize / 8]; // e.g., 16 bytes
+                // Read IV from the start of the data
+                Array.Copy(ivAndCiphertext, 0, iv, 0, iv.Length);
+                aes.IV = iv;
+
+                using (var decryptor = aes.CreateDecryptor(aes.Key, iv))
+                using (var ms = new MemoryStream())
+                {
+                    using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Write))
+                    {
+                        // Write only the ciphertext part (after the IV)
+                        cs.Write(ivAndCiphertext, iv.Length, ivAndCiphertext.Length - iv.Length);
+                    }
+                    return ms.ToArray();
+                }
+            }
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Review code using `Aes` in `CBC` mode. Ensure `aes.IV` is either explicitly generated using `aes.GenerateIV()` or `RandomNumberGenerator.Fill()` within the encryption method, or that the framework generates it automatically. Verify the IV is retrieved *after* generation and prepended to the ciphertext. Check for static IV byte arrays.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `openssl_encrypt()` with a CBC cipher (like `aes-256-cbc`) but providing a static or non-random IV.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```php
+    // app/Utils/Encryption.php
+    class Encryption {
+        // DANGEROUS: Static IV.
+        const IV = '1234567890abcdef'; // Must match cipher length (16 for AES)
+
+        public function encryptStaticIv($key, $data) {
+            $ciphertext = openssl_encrypt(
+                $data,
+                'aes-256-cbc',
+                $key,
+                OPENSSL_RAW_DATA,
+                self::IV // Using static IV
+            );
+            return base64_encode(self::IV . $ciphertext); // Storing static IV isn't useful
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Non-Random IV (e.g., using `time()`)
+    ```php
+    // app/Utils/Encryption.php
+    public function encryptTimeBasedIv($key, $data) {
+        $cipher = 'aes-256-cbc';
+        $ivlen = openssl_cipher_iv_length($cipher);
+        // DANGEROUS: Using time() makes the IV predictable.
+        $iv = substr(md5(time()), 0, $ivlen);
+
+        $ciphertext = openssl_encrypt($data, $cipher, $key, OPENSSL_RAW_DATA, $iv);
+        return base64_encode($iv . $ciphertext);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Generate a random IV using `openssl_random_pseudo_bytes(openssl_cipher_iv_length($cipher))` for each encryption. Prepend the IV to the ciphertext. Laravel's `Crypt::encryptString()` handles this securely by default.
+
+    #### Secure Code Example
+    ```php
+    // app/Utils/Encryption.php (Secure)
+    class Encryption {
+        public function encryptRandomIv($key, $data) {
+            $cipher = 'aes-256-cbc'; // Or preferably 'aes-256-gcm'
+            $ivlen = openssl_cipher_iv_length($cipher);
+            // SECURE: Generate cryptographically strong random bytes for IV.
+            $iv = openssl_random_pseudo_bytes($ivlen);
+
+            $ciphertext = openssl_encrypt(
+                $data,
+                $cipher,
+                $key,
+                OPENSSL_RAW_DATA,
+                $iv // Use the random IV
+            );
+            // SECURE: Prepend the unique IV to the ciphertext.
+            return base64_encode($iv . $ciphertext);
+        }
+
+        public function decryptRandomIv($key, $data) {
+            $cipher = 'aes-256-cbc';
+            $ivlen = openssl_cipher_iv_length($cipher);
+            $raw = base64_decode($data);
+            $iv = substr($raw, 0, $ivlen);
+            $ciphertext = substr($raw, $ivlen);
+
+            return openssl_decrypt(
+                $ciphertext,
+                $cipher,
+                $key,
+                OPENSSL_RAW_DATA,
+                $iv // Use the extracted IV
+            );
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Review calls to `openssl_encrypt` using CBC mode. Ensure the IV parameter is generated using `openssl_random_pseudo_bytes` within the function or passed uniquely per call. Verify the IV is prepended. Check for hardcoded IV constants.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using Node's `crypto.createCipheriv()` with CBC mode but providing a static, null, or predictable buffer as the IV.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```javascript
+    // utils/encryption.js
+    const crypto = require('crypto');
+    const ALGORITHM = 'aes-256-cbc';
+
+    // DANGEROUS: Static IV (must be 16 bytes for AES).
+    const STATIC_IV = Buffer.from('abcdef9876543210abcdef9876543210', 'hex');
+
+    function encryptStaticIv(key, text) {
+        // Using static IV
+        const cipher = crypto.createCipheriv(ALGORITHM, key, STATIC_IV);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        return encrypted; // IV is not even included here!
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Null IV
+    ```javascript
+    // utils/encryption.js
+    function encryptNullIv(key, text) {
+        // DANGEROUS: Using a zero-filled buffer as IV.
+        const nullIv = Buffer.alloc(16, 0);
+        const cipher = crypto.createCipheriv(ALGORITHM, key, nullIv);
+        // ... encryption ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Generate a random IV using `crypto.randomBytes(16)` for each encryption. Prepend the IV (usually hex or base64 encoded) to the ciphertext, separated by a delimiter or by fixed length. Use AES-GCM (`aes-256-gcm`) instead if possible.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/encryption.js (Secure)
+    const crypto = require('crypto');
+    const ALGORITHM = 'aes-256-cbc';
+    const IV_LENGTH = 16; // For AES
+
+    function encryptRandomIv(key, text) {
+        // SECURE: Generate random IV for each encryption.
+        const iv = crypto.randomBytes(IV_LENGTH);
+        const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        // SECURE: Prepend IV (as hex) to the ciphertext. Use a separator.
+        return iv.toString('hex') + ':' + encrypted;
+    }
+
+    function decryptRandomIv(key, text) {
+        const parts = text.split(':');
+        const iv = Buffer.from(parts.shift(), 'hex');
+        const encryptedText = Buffer.from(parts.join(':'), 'hex');
+        const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+        let decrypted = decipher.update(encryptedText);
+        decrypted = Buffer.concat([decrypted, decipher.final()]);
+        return decrypted.toString();
+    }
+    ```
+
+    #### Testing Strategy
+    Review code using `crypto.createCipheriv` with CBC mode. Ensure the `iv` parameter is generated using `crypto.randomBytes(16)` inside the encryption function or passed uniquely. Check that the IV is prepended/stored. Look for static `Buffer` definitions used as IVs.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `OpenSSL::Cipher` with a CBC cipher but setting the `iv` with a static or predictable value.
+
+    #### Vulnerable Scenario 1: Static IV
+    ```ruby
+    # lib/encryption.rb
+    require 'openssl'
+
+    class Encryption
+      # DANGEROUS: Static IV.
+      STATIC_IV = '1234567890abcdef'.freeze # Must match block size
+
+      def encrypt_static_iv(key, data)
+        cipher = OpenSSL::Cipher.new('aes-256-cbc')
+        cipher.encrypt
+        cipher.key = key
+        cipher.iv = STATIC_IV # Using static IV
+        encrypted = cipher.update(data) + cipher.final
+        # IV not included, but it's static anyway
+        return encrypted
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Null/Default IV
+    Forgetting to set the IV, which might default to zeros.
+    ```ruby
+    # lib/encryption.rb
+    def encrypt_default_iv(key, data)
+      cipher = OpenSSL::Cipher.new('aes-256-cbc')
+      cipher.encrypt
+      cipher.key = key
+      # DANGEROUS: IV not set, might default to zeros or reuse internal state.
+      # cipher.random_iv # This is missing
+      encrypted = cipher.update(data) + cipher.final
+      return encrypted
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Use `cipher.random_iv` to generate and set a cryptographically random IV for each encryption. Get the generated IV using `cipher.iv` and prepend it to the ciphertext.
+
+    #### Secure Code Example
+    ```ruby
+    # lib/encryption.rb (Secure)
+    require 'openssl'
+
+    class Encryption
+      def encrypt_random_iv(key, data)
+        cipher = OpenSSL::Cipher.new('aes-256-cbc')
+        cipher.encrypt
+        cipher.key = key
+        # SECURE: Generate a random IV for this operation.
+        iv = cipher.random_iv
+        # `cipher.iv = iv` is done implicitly by `random_iv` if not already set
+
+        encrypted = cipher.update(data) + cipher.final
+        # SECURE: Prepend the generated IV to the ciphertext.
+        return iv + encrypted
+      end
+
+      def decrypt_random_iv(key, iv_and_ciphertext)
+        cipher = OpenSSL::Cipher.new('aes-256-cbc')
+        # Extract IV length based on cipher block size
+        iv_len = cipher.iv_len
+        iv = iv_and_ciphertext[0...iv_len]
+        encrypted_data = iv_and_ciphertext[iv_len..-1]
+
+        cipher.decrypt
+        cipher.key = key
+        cipher.iv = iv # Use the extracted IV
+
+        decrypted = cipher.update(encrypted_data) + cipher.final
+        return decrypted
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Review code using `OpenSSL::Cipher` with CBC mode. Ensure `cipher.random_iv` is called (or IV is generated via `SecureRandom.random_bytes`) within the encryption method. Verify the IV is prepended. Check for static IV constants.
+  </Tab>
+</Tabs>
