@@ -1,0 +1,594 @@
+---
+title: "Improper Output Neutralization for Logs (Log Injection)"
+sidebarTitle: "Log Injection (CWE-117)"
+description: "Mitigation for Log Injection vulnerabilities where attackers insert fake log entries, newlines (CRLF), or control characters."
+icon: "scroll"
+iconType: "solid"
+---
+
+## Overview
+
+Log Injection, or Improper Output Neutralization for Logs, occurs when an application writes **unsanitized user-supplied data** directly to a log file. An attacker can exploit this by crafting input that contains special characters, such as newline (`\n` or `%0a`) and carriage return (`\r` or `%0d`) characters (CRLF). By injecting these characters, an attacker can **forge new log entries**, making the logs unreliable or actively misleading. They might inject fake log lines to cover their tracks, mislead administrators, or inject malicious content (like HTML/JavaScript) if the logs are viewed in a web-based log viewer (leading to XSS). 📜✍️➡️🤥
+
+---
+
+## Business Impact
+
+Log Injection undermines the integrity and trustworthiness of your application logs:
+* **Covering Tracks:** Attackers can inject fake log entries that mimic normal activity or error messages, confusing administrators and hiding their real actions (e.g., injecting a fake "Login Successful for admin" line *after* a real failed attempt).
+* **Misleading Forensics:** During an incident investigation, fake log entries can send investigators down the wrong path, wasting time and resources.
+* **Log Viewer XSS:** If logs are viewed in a web-based utility, injected HTML/JavaScript (`<script>alert(1)</script>`) can execute in the administrator's browser, leading to session hijacking or other attacks on the admin.
+* **Denial of Service:** Injecting large amounts of junk data can fill up log storage, potentially causing DoS.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-117](https://cwe.mitre.org/data/definitions/117.html)
+  **OWASP Top 10 (2021):** A09:2021 - Security Logging and Monitoring Failures
+  **Severity:** Medium
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability is independent of specific web frameworks but depends on how the **logging framework or custom logging logic** handles data. The core issue is trusting that user input is single-line and benign.
+
+**Key Remediation Principles:**
+1.  **Sanitize Log Data:** Before logging any user-supplied string, sanitize it by removing or encoding newline (`\n`), carriage return (`\r`), and other control characters.
+2.  **Use Structured Logging:** Use a logging format like JSON. The logging library will typically handle encoding the user input as a single string value within a JSON key, naturally preventing it from breaking the log entry's structure.
+3.  **Output Encoding (Log Viewers):** Ensure any web-based log viewing application properly HTML-encodes the log data before rendering it in the browser to prevent XSS.
+4.  **Avoid Logging Unnecessary Input:** Don't log user input verbatim unless necessary. Log identifiers or sanitized summaries instead.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using Python's `logging` module and inserting raw user input (e.g., from `request.GET`, `request.POST`) directly into log messages.
+
+    #### Vulnerable Scenario 1: Unsanitized Username in Log
+    ```python
+    # views.py
+    import logging
+    logger = logging.getLogger(__name__)
+
+    def user_lookup(request):
+        username = request.GET.get('username')
+        # DANGEROUS: 'username' is logged directly.
+        # Input: username = "bob%0aLogin successful for user: admin"
+        # Log Output (example):
+        # INFO: Attempting lookup for user: bob
+        # Login successful for user: admin
+        logger.info(f"Attempting lookup for user: {username}")
+        
+        user = User.objects.filter(username=username).first()
+        if not user:
+            # DANGEROUS: Also logging input here.
+            logger.warning(f"User not found: {username}")
+            return HttpResponse("User not found", status=404)
+        # ... return user data ...
+    ```
+
+    #### Vulnerable Scenario 2: Unsanitized URL/Path in Log
+    ```python
+    # middleware.py
+    import logging
+    logger = logging.getLogger(__name__)
+
+    def logging_middleware(get_response):
+        def middleware(request):
+            # DANGEROUS: request.path might contain CRLF if not properly
+            # handled by the web server/proxy.
+            # Input: GET /page%0aHTTP/1.1 200 OK%0d%0a...
+            logger.info(f"Processing request for path: {request.path}")
+            response = get_response(request)
+            return response
+        return middleware
+    ```
+
+    #### Mitigation and Best Practices
+    * Sanitize user input by removing newlines before logging: `safe_username = username.replace('\n', '_').replace('\r', '_')`.
+    * **Use Structured Logging:** Configure `logging` (e.g., with `python-json-logger`) to output JSON. The user input will be safely contained within a JSON string value.
+
+    #### Secure Code Example
+    ```python
+    # views.py (Secure - Sanitization)
+    import logging
+    logger = logging.getLogger(__name__)
+
+    def user_lookup_secure(request):
+        username = request.GET.get('username', '') # Default to empty
+        
+        # SECURE: Sanitize input by replacing newlines before logging.
+        safe_username = username.replace('\n', '_').replace('\r', '_')
+        
+        logger.info(f"Attempting lookup for user: '{safe_username}'") # Added quotes for clarity
+        
+        user = User.objects.filter(username=username).first()
+        if not user:
+            logger.warning(f"User not found: '{safe_username}'")
+            return HttpResponse("User not found", status=404)
+        # ...
+    ```
+    ```python
+    # settings.py (Secure - Structured Logging with JSON)
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'json': {
+                # SECURE: Use a JSON formatter
+                '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+                'format': '%(asctime)s %(levelname)s %(name)s %(message)s',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'formatter': 'json', # Use the JSON formatter
+            },
+        },
+        'loggers': {
+            'myapp': {
+                'handlers': ['console'],
+                'level': 'INFO',
+            },
+        },
+    }
+    # views.py (Usage with Structured Logging)
+    # logger.info("User lookup attempted", extra={'username': username})
+    # Output: {"asctime": "...", "levelname": "INFO", ..., "message": "User lookup attempted", "username": "bob\nLogin successful"}
+    # The newline is now safe data within the JSON, not a new log line.
+    ```
+
+    #### Testing Strategy
+    Identify all log statements (`logger.info`, `warn`, `error`, etc.) that include user-controlled input (`request.GET`, `POST`, `headers`). Submit input containing URL-encoded newline characters (`%0a`, `%0d`). Check the raw log files (not a web viewer) to see if fake log entries were successfully injected. If logs are viewed in a web UI, also test with HTML/script payloads (`<script>...`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using logging frameworks (Logback, Log4j2, SLF4J) and inserting unsanitized data from `HttpServletRequest`, DTOs, or exception messages.
+
+    #### Vulnerable Scenario 1: Unsanitized Username
+    ```java
+    // controller/UserController.java
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+
+    @GetMapping("/user/{username}")
+    public UserProfile getUser(@PathVariable String username) {
+        // DANGEROUS: Logging unsanitized path variable.
+        // Input: /user/bob%0aUser 'admin' logged out successfully
+        // Log Output (example):
+        // INFO: Attempting to find user: bob
+        // User 'admin' logged out successfully
+        log.info("Attempting to find user: {}", username);
+
+        UserProfile user = userService.findByUsername(username);
+        if (user == null) {
+            // DANGEROUS: Also logging here.
+            log.warn("User not found: {}", username);
+            throw new UserNotFoundException();
+        }
+        return user;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsanitized Header (e.g., User-Agent)
+    ```java
+    // filter/RequestLoggingFilter.java
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) {
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String userAgent = httpRequest.getHeader("User-Agent");
+        // DANGEROUS: User-Agent header can be spoofed to contain CRLF.
+        // Input (User-Agent header): Browser/1.0\r\n[ERROR] Database connection failed!
+        log.info("Request received from User-Agent: {}", userAgent);
+        chain.doFilter(request, response);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sanitize Input:** Manually remove or encode newline characters from user input before logging it: `safeUsername = username.replace("\n", "_").replace("\r", "_")`.
+    * **Use `Logback/Log4j2` Encoders:** Configure your logging framework to use an encoder (like `LogstashLogbackEncoder` or `JsonLayout`) that outputs logs as **JSON objects**. This ensures user input is properly escaped and contained within a JSON string value.
+    * **Use `PatternLayout` Escaping:** In modern Log4j2/Logback `PatternLayout`, you can use `%replace(%msg){'[\r\n]','_'}` to replace newlines in the message.
+
+    #### Secure Code Example
+    ```java
+    // controller/UserController.java (Secure - Sanitization)
+    @GetMapping("/user/{username}")
+    public UserProfile getUser(@PathVariable String username) {
+        // SECURE: Sanitize the input before logging.
+        String safeUsername = (username == null) ? "null" : username.replace("\r", "_").replace("\n", "_");
+
+        log.info("Attempting to find user: '{}'", safeUsername); // Added quotes
+
+        UserProfile user = userService.findByUsername(username); // Use original for logic
+        if (user == null) {
+            log.warn("User not found: '{}'", safeUsername);
+            throw new UserNotFoundException();
+        }
+        return user;
+    }
+
+    // logback-spring.xml (Secure - JSON Layout)
+    // Usage with JSON logging:
+    // log.info("User lookup attempt", Map.of("username", username));
+    // Output: {"@timestamp":"...", "message":"User lookup attempt", "username":"bob\nLogin success"}
+    // The newline is safely escaped within the JSON value.
+    ```
+
+    #### Testing Strategy
+    Identify log statements (`log.info`, `warn`, `error`) that include user-controlled input (path variables, request parameters, headers). Submit input containing URL-encoded CRLF characters (`%0d%0a`) and fake log messages. Check raw log files for injected lines. If a web UI log viewer is used, also test XSS payloads (`<script>...`).
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `ILogger` where user input is part of the log message string.
+
+    #### Vulnerable Scenario 1: Unsanitized Query Parameter
+    ```csharp
+    // Controllers/SearchController.cs
+    public class SearchController : ControllerBase
+    {
+        private readonly ILogger<SearchController> _logger;
+        public SearchController(ILogger<SearchController> logger) { _logger = logger; }
+
+        [HttpGet]
+        public IActionResult Search([FromQuery] string query)
+        {
+            // DANGEROUS: Logging unsanitized query parameter.
+            // Input: ?query=apples%0a[CRITICAL]%20Payment%20service%20offline
+            // Log Output (example):
+            // info: Executing search for query: apples
+            // [CRITICAL] Payment service offline
+            _logger.LogInformation("Executing search for query: {Query}", query);
+
+            // ... search logic ...
+            return Ok(results);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsanitized Exception Message
+    An exception is caught and its message, which contains user input, is logged.
+    ```csharp
+    // Controllers/UserController.cs
+    [HttpPost("create")]
+    public IActionResult CreateUser([FromBody] UserCreateDto model)
+    {
+        try {
+             // Assume this throws exception if username exists
+             _userService.Create(model);
+        }
+        catch (UsernameExistsException ex) // Custom exception
+        {
+             // DANGEROUS: If UsernameExistsException's message includes the username:
+             // e.g., "User 'admin%0aUser 'root' created successfully' already exists"
+             _logger.LogWarning("User creation failed: {ErrorMessage}", ex.Message);
+             return BadRequest(ex.Message);
+        }
+        return Ok();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sanitize Input:** Manually strip newline characters from any user input before logging it: `var safeQuery = query.Replace("\r", "").Replace("\n", ""); _logger.LogInformation("Executing search for query: {Query}", safeQuery);`.
+    * **Use Structured Logging:** Use libraries like **Serilog** configured with a **JSON formatter** (e.g., `Serilog.Formatting.Json.JsonFormatter`). When you log `_logger.LogInformation("Message", variable)`, the JSON formatter will automatically escape newlines and other control characters within the `variable`'s string value, preventing log injection.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/SearchController.cs (Secure - Manual Sanitization)
+    public class SearchController : ControllerBase
+    {
+        private readonly ILogger<SearchController> _logger;
+        public SearchController(ILogger<SearchController> logger) { _logger = logger; }
+
+        [HttpGet("secure-search")]
+        public IActionResult SearchSecure([FromQuery] string query)
+        {
+            // SECURE: Sanitize input before logging.
+            string safeQuery = (query ?? "").Replace("\r", "_").Replace("\n", "_");
+            _logger.LogInformation("Executing secure search for query: {Query}", safeQuery);
+
+            // ... search logic using original 'query' ...
+            return Ok(results);
+        }
+    }
+
+    // Program.cs (Secure - Structured JSON Logging with Serilog)
+    // using Serilog;
+    //
+    // public static IHostBuilder CreateHostBuilder(string[] args) =>
+    //     Host.CreateDefaultBuilder(args)
+    //         .UseSerilog((context, services, configuration) => configuration
+    //             .ReadFrom.Configuration(context.Configuration)
+    //             .Enrich.FromLogContext()
+    //             // SECURE: Use a JSON formatter which escapes newlines
+    //             .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter())
+    //             // Or .WriteTo.File(new Serilog.Formatting.Json.JsonFormatter(), "log.json")
+    //         )
+    //         .ConfigureWebHostDefaults(...);
+    //
+    // Controller Usage with Serilog:
+    // _logger.LogInformation("Executing search with query: {Query}", query);
+    // Output: {"Timestamp":"...","Level":"...", "MessageTemplate":"...", "Properties":{"Query": "apples\n[CRITICAL]..."}}
+    // The \n is safely escaped within the JSON string.
+    ```
+
+    #### Testing Strategy
+    Identify log calls (`_logger.LogInformation`, `LogWarning`, etc.) that include user input. Submit payloads with URL-encoded CRLF characters (`%0d%0a`) and fake log messages. Check raw log files/output (console, file, Seq) for injected lines. If using JSON logging, verify the newlines are escaped (`\n`, `\r`) within the JSON string value and do not create new log entries.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using Monolog (default in Laravel/Symfony) or `error_log()` and passing raw user input.
+
+    #### Vulnerable Scenario 1: `error_log()` with Unsanitized Input
+    ```php
+    <?php
+    // tracking.php
+    $page_url = $_GET['page'] ?? '/';
+
+    // DANGEROUS: $page_url is logged directly.
+    // Input: ?page=index.php%0a[CRITICAL]%20Database%20connection%20failed
+    // Log Output (example):
+    // [timestamp] Page view: index.php
+    // [CRITICAL] Database connection failed
+    error_log("Page view: " . $page_url);
+    
+    echo "Page tracked.";
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Monolog/Log Facade with Unsanitized Input
+    ```php
+    // app/Http/Controllers/SearchController.php (Laravel)
+    use Illuminate\Support\Facades\Log;
+
+    public function search(Request $request)
+    {
+        $query = $request->input('query');
+        
+        // DANGEROUS: $query is logged directly.
+        // Input: ?query=abc%0a[ERROR]%20User%20admin%20permission%20escalation%20successful
+        Log::info("User search performed: " . $query);
+        
+        // ... search logic ...
+        return view('search.results', /* ... */);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sanitize Input:** Manually strip newline characters: `$safe_query = str_replace(["\r", "\n"], '_', $query);`.
+    * **Use Structured Logging (JSON):** Configure Monolog (via `config/logging.php` in Laravel) to use a `JsonFormatter`. This automatically escapes newlines within the data.
+    * **Pass as Context:** Pass user input as a context array, not part of the main message string. The formatter (especially JSON) is more likely to handle this safely.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // tracking.php (Secure - Sanitization)
+    $page_url = $_GET['page'] ?? '/';
+    
+    // SECURE: Remove CR and LF characters.
+    $sanitized_url = str_replace(["\r", "\n"], '_', $page_url);
+    
+    error_log("Page view: " . $sanitized_url);
+    echo "Page tracked.";
+    ?>
+
+    // app/Http/Controllers/SearchController.php (Secure - Pass as Context)
+    use Illuminate\Support\Facades\Log;
+
+    public function search(Request $request)
+    {
+        $query = $request->input('query');
+        
+        // SECURE: Pass user input as context array.
+        // The logger (especially JSON) will handle encoding it safely.
+        Log::info("User search performed", ['query' => $query]);
+        
+        // ... search logic ...
+        return view('search.results', /* ... */);
+    }
+    ```
+    ```php
+    // config/logging.php (Configure JSON formatter - Conceptual)
+    // ...
+    'channels' => [
+        'stack' => [
+            'driver' => 'stack',
+            'channels' => ['single'],
+        ],
+        'single' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/laravel.log'),
+            'level' => 'debug',
+            'formatter' => Monolog\Formatter\JsonFormatter::class, // SECURE: Use JSON
+        ],
+    ],
+    // ...
+    // Output: {"message":"User search performed","context":{"query":"abc\n[ERROR]..."}, ...}
+    // The newline is safely escaped within the JSON.
+    ```
+
+    #### Testing Strategy
+    Identify log calls (`Log::info`, `error_log`) that include user input. Submit CRLF sequences (`%0d%0a`) and fake log messages. Check raw log files (`storage/logs/laravel.log`, `error_log` path). Verify newlines are either stripped or safely escaped (e.g., as `\n` within a JSON string) and do not create new log entries. Test XSS payloads if logs are viewed in a web UI.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using loggers (`Winston`, `Pino`, `console.log`) with unsanitized user input.
+
+    #### Vulnerable Scenario 1: `console.log` with Unsanitized Input
+    ```javascript
+    // app.js
+    app.get('/search', (req, res) => {
+        const query = req.query.q;
+        // DANGEROUS: Logging unsanitized query.
+        // Input: ?q=test%0a[FATAL]%20Shutdown%20initiated%20by%20user%20'admin'
+        // Console Output (if logging to file or stdout capture):
+        // Search query: test
+        // [FATAL] Shutdown initiated by user 'admin'
+        console.log(`Search query: ${query}`);
+        // ... search ...
+        res.send('Search results');
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Winston Logger with Simple Formatter
+    ```javascript
+    // logger.js
+    const winston = require('winston');
+    const logger = winston.createLogger({
+      transports: [ new winston.transports.Console() ],
+      format: winston.format.printf(info => {
+        // DANGEROUS: Custom format directly interpolates message.
+        return `${info.timestamp} [${info.level}]: ${info.message}`;
+      })
+    });
+    
+    // app.js
+    app.get('/log-header', (req, res) => {
+        const referer = req.header('Referer');
+        // DANGEROUS: Attacker spoofs Referer header with CRLF.
+        logger.info(`Request referer: ${referer}`);
+        res.send('OK');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sanitize:** Manually strip newlines: `const safeQuery = (query || "").replace(/[\r\n]/g, '_');`.
+    * **Use Structured Logging (JSON):** Configure Winston/Pino to use `winston.format.json()`. This is the best defense, as it escapes newlines within the JSON values.
+    * **Pass as Object:** Log user input as part of an object, not concatenated into the main message string.
+
+    #### Secure Code Example
+    ```javascript
+    // logger.js (Secure - JSON Formatter)
+    const winston = require('winston');
+    const { combine, timestamp, json } = winston.format;
+
+    const logger = winston.createLogger({
+        level: 'info',
+        // SECURE: Use JSON format. Newlines in metadata will be escaped.
+        format: combine(
+            timestamp(),
+            json()
+        ),
+        transports: [ new winston.transports.Console() ],
+    });
+    module.exports = logger;
+
+    // app.js (Secure Logging)
+    const logger = require('./logger'); // Import secure logger
+    
+    app.get('/search-secure', (req, res) => {
+        const query = req.query.q;
+        // SECURE: Pass user input as a metadata object.
+        // JSON formatter will handle escaping.
+        logger.info("Executing search", { query: query, ip: req.ip });
+        // Output: {"level":"info", "message":"Executing search", "query":"test\n[FATAL]...", "ip":"..."}
+        // The \n is safely escaped.
+        res.send('Search results');
+    });
+
+    app.get('/log-header-secure', (req, res) => {
+        const referer = req.header('Referer');
+        // SECURE: Pass as metadata object.
+        logger.info("Request details", { referer: referer, ip: req.ip });
+        res.send('OK');
+    });
+    ```
+
+    #### Testing Strategy
+    Identify all log calls (`console.log`, `logger.info`, etc.) that include user input. Submit CRLF sequences (`%0d%0a`) and fake log messages. Check raw log output (console, file). Verify that newlines are either stripped or safely escaped (e.g., `\n` within a JSON string) and do not create new log entries.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `Rails.logger` (or standard `Logger`) and interpolating unsanitized user input (`params`, `request.headers`) into the log string.
+
+    #### Vulnerable Scenario 1: Unsanitized `params` in Log
+    ```ruby
+    # app/controllers/search_controller.rb
+    class SearchController < ApplicationController
+      def index
+        query = params[:q]
+        # DANGEROUS: query interpolated directly.
+        # Input: ?q=terms%0a[ERROR]%20User%20'admin'%20deleted%20successfully
+        # Log Output (example):
+        # I, [timestamp] INFO -- : Search started for query: terms
+        # [ERROR] User 'admin' deleted successfully
+        Rails.logger.info "Search started for query: #{query}"
+        # ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Unsanitized Header in Log
+    ```ruby
+    # app/middleware/logging_middleware.rb
+    class LoggingMiddleware
+      def initialize(app)
+        @app = app
+      end
+      def call(env)
+        req = Rack::Request.new(env)
+        user_agent = req.user_agent
+        # DANGEROUS: user_agent header can be spoofed with CRLF.
+        Rails.logger.info "Request from User-Agent: #{user_agent}"
+        @app.call(env)
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sanitize:** Manually remove newlines before logging: `safe_query = query.to_s.gsub(/[\r\n]/, '_')`.
+    * **Use Structured Logging (JSON):** Configure Rails logging to use a JSON formatter (e.g., `Lograge` with `Lograge::Formatters::Json`). Pass user input as part of the event payload/hash, not the main message string.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/search_controller.rb (Secure - Sanitization)
+    class SearchController < ApplicationController
+      def index
+        query = params[:q]
+        # SECURE: Sanitize input before logging.
+        safe_query = query.to_s.gsub(/[\r\n]/, '_')
+        Rails.logger.info "Search started for query: '#{safe_query}'"
+        # ...
+      end
+    end
+
+    # config/application.rb (Secure - Configure Lograge for JSON)
+    # gem 'lograge' # Add to Gemfile
+    module MyApp
+      class Application < Rails::Application
+        # ...
+        # SECURE: Use Lograge for structured, single-line request logging.
+        config.lograge.enabled = true
+        config.lograge.formatter = Lograge::Formatters::Json.new
+
+        # SECURE: Add custom data (like user input) safely.
+        # Lograge's JSON formatter will escape newlines in values.
+        config.lograge.custom_options = lambda do |event|
+          {
+            params: event.payload[:params].except(:controller, :action, :format, :_method), # Exclude defaults
+            # Note: This still logs all params. Use filter_parameters!
+            # Or be specific: query: event.payload[:params]["q"]
+            user_id: event.payload[:user_id]
+          }
+        end
+      end
+    end
+    # Ensure config/initializers/filter_parameter_logging.rb filters sensitive params
+    # (like :password) which might be in event.payload[:params].
+
+    # Controller action (Lograge handles request logging automatically):
+    # def index
+    #   query = params[:q]
+    #   # ...
+    # end
+    # Output: { "method":"GET", "path":"/search?q=terms\n[ERROR]", ..., "query":"terms\n[ERROR]", ... }
+    # The \n is safely escaped within the JSON.
+    ```
+
+    #### Testing Strategy
+    Identify log calls (`Rails.logger.info` etc.) that interpolate user data. Submit CRLF sequences (`%0d%0a`) and fake log messages. Check raw log files (`log/production.log` etc.). Verify newlines are stripped or escaped (e.g., in JSON string). Test XSS payloads if logs are viewed in a web UI.
+  </Tab>
+</Tabs>

@@ -1,0 +1,606 @@
+---
+title: "Insufficient Logging"
+sidebarTitle: "Insufficient Logging (CWE-778)"
+description: "Mitigation for failing to log critical security-relevant events, which hinders detection, forensics, and incident response."
+icon: "file-lines"
+iconType: "solid"
+---
+
+## Overview
+
+Insufficient Logging occurs when an application **fails to record security-relevant events** (or logs them with insufficient detail). Without a proper audit trail, it becomes difficult or impossible to detect malicious activity, respond to an incident, or perform forensic analysis after a breach. Attackers rely on poor logging to cover their tracks and remain undetected. This is a foundational failure that makes all other security measures harder to enforce and audit. 📜🕳️
+
+**Common Missing Log Events:**
+* Failed login attempts, especially repeated ones (brute force).
+* Successful login events (to track user activity).
+* Password reset requests and successful resets.
+* Access control failures (e.g., user trying to access an admin page).
+* High-value transactions (e.g., payments, fund transfers, email changes).
+* Server-side errors and exceptions.
+* Changes to user permissions or roles.
+
+---
+
+## Business Impact
+
+Insufficient logging is a "meta-vulnerability" that blinds security teams and system administrators:
+* **Undetected Breaches:** Attackers can probe for vulnerabilities, guess passwords, or exfiltrate data without triggering any alarms.
+* **Inability to Respond:** During an incident, security teams cannot determine the attacker's entry point, what data was accessed, or which accounts were compromised.
+* **Failed Forensics:** After a breach, it's impossible to establish a timeline of the attack, assess the full damage, or gather evidence.
+* **Compliance Failures:** Nearly all security regulations (PCI-DSS, GDPR, HIPAA, SOX) mandate detailed logging of access and events related to sensitive data.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-778](https://cwe.mitre.org/data/definitions/778.html) (Related: CWE-223 Omission of Security-relevant Information)
+  **OWASP Top 10 (2021):** A09:2021 - Security Logging and Monitoring Failures
+  **Severity:** Medium (Lowers the ability to detect High/Critical attacks)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a design and implementation issue. Frameworks provide powerful logging tools (e.g., Python's `logging`, `Log4j`/`Logback` in Java, Monolog in PHP, `ILogger` in .NET), but developers **must proactively choose to log the correct events with sufficient context**.
+
+**Key Remediation Principles:**
+1.  **Log What Matters:** Ensure all security-critical events (logins, logouts, failures, privilege changes, high-value data access/modification) are logged.
+2.  **Log Sufficient Context:** Logs must include **who** (User ID, IP address), **what** (event type, e.g., "Login Failed"), **when** (timestamp), and **where** (source component, endpoint).
+3.  **Log at Appropriate Levels:** Use standard logging levels (`INFO`, `WARN`, `ERROR`, `CRITICAL`). Log failures (like failed logins) at `WARN` or `ERROR` level. Log successes (like login) at `INFO`.
+4.  **Protect the Logs:** Ensure log files have correct permissions (not world-readable), are protected from tampering, and do not contain sensitive data in cleartext (see `CWE-532`).
+5.  **Centralize and Monitor:** Ship logs from all application instances to a central log management solution (e.g., ELK Stack, Splunk, Graylog). Create dashboards and alerts for suspicious event patterns (e.g., high rate of failed logins).
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using Python's built-in `logging` module. Django and Flask are pre-configured to use it, but developers must add explicit log statements for business logic events.
+
+    #### Vulnerable Scenario 1: No Logging on Failed Login
+    ```python
+    # views.py (Django)
+    def custom_login(request):
+        # ... logic to authenticate user ...
+        if user is None:
+            # DANGEROUS: Failed login attempt is not logged.
+            # Attacker can brute-force without leaving a trace.
+            return render(request, 'login.html', {'error': 'Invalid credentials'})
+        login(request, user)
+        return redirect('dashboard')
+    ```
+
+    #### Vulnerable Scenario 2: Access Control Failure Not Logged
+    ```python
+    # views.py (Django)
+    @login_required
+    def admin_action(request):
+        if not request.user.is_staff:
+            # DANGEROUS: Access failure is not logged.
+            # Attacker can scan for admin endpoints without detection.
+            return HttpResponseForbidden("Access Denied")
+        # ... perform admin action ...
+        return HttpResponse("Admin action complete")
+    ```
+
+    #### Mitigation and Best Practices
+    Use Python's `logging` module to explicitly log security events with context (user ID, IP). Django's `user_logged_in` and `user_login_failed` signals can also be used to log auth events.
+
+    #### Secure Code Example
+    ```python
+    # views.py (Secure Logging)
+    import logging
+    from django.contrib.auth import user_logged_in, user_login_failed
+    from django.dispatch import receiver
+
+    logger = logging.getLogger(__name__) # Get logger instance
+
+    def get_client_ip(request):
+        # Helper to get IP
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+
+    # SECURE: Use signals for login events
+    @receiver(user_login_failed)
+    def log_failed_login(sender, credentials, request, **kwargs):
+        ip = get_client_ip(request)
+        username = credentials.get('username', 'unknown')
+        # SECURE: Log failure at WARN level
+        logger.warning(f"Login failed: Username '{username}', IP {ip}")
+
+    @receiver(user_logged_in)
+    def log_successful_login(sender, user, request, **kwargs):
+        ip = get_client_ip(request)
+        # SECURE: Log success at INFO level
+        logger.info(f"Login successful: User '{user.username}', IP {ip}")
+
+    @login_required
+    def admin_action_secure(request):
+        if not request.user.is_staff:
+            ip = get_client_ip(request)
+            # SECURE: Log access control failure at WARN level
+            logger.warning(f"Access Denied: User '{request.user.username}' (not staff) "
+                           f"tried to access admin_action. IP {ip}")
+            return HttpResponseForbidden("Access Denied")
+        # ... perform admin action ...
+        return HttpResponse("Admin action complete")
+    ```
+
+    #### Testing Strategy
+    Perform sensitive security actions: failed logins, successful logins, access denied on protected pages, password resets. After each action, check the application logs (file, console, log management system). Verify that a log entry was created for each event, containing the timestamp, event type, user ID (if available), and source IP address.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using a logging framework like Logback or Log4j2 (standard with Spring Boot). Developers must add explicit log statements for security events.
+
+    #### Vulnerable Scenario 1: No Logging on Auth Failure
+    ```java
+    // config/CustomAuthProvider.java
+    public class CustomAuthProvider implements AuthenticationProvider {
+        @Override
+        public Authentication authenticate(Authentication auth) throws AuthenticationException {
+            // ... load user, check password ...
+            if (password_is_incorrect) {
+                // DANGEROUS: Throws exception, but failure is not explicitly logged
+                // with username and IP. Spring Security might log a generic
+                // "Bad credentials" message at DEBUG level, which is often disabled in prod.
+                throw new BadCredentialsException("Invalid credentials");
+            }
+            // ... success logic ...
+        }
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Access Control Failure Not Logged
+    ```java
+    // controller/AdminController.java
+    @GetMapping("/admin/panel")
+    public String getAdminPanel(Principal principal) {
+        User user = userService.findByUsername(principal.getName());
+        if (!user.isAdmin()) {
+            // DANGEROUS: Returns 403, but no log entry is created
+            // to record that this user tried to access an admin function.
+            throw new AccessDeniedException("Forbidden");
+        }
+        // ... return admin panel ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Spring Security:** Implement `ApplicationListener` beans to listen for `AuthenticationFailureBadCredentialsEvent` and `AuthenticationSuccessEvent` and log them with IP and username.
+    * **Explicit Logging:** Use SLF4J/Logback `Logger` to explicitly log `WARN` or `ERROR` messages for access control failures, including the authenticated user and their IP.
+
+    #### Secure Code Example
+    ```java
+    // config/AuthenticationEventListener.java (Secure)
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+    import org.springframework.context.ApplicationListener;
+    import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
+    import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
+    import org.springframework.stereotype.Component;
+    // Assume WebAuthenticationDetails is available for IP
+
+    @Component
+    public class AuthenticationEventListener implements
+            ApplicationListener<AuthenticationFailureBadCredentialsEvent> {
+        private static final Logger log = LoggerFactory.getLogger(AuthenticationEventListener.class);
+        @Override
+        public void onApplicationEvent(AuthenticationFailureBadCredentialsEvent event) {
+            String username = event.getAuthentication().getName();
+            // Get IP (requires request context or details object)
+            // String ip = ((WebAuthenticationDetails) event.getAuthentication().getDetails()).getRemoteAddress();
+            String ip = "IP_NOT_CAPTURED_IN_EXAMPLE"; // Placeholder
+            // SECURE: Log failed login at WARN level
+            log.warn("Login Failed: Username '{}', IP {}", username, ip);
+        }
+    }
+    // Implement a similar listener for AuthenticationSuccessEvent at INFO level.
+
+    // controller/AdminController.java (Secure)
+    @GetMapping("/admin/panel")
+    public String getAdminPanel(Principal principal) {
+        User user = userService.findByUsername(principal.getName());
+        if (!user.isAdmin()) {
+            // SECURE: Log the access control failure
+            // Get IP from HttpServletRequest (needs to be injected or available)
+            String ip = "IP_NOT_CAPTURED_IN_EXAMPLE"; // Placeholder
+            log.warn("Access Denied: User '{}' (not admin) " +
+                     "tried to access /admin/panel. IP {}", user.getUsername(), ip);
+            throw new AccessDeniedException("Forbidden");
+        }
+        // ... return admin panel ...
+    }
+    ```
+
+    #### Testing Strategy
+    Perform failed logins, successful logins, and attempts to access unauthorized endpoints. Check application logs (console, file, log aggregator) for corresponding `WARN` and `INFO` messages. Verify that the user ID and source IP are included in the log entries.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `ILogger` provided by ASP.NET Core. Identity framework logs some events by default (often at `Debug` or `Information` level), but business logic failures require manual logging.
+
+    #### Vulnerable Scenario 1: Login Failure Not Logged Sufficiently
+    ```csharp
+    // Controllers/AccountController.cs
+    public async Task<IActionResult> Login(LoginViewModel model)
+    {
+        if (ModelState.IsValid)
+        {
+            var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
+            if (result.Succeeded)
+            {
+                // Identity logs this success at INFO level (good)
+                _logger.LogInformation("User logged in.");
+                return RedirectToLocal(model.ReturnUrl);
+            }
+            if (result.IsLockedOut)
+            {
+                // DANGEROUS: Lockout is a critical security event but might
+                // only be logged by Identity at DEBUG/INFO, or not at all.
+                // Should be logged at WARN level.
+                _logger.LogWarning("User account locked out: {Email}", model.Email); // Good, but might be missing
+            }
+            else
+            {
+                // DANGEROUS: Failed attempt not explicitly logged at WARN level.
+                // Identity's default log might be DEBUG/INFO, which is often off in prod.
+                ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+            }
+        }
+        return View(model);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Authorization Failure Not Logged
+    A user is denied access by an `[Authorize]` attribute, but this failure isn't logged, making recon scans invisible.
+    ```csharp
+    // Controllers/AdminController.cs
+    [Authorize(Roles = "Admin")]
+    public class AdminController : Controller
+    {
+        public IActionResult Index() // Non-admin user tries to access /Admin/Index
+        {
+            // The [Authorize] attribute blocks them (good),
+            // but DANGEROUS: No log event is generated by default
+            // to show that 'user_abc' tried to access this.
+            return View();
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Explicitly Log Auth Failures:** In login actions, explicitly log `_logger.LogWarning` for failed attempts (`!result.Succeeded`), lockouts (`result.IsLockedOut`), and MFA requirements (`result.RequiresTwoFactor`), including username and IP.
+    * **Log Authorization Failures:** Implement a custom `IAuthorizationMiddlewareResultHandler` or authorization failure filter to intercept `ForbidResult` and log the user, IP, and the resource they tried to access.
+    * **Log Critical Changes:** Explicitly log `_logger.LogInformation` for any critical changes (password reset, email change, permission change) including admin ID and target user ID.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/AccountController.cs (Secure Logging)
+    public async Task<IActionResult> Login(LoginViewModel model)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString(); // Get IP
+        if (ModelState.IsValid)
+        {
+            var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
+            if (result.Succeeded)
+            {
+                _logger.LogInformation("Login Success: User {Email}, IP {IP}", model.Email, ip);
+                return RedirectToLocal(model.ReturnUrl);
+            }
+            if (result.IsLockedOut)
+            {
+                // SECURE: Log lockouts as high severity
+                _logger.LogWarning("Account Lockout: User {Email}, IP {IP}", model.Email, ip);
+            }
+            else if (result.RequiresTwoFactor)
+            {
+                _logger.LogInformation("Login Requires 2FA: User {Email}, IP {IP}", model.Email, ip);
+                // ... redirect to 2FA page ...
+            }
+            else
+            {
+                // SECURE: Log all other failed attempts
+                _logger.LogWarning("Login Failure: User {Email}, IP {IP}", model.Email, ip);
+            }
+            ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+        }
+        return View(model);
+    }
+
+    // Custom Authorization Failure Logging (Conceptual - in Startup.cs)
+    // services.AddSingleton<IAuthorizationMiddlewareResultHandler, MyLoggingAuthHandler>();
+    // public class MyLoggingAuthHandler : IAuthorizationMiddlewareResultHandler
+    // {
+    //     private readonly ILogger _logger;
+    //     private readonly AuthorizationMiddlewareResultHandler _defaultHandler = new();
+    //
+    //     public MyLoggingAuthHandler(ILogger<MyLoggingAuthHandler> logger) { _logger = logger; }
+    //
+    //     public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    //     {
+    //         if (!authorizeResult.Succeeded && authorizeResult.AuthorizationFailure != null)
+    //         {
+    //             // SECURE: Log authorization failures
+    //             var user = context.User?.Identity?.Name ?? "Anonymous";
+    //             var ip = context.Connection.RemoteIpAddress?.ToString();
+    //             _logger.LogWarning("Authorization Failure: User {User} at IP {IP} " +
+    //                              "failed policy {PolicyName} for path {Path}",
+    //                              user, ip, policy.DisplayName, context.Request.Path);
+    //         }
+    //         // Call default handler to apply the actual result (e.g., return 403)
+    //         await _defaultHandler.HandleAsync(next, context, policy, authorizeResult);
+    //     }
+    // }
+    ```
+
+    #### Testing Strategy
+    Perform failed logins, trigger account lockouts, and attempt to access resources you aren't authorized for. Check server logs (e.g., Application Insights, console, file logs) for explicit `Warning` or `Information` level logs corresponding to these security events. Verify IP and username are included.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using Monolog (default in Laravel/Symfony). Events must be logged manually. Laravel fires auth events that can be listened for.
+
+    #### Vulnerable Scenario 1: No Logging on Login Failure (Laravel)
+    Default `LoginController` fires events, but if no listener is registered, they aren't logged with extra context.
+    ```php
+    // app/Http/Controllers/Auth/LoginController.php
+    // Uses AuthenticatesUsers trait. Fires Login and Failed events.
+    // DANGEROUS: No listener configured in EventServiceProvider
+    // to catch these events and log them with IP/context.
+    ```
+
+    #### Vulnerable Scenario 2: Access Control Failure Not Logged (Gate)
+    ```php
+    // app/Http/Controllers/PostController.php
+    public function update(Request $request, Post $post)
+    {
+        // DANGEROUS: Gate denies access, but the attempt is not logged.
+        // Attacker can enumerate post IDs trying to find one they can edit.
+        if (Gate::denies('update-post', $post)) {
+            abort(403);
+        }
+        // ... update logic ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Listen for authentication events. In `app/Providers/EventServiceProvider.php`, register listeners for `Illuminate\Auth\Events\Login` (success) and `Illuminate\Auth\Events\Failed` (failure).
+    * In the listeners, use `Log::info()` or `Log::warning()` to record the event with `request()->ip()` and the username.
+    * In Gates or Policies, explicitly log failures (`Log::warning(...)`) before returning `false` or calling `abort(403)`.
+
+    #### Secure Code Example
+    ```php
+    // app/Providers/EventServiceProvider.php (Register Listeners)
+    use App\Listeners\LogSuccessfulLogin;
+    use App\Listeners\LogFailedLogin;
+    use Illuminate\Auth\Events\Login;
+    use Illuminate\Auth\Events\Failed;
+
+    protected $listen = [
+        // SECURE: Register listeners for auth events
+        Login::class => [
+            LogSuccessfulLogin::class,
+        ],
+        Failed::class => [
+            LogFailedLogin::class,
+        ],
+    ];
+
+    // app/Listeners/LogFailedLogin.php (Example Listener)
+    namespace App\Listeners;
+    use Illuminate\Auth\Events\Failed;
+    use Illuminate\Support\Facades\Log;
+
+    class LogFailedLogin
+    {
+        public function handle(Failed $event)
+        {
+            $ip = request()->ip();
+            $username = $event->credentials['email'] ?? 'unknown'; // Get attempted email
+            // SECURE: Log failure at 'warning' level
+            Log::warning("Login Failed: Username '{$username}', IP {$ip}");
+        }
+    }
+    // (Create similar LogSuccessfulLogin using $event->user and Log::info)
+
+    // app/Http/Controllers/PostController.php (Secure Gate Logging)
+    public function update(Request $request, Post $post)
+    {
+        if (Gate::denies('update-post', $post)) {
+            // SECURE: Log the access control failure
+            Log::warning("Access Denied: User '{$request->user()->id}' " .
+                         "tried to update post '{$post->id}'. IP {$request->ip()}");
+            abort(403);
+        }
+        // ... update logic ...
+    }
+    ```
+
+    #### Testing Strategy
+    Perform failed logins, successful logins, and access control violations. Check the Laravel log file (`storage/logs/laravel.log`) or your configured log output. Verify that `[...].WARNING` or `[...].INFO` entries appear for these events, including IP and username/email.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using logging libraries like `Winston` or `Pino`. Logging must be manually added to authentication logic (e.g., in Passport.js strategy or route handler).
+
+    #### Vulnerable Scenario 1: Passport.js Failure Not Logged
+    ```javascript
+    // config/passport.js
+    passport.use(new LocalStrategy(
+      (username, password, done) => {
+        User.findOne({ username: username }, (err, user) => {
+          if (err) { return done(err); }
+          if (!user) {
+            // DANGEROUS: Failure not logged
+            return done(null, false, { message: 'Incorrect username.' });
+          }
+          if (!user.comparePassword(password)) { // Assume comparePassword exists
+            // DANGEROUS: Failure not logged
+            return done(null, false, { message: 'Incorrect password.' });
+          }
+          return done(null, user); // Success
+        });
+      }
+    ));
+    ```
+
+    #### Vulnerable Scenario 2: Authorization Middleware Not Logging
+    ```javascript
+    // middleware/authz.js
+    function ensureAdmin(req, res, next) {
+        if (req.isAuthenticated() && req.user.role === 'admin') {
+            return next();
+        }
+        // DANGEROUS: Access failure not logged.
+        res.status(403).send('Forbidden');
+    }
+    // app.use('/admin', ensureAdmin, adminRoutes);
+    ```
+
+    #### Mitigation and Best Practices
+    * **Passport:** In the `LocalStrategy` callback, explicitly log failures to your logger (e.g., `logger.warn()`) before calling `done(null, false, ...)`.
+    * **Middleware:** In authorization middleware (like `ensureAdmin`), log failures (including `req.user.id` and `req.ip`) before sending the 403 response.
+    * Use a structured logger (`Winston`, `Pino`) and ship logs to a central system.
+
+    #### Secure Code Example
+    ```javascript
+    // config/passport.js (Secure Logging)
+    // Assume logger (e.g., Winston) is configured and available
+    const logger = require('../utils/logger');
+
+    passport.use(new LocalStrategy(
+      (username, password, done) => {
+        // Get IP from request (requires passing req to strategy: new LocalStrategy({passReqToCallback: true}, ...))
+        // (username, password, done) -> (req, username, password, done)
+        // const ip = req.ip; // Assume req is available
+
+        User.findOne({ username: username }, (err, user) => {
+          if (err) {
+            logger.error(`Error finding user '${username}': ${err.message}`);
+            return done(err);
+          }
+          if (!user) {
+            // SECURE: Log failure
+            logger.warn(`Login Failed (User Not Found): Username '${username}', IP ${req.ip}`);
+            return done(null, false, { message: 'Incorrect username.' });
+          }
+          user.comparePassword(password, (compareErr, isMatch) => { // Assume async compare
+             if (compareErr) return done(compareErr);
+             if (isMatch) {
+                 logger.info(`Login Success: Username '${username}', IP ${req.ip}`);
+                 return done(null, user);
+             } else {
+                 // SECURE: Log failure
+                 logger.warn(`Login Failed (Wrong Password): Username '${username}', IP ${req.ip}`);
+                 return done(null, false, { message: 'Incorrect password.' });
+             }
+          });
+        });
+      }
+    ));
+    ```
+    ```javascript
+    // middleware/authz.js (Secure Logging)
+    // const logger = require('../utils/logger');
+    function ensureAdminSecure(req, res, next) {
+        if (req.isAuthenticated() && req.user.role === 'admin') {
+            return next();
+        }
+        // SECURE: Log access control failure
+        logger.warn(`Access Denied: User '${req.user.id}' (not admin) ` +
+                    `tried to access ${req.originalUrl}. IP ${req.ip}`);
+        res.status(403).send('Forbidden');
+    }
+    ```
+
+    #### Testing Strategy
+    Perform failed logins (wrong user, wrong password) and attempt to access role-protected admin routes. Check application logs (console, file, aggregator) for `warn` or `error` level messages containing the username, IP, and details of the failure.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Devise logs some auth events by default, but custom authorization (like Pundit, CanCanCan) or manual checks require explicit logging.
+
+    #### Vulnerable Scenario 1: Devise Failure Not Logged at WARN
+    Devise logs failures, but they might be at `INFO` or `DEBUG` level, which may be filtered out in production.
+    ```ruby
+    # config/initializers/devise.rb
+    # Default logging might not be at a high enough level (WARN)
+    # to trigger alerts in production log monitoring.
+    ```
+
+    #### Vulnerable Scenario 2: Pundit Policy Failure Not Logged
+    ```ruby
+    # app/policies/post_policy.rb
+    class PostPolicy < ApplicationPolicy
+      def update?
+        # DANGEROUS: Returns false, but the attempt is not logged.
+        # Attacker can try to update many different post IDs.
+        user.admin? || record.user == user
+      end
+    end
+
+    # app/controllers/posts_controller.rb
+    def update
+      @post = Post.find(params[:id])
+      authorize @post # Throws Pundit::NotAuthorizedError if policy fails
+      # ... update logic ...
+      # The default ApplicationController.rescue_from Pundit::NotAuthorizedError
+      # just redirects or shows 403, it doesn't log the attempt.
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Devise:** Subscribe to Devise's failure event (`warden.user.failure`) in an initializer and use `Rails.logger.warn` to log failed attempts with IP and user.
+    * **Pundit/CanCanCan:** Add a `rescue_from` block to your `ApplicationController` for the authorization failure exception (e.g., `Pundit::NotAuthorizedError`). In the rescue block, log the details (`current_user`, `request.ip`, policy details) before rendering the 403 response.
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/devise_failure_logging.rb (Secure)
+    # Subscribe to Warden's failure event (used by Devise)
+    Warden::Manager.after_authentication do |user, auth, opts|
+      # Log successful logins (optional, but good)
+      if opts[:event] == :authentication
+        Rails.logger.info "Login Success: User #{user.email}, IP #{auth.request.remote_ip}"
+      end
+    end
+    Warden::Manager.before_failure do |env, opts|
+      # Log failed logins
+      if opts[:action] == 'unauthenticated' && opts[:scope] == :user && opts[:message] != :unauthenticated
+         email = env['action_dispatch.request.request_parameters']&.dig(:user, :email)
+         ip = env['action_dispatch.remote_ip']
+         # SECURE: Log failed attempt at WARN level
+         Rails.logger.warn "Login Failed: Email '#{email}', IP #{ip}, Reason: #{opts[:message]}"
+      end
+    end
+
+    # app/controllers/application_controller.rb (Secure Pundit Logging)
+    class ApplicationController < ActionController::Base
+      include Pundit::Authorization # Assuming Pundit
+      # SECURE: Rescue from authorization failures
+      rescue_from Pundit::NotAuthorizedError, with: :user_not_authorized
+
+      private
+      def user_not_authorized(exception)
+        # SECURE: Log the authorization failure
+        policy_name = exception.policy.class.to_s.underscore
+        query_name = exception.query.to_s
+        user_info = current_user ? "User '#{current_user.id}'" : "Anonymous user"
+        Rails.logger.warn "Authorization Failure: #{user_info} at IP #{request.remote_ip} " +
+                          "forbidden by #{policy_name}##{query_name}"
+        
+        flash[:alert] = "You are not authorized to perform this action."
+        redirect_to(request.referrer || root_path)
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Perform failed logins and authorization failures (e.g., try to edit another user's post). Check `log/production.log` (or your log aggregator). Verify that `WARN` level log entries are created for these security-relevant failures, including username/email (if available) and IP address.
+  </Tab>
+</Tabs>

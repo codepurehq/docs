@@ -1,0 +1,584 @@
+---
+title: "Insertion of Sensitive Information into Log File"
+sidebarTitle: "Sensitive Data in Logs (CWE-532)"
+description: "Mitigation for logging sensitive data (passwords, API keys, PII) in plaintext, which makes logs a high-value target."
+icon: "file-waveform"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application **logs sensitive data in cleartext** to files, the console, or a log management system. This data can include passwords, session tokens, API keys, credit card numbers, personal user information (PII), or detailed debugging information that reveals internal application state. If an attacker gains access to these logs (e.g., through a server misconfiguration (`CWE-548`), file traversal (`CWE-22`), or by compromising an administrator's account), they can easily harvest these secrets. 📜🔑
+
+---
+
+## Business Impact
+
+Storing sensitive data in logs is a critical information disclosure vulnerability:
+* **Credential Theft:** Leaked passwords or session tokens lead directly to account takeover.
+* **Supply Chain Compromise:** Leaked API keys can be used to attack third-party services integrated with the application.
+* **Massive Data Breaches:** Leaked PII or financial data can result in large-scale data breaches.
+* **Compliance Violations:** Logging sensitive data like credit card numbers or personal health information in cleartext is a major violation of standards like PCI-DSS and HIPAA, leading to severe fines.
+* **Hindered Remediation:** Even after a breach, if logs contain credentials, attackers might use them to regain access.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-532](https://cwe.mitre.org/data/definitions/532.html)
+  **OWASP Top 10 (2021):** A09:2021 - Security Logging and Monitoring Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a common implementation flaw. Developers often log entire objects, request bodies, or exception messages for debugging purposes, forgetting that these may contain sensitive data.
+
+**Key Remediation Principles:**
+1.  **Never Log Credentials:** Ensure passwords, API keys, tokens, and other secrets are **never** logged in cleartext.
+2.  **Filter/Mask Sensitive Data:** Configure logging frameworks to automatically filter or mask sensitive fields. Most frameworks support this by listing parameter names (e.g., `password`, `token`) whose values should be replaced with `[FILTERED]` or `****`.
+3.  **Do Not Log Full Objects:** Avoid logging entire request objects, user objects, or data models. Explicitly log only the specific, non-sensitive properties needed for debugging.
+4.  **Control Exception Logging:** Be careful when logging full exception objects. Ensure `toString()` methods or exception properties don't include sensitive data. Log the stack trace, but be wary of exception *messages* that might contain user input.
+5.  **Secure Log Storage:** Ensure log files themselves are protected with strict file permissions, are not served over HTTP, and are rotated/deleted according to a retention policy.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Configuring Django's `LOGGING` settings or Python's `logging` module.
+
+    #### Vulnerable Scenario 1: Logging Full Request (Django)
+    A custom middleware logs the entire `request.POST` dictionary, including the password.
+    ```python
+    # myapp/middleware.py
+    import logging
+    logger = logging.getLogger(__name__)
+
+    class LogRequestMiddleware:
+        def __init__(self, get_response):
+            self.get_response = get_response
+
+        def __call__(self, request):
+            if request.method == 'POST':
+                # DANGEROUS: Logs all POST data, including 'password'
+                logger.info(f"POST data for {request.path}: {request.POST}")
+            response = self.get_response(request)
+            return response
+    ```
+
+    #### Vulnerable Scenario 2: Logging Exception Object
+    An exception handler logs the full exception, which might contain sensitive details.
+    ```python
+    # views.py
+    def some_view(request):
+        try:
+            # ... code that might fail ...
+            perform_action(request.POST['api_key']) # Example
+        except Exception as e:
+            # DANGEROUS: Logging the full exception 'e' might include
+            # the value of 'api_key' if the exception message contains it.
+            logger.error(f"Error in some_view: {e}")
+            # ...
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Use `django.views.debug.SensitivePostParameters` decorator on login/registration views or `sensitive_variables` to prevent sensitive data from being included in error reports.
+    * **Logging:** In `settings.py`, configure logging filters (e.g., `django.utils.log.CallbackFilter`) to filter sensitive keys. Manually filter data before logging.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Secure Logging Filter)
+    from django.utils.log import DEFAULT_LOGGING
+    import logging
+
+    # This filter will be applied to handlers
+    def sensitive_data_filter(record):
+        # Example: Censor 'password' field in log messages
+        if isinstance(record.args, dict) and 'password' in record.args:
+            record.args['password'] = '****'
+        # Add more complex regex filtering for log record.msg if needed
+        return True
+
+    LOGGING = DEFAULT_LOGGING # Start with defaults
+    LOGGING['filters'] = {
+        'sensitive_data_filter': {
+            '()': 'django.utils.log.CallbackFilter',
+            'callback': sensitive_data_filter,
+        }
+    }
+    LOGGING['handlers']['console']['filters'] = ['sensitive_data_filter'] # Apply to console
+    # Apply filter to file handlers as well
+
+    # views.py (Secure Decorator for Error Reports)
+    from django.views.decorators.debug import sensitive_post_parameters
+
+    @sensitive_post_parameters('password', 'password_confirm')
+    def user_signup(request):
+        # SECURE: If this view raises an exception, Django's error reporter
+        # will censor 'password' and 'password_confirm' from the report.
+        if request.method == 'POST':
+            # ...
+    ```
+    ```python
+    # myapp/middleware.py (Secure Middleware)
+    def secure_log_request_middleware(get_response):
+        def middleware(request):
+            if request.method == 'POST':
+                # SECURE: Explicitly copy and filter POST data
+                safe_post_data = request.POST.copy()
+                if 'password' in safe_post_data:
+                    safe_post_data['password'] = '****'
+                if 'api_key' in safe_post_data:
+                    safe_post_data['api_key'] = '****'
+                logger.info(f"Filtered POST data for {request.path}: {safe_post_data}")
+            response = get_response(request)
+            return response
+        return middleware
+    ```
+
+    #### Testing Strategy
+    Submit forms containing sensitive data (login, registration, API key forms). Check application logs (console, files, log aggregator) and error reports (e.g., Django error emails). Verify that sensitive values (`password`, `api_key`, `credit_card`) are masked (e.g., `****` or `[FILTERED]`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using logging frameworks (Logback, Log4j2) and logging sensitive object properties (e.g., via `toString()`) or full request/response bodies.
+
+    #### Vulnerable Scenario 1: Logging Full DTO/Entity
+    A user registration DTO includes the password, and its `toString()` method is logged.
+    ```java
+    // dto/UserRegistrationDto.java
+    public class UserRegistrationDto {
+        private String username;
+        private String password;
+        // DANGEROUS: Default or custom toString() might include password.
+        @Override public String toString() {
+            return "UserRegistrationDto{" + "username='" + username + '\'' +
+                   ", password='" + password + '\'' + '}'; // Leaks password
+        }
+        // ... getters/setters ...
+    }
+
+    // controller/RegistrationController.java
+    @PostMapping("/register")
+    public String register(@ModelAttribute("user") UserRegistrationDto dto) {
+        // DANGEROUS: Logging the DTO object calls its toString() method.
+        log.info("Registering user: {}", dto); // Logs password
+        // ... registration logic ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full Request in Filter
+    A debugging filter logs the entire request body.
+    ```java
+    // filter/LoggingFilter.java
+    @Component
+    public class LoggingFilter implements Filter {
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+            // DANGEROUS: If request body is read and logged here,
+            // it will include passwords, tokens, etc., from login or API requests.
+            // String requestBody = ... read request.getInputStream() ...
+            // log.debug("Request body: {}", requestBody);
+            chain.doFilter(request, response);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **`toString()`:** Override `toString()` in DTOs/Entities to mask sensitive fields (e.g., return `password='****'`).
+    * **Log Masking:** Use logging framework features (like Logback's `MaskingJsonEncoder` or Log4j2's `RewritePolicy`) to automatically mask patterns (regex for credit cards) or specific JSON keys (`password`).
+    * **Selective Logging:** Explicitly log only the non-sensitive fields you need (e.g., `log.info("Registering user: {}", dto.getUsername())`), not the whole object.
+    * **Filter Configuration:** Configure filters (like `CommonsRequestLoggingFilter`) to exclude sensitive headers and payload.
+
+    #### Secure Code Example
+    ```java
+    // dto/UserRegistrationDto.java (Secure toString())
+    public class UserRegistrationDto {
+        private String username;
+        private String password;
+        // SECURE: Overridden toString() masks the password.
+        @Override public String toString() {
+            return "UserRegistrationDto{" + "username='" + username + '\'' +
+                   ", password='****'" + '}'; // Password masked
+        }
+        // ... getters/setters ...
+    }
+
+    // controller/RegistrationController.java (Secure Logging)
+    @PostMapping("/register")
+    public String register(@ModelAttribute("user") UserRegistrationDto dto) {
+        // SECURE: Even if DTO is logged, toString() masks the password.
+        log.info("Registering user: {}", dto);
+        // Better: Log only what's needed
+        // log.info("Registering user: {}", dto.getUsername());
+        // ... registration logic ...
+    }
+
+    // logback-spring.xml (Secure - Masking Pattern Example)
+    ```
+
+    #### Testing Strategy
+    Submit forms with sensitive data. Review all log outputs (console, files, log aggregator). Check for plaintext passwords, API keys, session tokens, credit card numbers, or PII. Review `toString()` methods of models and DTOs. Review logging configurations (Logback/Log4j2 XML files) for masking rules.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `ILogger` and accidentally logging sensitive model properties, full request bodies, or exception messages containing sensitive data.
+
+    #### Vulnerable Scenario 1: Logging Full Model
+    ```csharp
+    // Models/RegistrationViewModel.cs
+    public class RegistrationViewModel {
+        public string Email { get; set; }
+        [DataType(DataType.Password)]
+        public string Password { get; set; } // Sensitive data
+        // Default .ToString() might just show class name, but logging
+        // via JSON serialization will expose it.
+    }
+
+    // Controllers/AccountController.cs
+    public async Task<IActionResult> Register(RegistrationViewModel model)
+    {
+        // DANGEROUS: Logging the entire model object. If using structured logging
+        // (like Serilog), this serializes the object, including the Password.
+        _logger.LogInformation("New user registration attempt: {@RegistrationModel}", model);
+
+        // ... registration logic ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full Exception
+    ```csharp
+    // Controllers/ApiController.cs
+    public async Task<IActionResult> CallExternalApi([FromBody] ApiRequest request)
+    {
+        try {
+            // Assume request object contains 'ApiKey'
+            await _apiService.Call(request.ApiKey, request.Data);
+        }
+        catch (ApiException ex) {
+            // DANGEROUS: Exception 'ex' might contain the ApiKey in its
+            // message or properties, and it's logged.
+            _logger.LogWarning("API call failed: {Exception}", ex);
+            return StatusCode(500, ex.Message); // Also potentially CWE-209
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Selective Logging:** Do not log entire models or DTOs containing sensitive data. Log only non-sensitive properties (e.g., `_logger.LogInformation("New user registration attempt: {Email}", model.Email);`).
+    * **Log Filtering/Masking:** Use logging library features (e.g., Serilog's `Destructure.ByTransforming<T>` or `IDestructuringPolicy`) to automatically mask sensitive properties (`Password`, `ApiKey`) before serialization.
+    * **Exception Logging:** Catch exceptions, log the stack trace (`ex`), but explicitly log a sanitized version of the message if it might contain sensitive input.
+
+    #### Secure Code Example
+    ```csharp
+    // Models/RegistrationViewModel.cs (Secure - No change needed here, fix is in logging)
+    
+    // Controllers/AccountController.cs (Secure Logging)
+    public async Task<IActionResult> Register(RegistrationViewModel model)
+    {
+        // SECURE: Log only non-sensitive properties.
+        _logger.LogInformation("New user registration attempt for: {Email}", model.Email);
+        
+        // OR use a DTO/ViewModel without the password for logging
+        // var logModel = new { Email = model.Email }; // Create anonymous type
+        // _logger.LogInformation("New user registration attempt: {@LogModel}", logModel);
+
+        // ... registration logic ...
+    }
+
+    // Program.cs (Secure Serilog Destructuring - Conceptual)
+    // using Serilog;
+    // Log.Logger = new LoggerConfiguration()
+    //     .Destructure.ByTransforming<RegistrationViewModel>(r => new {
+    //         // SECURE: Transform object during logging to exclude password
+    //         Email = r.Email,
+    //         Password = "****" // Masked
+    //     })
+    //     .WriteTo.Console()
+    //     .CreateLogger();
+
+    // Controllers/ApiController.cs (Secure Exception Logging)
+    public async Task<IActionResult> CallExternalApi([FromBody] ApiRequest request)
+    {
+        try {
+             await _apiService.Call(request.ApiKey, request.Data);
+        }
+        catch (ApiException ex) {
+            // SECURE: Log exception, but avoid logging request object directly.
+            // The default logging for 'ex' usually includes Message + StackTrace.
+            // Ensure ex.Message itself doesn't contain the secret!
+             _logger.LogWarning(ex, "API call failed for request ID {RequestId}. Error: {ErrorMessage}",
+                 request.RequestId, // Assume RequestId exists and is safe
+                 ex.Message); // If ex.Message is unsafe, sanitize it too.
+            return StatusCode(500, "API call failed."); // Generic error
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Submit forms with sensitive data. Review log outputs (console, files, Application Insights, Seq, etc.). Check for JSON logs or log messages containing cleartext passwords, API keys, etc. Review exception logging to ensure sensitive inputs are not part of the logged exception message or properties.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using Monolog (default in Laravel/Symfony) to log arrays or objects containing sensitive data.
+
+    #### Vulnerable Scenario 1: Logging Full `request->all()`
+    ```php
+    // app/Http/Middleware/RequestLogger.php
+    use Illuminate\Support\Facades\Log;
+    class RequestLogger
+    {
+        public function handle(Request $request, Closure $next)
+        {
+            // DANGEROUS: Logs all input fields, including 'password', 'token', etc.
+            Log::info('Incoming Request:', $request->all());
+            return $next($request);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full User Object
+    ```php
+    // app/Http/Controllers/SomeController.php
+    public function someAction(Request $request)
+    {
+        $user = auth()->user();
+        // DANGEROUS: If User object's 'toArray()' or serialization
+        // includes sensitive fields (e.g., 'remember_token', 'api_key'),
+        // logging the object will expose them.
+        Log::debug('Processing action for user:', ['user' => $user]);
+        // ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Filter Parameters:** Use Laravel's built-in `config.filter_parameters` (in `config/logging.php` or `config/app.php`'s `logging` section) to list keys that Monolog should automatically filter (e.g., `password`, `password_confirmation`).
+    * **Selective Logging:** Explicitly log only the non-sensitive fields needed (e.g., `Log::info('User ID ' . $user->id)`), not the entire object.
+    * **Model `toArray()`:** Adjust the `$hidden` property in Eloquent models to ensure sensitive fields are excluded when the model is cast to an array (which logging might do).
+
+    #### Secure Code Example
+    ```php
+    // config/logging.php (Secure - Parameter Filtering)
+    'channels' => [
+        'stack' => [
+            'driver' => 'stack',
+            'channels' => ['single'],
+            // ...
+        ],
+        'single' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/laravel.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            // SECURE: Add processors to tap Monolog
+            'processors' => [
+                // Example: Add processor to filter *all* log records
+                // App\Logging\SanitizeLogProcessor::class,
+            ],
+        ],
+        // ...
+    ],
+    // OR (simpler, for request params):
+    // config/app.php
+    // 'log' => env('APP_LOG', 'stack'),
+    // 'log_level' => env('APP_LOG_LEVEL', 'debug'),
+    // (This might be in config/logging.php in newer Laravel)
+    // Note: Laravel's default logging often filters params based on
+    // App\Http\Middleware\TrimStrings::$except and similar lists, or
+    // via config/logging.php 'processors'
+    // Explicit filtering in middleware is also safe:
+
+    // app/Http/Middleware/RequestLogger.php (Secure)
+    public function handle(Request $request, Closure $next)
+    {
+        // SECURE: Use except() to remove sensitive fields before logging.
+        $logData = $request->except(['password', 'password_confirmation', 'api_key', '_token']);
+        Log::info('Incoming Request:', $logData);
+        return $next($request);
+    }
+
+    // app/Models/User.php (Secure - Hiding sensitive fields from array/JSON)
+    class User extends Authenticatable
+    {
+        // SECURE: Fields hidden from array/JSON serialization (used by logger)
+        protected $hidden = [
+            'password',
+            'remember_token',
+            'api_token', // Example sensitive field
+        ];
+    }
+    ```
+
+    #### Testing Strategy
+    Submit forms with passwords, API keys, etc. Review `storage/logs/laravel.log`. Verify that sensitive fields are replaced with `[FILTERED]` or `****`. Check `config/logging.php` for filter configuration.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using logging libraries (Winston, Pino, Morgan) and logging full request bodies, response bodies, or user objects.
+
+    #### Vulnerable Scenario 1: Logging `req.body`
+    ```javascript
+    // app.js (Express)
+    // Assume winston logger is configured
+    const logger = require('./logger');
+
+    app.post('/login', (req, res) => {
+        // DANGEROUS: Logs the full request body, including password.
+        logger.info('Login attempt:', { body: req.body });
+        // ... auth logic ...
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full User Object from DB
+    ```javascript
+    // services/userService.js
+    async function findUser(username) {
+        const user = await User.findOne({ username }); // Assume returns Mongoose model
+        // DANGEROUS: Logging the full user object might include
+        // passwordHash, resetToken, etc.
+        logger.debug('Found user:', { user: user });
+        return user;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Filtering/Masking:** Configure your logging library (Winston/Pino) with custom formatters or serializers that **redact** sensitive keys (e.t., `password`, `token`, `authorization`).
+    * **Selective Logging:** Explicitly log only the properties you need, not entire objects (`logger.info('Login attempt for user:', { username: req.body.username, ip: req.ip });`).
+
+    #### Secure Code Example
+    ```javascript
+    // logger.js (Winston Secure Configuration - Conceptual)
+    const winston = require('winston');
+    const { combine, timestamp, json, prettyPrint } = winston.format;
+
+    // SECURE: Create a custom format to redact sensitive keys
+    const redactFormat = winston.format((info, opts) => {
+        // Simple recursive redact function (needs to be robust)
+        function redact(obj) {
+            if (typeof obj !== 'object' || obj === null) return obj;
+            if (Array.isArray(obj)) return obj.map(redact);
+            
+            const newObj = {};
+            for (const key in obj) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                     if (['password', 'token', 'apiKey', 'authorization', 'creditCard'].includes(key.toLowerCase())) {
+                        newObj[key] = '****'; // Mask
+                     } else {
+                        newObj[key] = redact(obj[key]); // Recurse
+                     }
+                }
+            }
+            return newObj;
+        }
+        
+        // Apply redaction to the whole info object (or specific parts)
+        // This simple example just checks top-level 'message' if it's an object,
+        // or 'body', 'user' etc. if they exist.
+        if (info.message && typeof info.message === 'object') info.message = redact(info.message);
+        if (info.body) info.body = redact(info.body);
+        if (info.user) info.user = redact(info.user);
+        // Also need to handle info itself if it was `logger.info({ password: '...' })`
+        // A better approach might be to redact info.meta or the result of json()
+        return redact(info); // Apply to whole info object
+    });
+
+    const logger = winston.createLogger({
+        level: 'info',
+        // SECURE: Combine timestamp, redaction, and final format
+        format: combine(
+            timestamp(),
+            redactFormat(), // Apply custom redaction
+            json() // Convert to JSON
+        ),
+        transports: [ new winston.transports.Console() ],
+    });
+    module.exports = logger;
+
+    // app.js (Usage)
+    app.post('/login', (req, res) => {
+        // SECURE: Logger configuration will redact 'password' field
+        logger.info('Login attempt:', { body: req.body, ip: req.ip });
+        // ... auth logic ...
+    });
+    ```
+
+    #### Testing Strategy
+    Submit forms with sensitive data (login, API keys). Review log output (console, files, log aggregator). Verify sensitive keys (`password`, `token`, etc.) are masked (`****`). Check logging configuration for redaction/filtering logic.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using Rails' built-in logger (`Rails.logger`) or standard Ruby `Logger`. Rails filters `password` by default, but custom sensitive fields must be added.
+
+    #### Vulnerable Scenario 1: Not Filtering Custom Sensitive Parameters
+    ```ruby
+    # app/controllers/payment_controller.rb
+    class PaymentController < ApplicationController
+      def process_payment
+        # DANGEROUS: params[:credit_card_number] and params[:cvv]
+        # are not in the default filter list. Logging params will expose them.
+        Rails.logger.info "Processing payment params: #{params.inspect}"
+        # ... process ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full Object `inspect`
+    ```ruby
+    # app/controllers/users_controller.rb
+    def show
+      @user = User.find(params[:id])
+      # DANGEROUS: If User model has custom sensitive attributes
+      # (e.g., @api_key, @social_security_number) that are not
+      # filtered, .inspect will log them.
+      Rails.logger.debug "User object: #{@user.inspect}"
+      # ...
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Filter Parameters:** Add *all* sensitive parameter names (including nested ones) to `config.filter_parameters` in `config/initializers/filter_parameter_logging.rb`.
+    * **`inspect`:** Be cautious logging `.inspect` on Active Record objects. Override the `inspect` method on sensitive models to mask fields, or log attributes selectively (`Rails.logger.debug "User ID: #{@user.id}"`).
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/filter_parameter_logging.rb (Secure)
+    # Be sure to restart your server when you modify this file.
+
+    # SECURE: Add all custom sensitive parameter names.
+    # Rails filters parameters that *contain* these substrings (case-insensitive).
+    Rails.application.config.filter_parameters += [
+      :password, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, # Default Rails filters
+      :api_key, :credit_card_number, :cvv, :card_number, :security_code # Add custom
+    ]
+    ```
+    ```ruby
+    # app/controllers/payment_controller.rb (Secure)
+    class PaymentController < ApplicationController
+      def process_payment
+        # SECURE: Logging params is now safe. Rails will filter
+        # :credit_card_number and :cvv based on the initializer.
+        Rails.logger.info "Processing payment params (filtered): #{params.inspect}"
+        # ... process ...
+      end
+    end
+
+    # app/models/user.rb (Secure - Override inspect)
+    class User < ApplicationRecord
+      # ...
+      attr_accessor :api_key # Example sensitive non-DB attribute
+      # SECURE: Override inspect for logging safety.
+      def inspect
+        # Return only safe attributes
+        "#<User id: #{id}, email: #{email}, created_at: #{created_at}>"
+        # Or filter dynamically:
+        # super.gsub(/@api_key=".*?"/, '@api_key="[FILTERED]"')
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Submit requests with parameters listed in `filter_parameters` (e.g., `password`, `credit_card_number`, `cvv`). Check log files (`log/development.log`, `log/production.log`) and verify the values for these parameters appear as `[FILTERED]`. Review code for `.inspect` calls on sensitive objects.
+  </Tab>
+</Tabs>

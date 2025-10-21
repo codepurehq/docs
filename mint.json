@@ -156,6 +156,14 @@
       ]
     },
     {
+      "group": "A09:2021 – Security Logging and Monitoring Failures",
+      "pages": [
+        "vulnerabilities/cwe-778",
+        "vulnerabilities/cwe-532",
+        "vulnerabilities/cwe-117"
+      ]
+    },
+    {
       "group": "A10:2021 – Server-Side Request Forgery (SSRF)",
       "pages": [
         "vulnerabilities/ssrf"
