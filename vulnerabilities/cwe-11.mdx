@@ -44,66 +44,6 @@ This is a **deployment and configuration** issue common across many frameworks. 
 ---
 
 <Tabs>
-  <Tab title=".NET(C#)">
-    #### Framework Context
-    Controlled by the `ASPNETCORE_ENVIRONMENT` environment variable and the `<compilation debug="true/false">` setting in `web.config` (older ASP.NET) or build configurations (Debug vs. Release in ASP.NET Core).
-
-    #### Vulnerable Scenario 1: `ASPNETCORE_ENVIRONMENT=Development`
-    The production server has the `ASPNETCORE_ENVIRONMENT` variable set to `Development` instead of `Production`. This often enables the Developer Exception Page.
-    ```bash
-    # DANGEROUS: Environment variable set incorrectly on production server
-    export ASPNETCORE_ENVIRONMENT=Development
-    # or SET ASPNETCORE_ENVIRONMENT=Development (Windows)
-    # or configured in launchSettings.json / web.config / IIS settings
-    ```
-
-    #### Vulnerable Scenario 2: `debug="true"` in `web.config` (ASP.NET Framework)
-    ```xml
-    <configuration>
-      <system.web>
-        <compilation debug="true" targetFramework="4.8" />
-        </system.web>
-    </configuration>
-    ```
-
-    #### Mitigation and Best Practices
-    * **ASP.NET Core:** Ensure `ASPNETCORE_ENVIRONMENT` is set to `Production` on production servers. Use build configurations (`Release`) that disable debugging symbols and enable optimizations. Use `app.UseExceptionHandler()` instead of `app.UseDeveloperExceptionPage()` in production (`Startup.cs`).
-    * **ASP.NET Framework:** Set `<compilation debug="false">` in the production `web.config`. Use `<customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">`.
-
-    #### Secure Code Example
-    ```csharp
-    // Startup.cs - Configure() (ASP.NET Core - Secure)
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-    {
-        // SECURE: Only use developer page in Development environment.
-        if (env.IsDevelopment())
-        {
-            app.UseDeveloperExceptionPage();
-        }
-        else
-        {
-            app.UseExceptionHandler("/Home/Error"); // Generic error handler
-            app.UseHsts();
-        }
-        // ... rest of configuration ...
-    }
-    // Ensure ASPNETCORE_ENVIRONMENT=Production is set via server env var,
-    // web.config, Azure App Service settings, etc.
-    ```
-    ```xml
-    <configuration>
-      <system.web>
-        <compilation debug="false" targetFramework="4.8" />
-        <customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">
-             <error statusCode="404" redirect="~/ErrorPages/NotFound.html" />
-        </customErrors>
-        </system.web>
-    </configuration>
-    ```
-
-    #### Testing Strategy
-    Check the production server's environment variables (`ASPNETCORE_ENVIRONMENT`). Review the deployed `web.config` for `<compilation debug="false">` and `<customErrors mode="On">`. Trigger an application error; verify that a generic error page is shown, not the detailed Developer Exception Page or Yellow Screen of Death (YSOD). Check response headers for any debug-related information.
-  </Tab>
   <Tab title="Python">
     #### Framework Context
     Controlled by `DEBUG = True/False` in Django `settings.py` or `FLASK_ENV`/`FLASK_DEBUG` for Flask.
@@ -201,6 +141,68 @@ This is a **deployment and configuration** issue common across many frameworks. 
     #### Testing Strategy
     Check the active Spring profile (`/actuator/env` if exposed, or server logs). Trigger errors and verify generic error pages are shown without stack traces. Review production logging configuration files and sample log output for appropriate log levels and absence of overly verbose or sensitive debug information.
   </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Controlled by the `ASPNETCORE_ENVIRONMENT` environment variable and the `<compilation debug="true/false">` setting in `web.config` (older ASP.NET) or build configurations (Debug vs. Release in ASP.NET Core).
+
+    #### Vulnerable Scenario 1: `ASPNETCORE_ENVIRONMENT=Development`
+    The production server has the `ASPNETCORE_ENVIRONMENT` variable set to `Development` instead of `Production`. This often enables the Developer Exception Page.
+    ```bash
+    # DANGEROUS: Environment variable set incorrectly on production server
+    export ASPNETCORE_ENVIRONMENT=Development
+    # or SET ASPNETCORE_ENVIRONMENT=Development (Windows)
+    # or configured in launchSettings.json / web.config / IIS settings
+    ```
+
+    #### Vulnerable Scenario 2: `debug="true"` in `web.config` (ASP.NET Framework)
+    ```xml
+    <configuration>
+      <system.web>
+        <compilation debug="true" targetFramework="4.8" />
+        </system.web>
+    </configuration>
+    ```
+
+    #### Mitigation and Best Practices
+    * **ASP.NET Core:** Ensure `ASPNETCORE_ENVIRONMENT` is set to `Production` on production servers. Use build configurations (`Release`) that disable debugging symbols and enable optimizations. Use `app.UseExceptionHandler()` instead of `app.UseDeveloperExceptionPage()` in production (`Startup.cs`).
+    * **ASP.NET Framework:** Set `<compilation debug="false">` in the production `web.config`. Use `<customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">`.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs - Configure() (ASP.NET Core - Secure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // SECURE: Only use developer page in Development environment.
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error"); // Generic error handler
+            app.UseHsts();
+        }
+        // ... rest of configuration ...
+    }
+    // Ensure ASPNETCORE_ENVIRONMENT=Production is set via server env var,
+    // web.config, Azure App Service settings, etc.
+    ```
+    ```xml
+    <configuration>
+      <system.web>
+        <compilation debug="false" targetFramework="4.8" />
+        <customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">
+             <error statusCode="404" redirect="~/ErrorPages/NotFound.html" />
+        </customErrors>
+        </system.web>
+    </configuration>
+    ```
+
+    #### Testing Strategy
+    Check the production server's environment variables (`ASPNETCORE_ENVIRONMENT`). Review the deployed `web.config` for `<compilation debug="false">` and `<customErrors mode="On">`. Trigger an application error; verify that a generic error page is shown, not the detailed Developer Exception Page or Yellow Screen of Death (YSOD). Check response headers for any debug-related information.
+  </Tab>
+  
+  
   <Tab title="PHP">
     #### Framework Context
     Controlled by `APP_DEBUG` in Laravel `.env`, and `display_errors`/`error_reporting` in `php.ini`.
