@@ -1,0 +1,345 @@
+---
+title: "Debug Features Enabled in Production"
+sidebarTitle: "Debug Enabled (CWE-11)"
+description: "Mitigation for deploying applications (ASP.NET, Django, Flask, etc.) with debug mode enabled, exposing sensitive information."
+icon: "laptop-code"
+iconType: "solid"
+---
+
+## Overview
+
+This misconfiguration occurs when an application is deployed to a **production environment** with **debugging features still enabled**. Debug modes often provide verbose error messages (like stack traces, see `CWE-209`), may disable security features (like caching or certain headers), might use default credentials, or could expose internal application state. While extremely useful during development, these features provide attackers with valuable information and potentially bypass security controls in a live environment. 🐞➡️🌍
+
+---
+
+## Business Impact
+
+Deploying with debug mode enabled significantly increases the attack surface:
+* **Information Disclosure:** Leaks detailed error messages, stack traces, configuration settings (potentially including secrets), file paths, and framework versions, aiding attackers in reconnaissance.
+* **Security Feature Bypass:** Debug modes might disable crucial security headers (like `X-Frame-Options`), CSRF protection, or input validation optimizations, making other attacks easier.
+* **Performance Degradation:** Debug modes often consume more resources and perform slower than optimized production builds.
+* **Potential Credential Exposure:** Some debug tools or configurations might inadvertently expose default or development credentials.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-11](https://cwe.mitre.org/data/definitions/11.html) (Specific to ASP.NET Debug Binaries, but represents the general issue)
+  **Related CWEs:** CWE-209 (Sensitive Errors), CWE-526 (Env Vars), CWE-16 (General Configuration)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a **deployment and configuration** issue common across many frameworks. The key is to ensure the application runs using its **production configuration profile**, where debugging is disabled and optimizations are enabled.
+
+**Remediation:**
+1.  **Use Production Build/Configuration:** Ensure build processes and deployment scripts explicitly use the production environment settings.
+2.  **Disable Debug Flags:** Set framework-specific debug flags (`DEBUG`, `ASPNETCORE_ENVIRONMENT`, `FLASK_DEBUG`, `APP_DEBUG`, etc.) to their production values (`False`, `Production`, `0`).
+3.  **Configure Error Handling:** Implement generic error pages for production (see `CWE-209`).
+4.  **Review Configuration Files:** Double-check configuration files (`web.config`, `settings.py`, `application.properties`, `.env`) to ensure no debug settings or development credentials remain.
+
+---
+
+<Tabs>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Controlled by the `ASPNETCORE_ENVIRONMENT` environment variable and the `<compilation debug="true/false">` setting in `web.config` (older ASP.NET) or build configurations (Debug vs. Release in ASP.NET Core).
+
+    #### Vulnerable Scenario 1: `ASPNETCORE_ENVIRONMENT=Development`
+    The production server has the `ASPNETCORE_ENVIRONMENT` variable set to `Development` instead of `Production`. This often enables the Developer Exception Page.
+    ```bash
+    # DANGEROUS: Environment variable set incorrectly on production server
+    export ASPNETCORE_ENVIRONMENT=Development
+    # or SET ASPNETCORE_ENVIRONMENT=Development (Windows)
+    # or configured in launchSettings.json / web.config / IIS settings
+    ```
+
+    #### Vulnerable Scenario 2: `debug="true"` in `web.config` (ASP.NET Framework)
+    ```xml
+    <configuration>
+      <system.web>
+        <compilation debug="true" targetFramework="4.8" />
+        </system.web>
+    </configuration>
+    ```
+
+    #### Mitigation and Best Practices
+    * **ASP.NET Core:** Ensure `ASPNETCORE_ENVIRONMENT` is set to `Production` on production servers. Use build configurations (`Release`) that disable debugging symbols and enable optimizations. Use `app.UseExceptionHandler()` instead of `app.UseDeveloperExceptionPage()` in production (`Startup.cs`).
+    * **ASP.NET Framework:** Set `<compilation debug="false">` in the production `web.config`. Use `<customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">`.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs - Configure() (ASP.NET Core - Secure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // SECURE: Only use developer page in Development environment.
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error"); // Generic error handler
+            app.UseHsts();
+        }
+        // ... rest of configuration ...
+    }
+    // Ensure ASPNETCORE_ENVIRONMENT=Production is set via server env var,
+    // web.config, Azure App Service settings, etc.
+    ```
+    ```xml
+    <configuration>
+      <system.web>
+        <compilation debug="false" targetFramework="4.8" />
+        <customErrors mode="On" defaultRedirect="~/ErrorPages/GenericError.html">
+             <error statusCode="404" redirect="~/ErrorPages/NotFound.html" />
+        </customErrors>
+        </system.web>
+    </configuration>
+    ```
+
+    #### Testing Strategy
+    Check the production server's environment variables (`ASPNETCORE_ENVIRONMENT`). Review the deployed `web.config` for `<compilation debug="false">` and `<customErrors mode="On">`. Trigger an application error; verify that a generic error page is shown, not the detailed Developer Exception Page or Yellow Screen of Death (YSOD). Check response headers for any debug-related information.
+  </Tab>
+  <Tab title="Python">
+    #### Framework Context
+    Controlled by `DEBUG = True/False` in Django `settings.py` or `FLASK_ENV`/`FLASK_DEBUG` for Flask.
+
+    #### Vulnerable Scenario 1: Django `DEBUG = True`
+    ```python
+    # settings.py (Production)
+    # DANGEROUS: Exposes detailed error pages, settings, etc.
+    DEBUG = True
+    ALLOWED_HOSTS = ['yourdomain.com']
+    ```
+
+    #### Vulnerable Scenario 2: Flask `FLASK_DEBUG = 1`
+    ```bash
+    # DANGEROUS: Running Flask in debug mode on production.
+    export FLASK_ENV=development # Also implies debug in older Flask
+    export FLASK_DEBUG=1
+    flask run --host=0.0.0.0
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Set `DEBUG = False` in production `settings.py`. Use environment variables or separate settings files (e.g., `production_settings.py`) to manage this. Configure `LOGGING` and custom error pages (`500.html`, `404.html`).
+    * **Flask:** Set `FLASK_ENV=production` and ensure `FLASK_DEBUG=0` (or unset) in the production environment. Configure custom error handlers using `@app.errorhandler`. Use a production WSGI server (Gunicorn, uWSGI).
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django Production - Secure)
+    import os
+    # SECURE: Default to False, override with env var only if needed (e.g., staging)
+    DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
+    # Ensure DEBUG is absolutely False in true production environments!
+    ALLOWED_HOSTS = ['yourdomain.com']
+    # ... configure LOGGING, custom error templates ...
+    ```
+    ```bash
+    # Production Environment for Flask (Secure)
+    export FLASK_ENV=production
+    # FLASK_DEBUG is implicitly 0 or unset
+    # Run with Gunicorn: gunicorn myapp:app
+    ```
+
+    #### Testing Strategy
+    Trigger application errors. Verify generic error pages are shown, not Django's debug page or Flask's interactive debugger. Check server environment variables (`DJANGO_DEBUG`, `FLASK_ENV`, `FLASK_DEBUG`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Controlled by Spring Boot profiles (`spring.profiles.active=production`), logging levels, and specific properties like `server.error.include-stacktrace`.
+
+    #### Vulnerable Scenario 1: `include-stacktrace=always`
+    ```properties
+    # application.properties (Production)
+    # DANGEROUS: Shows full stack trace.
+    server.error.include-stacktrace=always
+    # DANGEROUS: Running with development profile active in prod.
+    # spring.profiles.active=development
+    ```
+
+    #### Vulnerable Scenario 2: Verbose Logging Levels in Production
+    ```properties
+    # application.properties / logback.xml / log4j2.xml (Production)
+    # DANGEROUS: Logging excessive DEBUG or TRACE level info in production
+    # might leak sensitive operational data or performance details.
+    logging.level.org.springframework=DEBUG
+    logging.level.com.myapp=TRACE
+    ```
+
+    #### Mitigation and Best Practices
+    * Ensure the active Spring profile in production is `production` (or another non-development profile).
+    * Set `server.error.include-stacktrace=never`.
+    * Set logging levels appropriately for production (e.g., `INFO` or `WARN` as default, `ERROR` for critical issues).
+    * Disable the whitelabel error page: `server.error.whitelabel.enabled=false`.
+
+    #### Secure Code Example
+    ```properties
+    # application-production.properties (Secure)
+    # SECURE: Activate this profile via env var SPRING_PROFILES_ACTIVE=production
+
+    # SECURE: Never include stack traces in responses.
+    server.error.include-stacktrace=never
+    # SECURE: Disable the default Spring error page.
+    server.error.whitelabel.enabled=false
+
+    # SECURE: Set appropriate logging levels for production.
+    logging.level.root=INFO
+    logging.level.org.springframework=WARN
+    logging.level.com.myapp=INFO # Adjust as needed
+    ```
+
+    #### Testing Strategy
+    Check the active Spring profile (`/actuator/env` if exposed, or server logs). Trigger errors and verify generic error pages are shown without stack traces. Review production logging configuration files and sample log output for appropriate log levels and absence of overly verbose or sensitive debug information.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Controlled by `APP_DEBUG` in Laravel `.env`, and `display_errors`/`error_reporting` in `php.ini`.
+
+    #### Vulnerable Scenario 1: Laravel `APP_DEBUG=true`
+    ```ini
+    # .env (Production)
+    APP_ENV=production
+    # DANGEROUS: Shows detailed Ignition/Whoops error pages.
+    APP_DEBUG=true
+    ```
+
+    #### Vulnerable Scenario 2: PHP `display_errors = On`
+    ```ini
+    ; php.ini (Production Server)
+    ; DANGEROUS: Renders PHP errors directly in the output.
+    display_errors = On
+    error_reporting = E_ALL
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Set `APP_DEBUG=false` and `APP_ENV=production` in the production `.env` file. Configure logging and custom error views.
+    * **PHP:** Set `display_errors = Off` and `log_errors = On` in the production `php.ini`. Configure `error_reporting` and `error_log`.
+
+    #### Secure Code Example
+    ```ini
+    # .env (Laravel Production - Secure)
+    APP_ENV=production
+    APP_DEBUG=false # SECURE
+    LOG_CHANNEL=stack # Or other production logger
+    ```
+    ```ini
+    ; php.ini (Production - Secure)
+    display_errors = Off    ; SECURE
+    log_errors = On       ; SECURE (Log errors)
+    error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+    error_log = /var/log/php_errors.log
+    ```
+
+    #### Testing Strategy
+    Trigger errors (PHP syntax errors, framework exceptions). Verify generic error pages are shown, not Ignition/Whoops or raw PHP errors. Check environment variables (`APP_DEBUG`) and `phpinfo()` output (if accessible, which it shouldn't be in production!) for `display_errors`. Check server logs for details.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Typically controlled by the `NODE_ENV` environment variable and how error-handling middleware behaves based on it.
+
+    #### Vulnerable Scenario 1: Error Handler Leaking Stack in Production
+    ```javascript
+    // app.js (Error Handler Middleware)
+    app.use((err, req, res, next) => {
+        const statusCode = err.status || 500;
+        console.error(err.stack); // Log for devs (good)
+
+        // DANGEROUS: Sends stack trace regardless of environment.
+        res.status(statusCode).json({
+            message: err.message,
+            // Attacker triggers error in production, gets stack trace.
+            stack: err.stack // Should be conditional
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Development Tools Exposed
+    Some development middleware (like detailed request loggers, profiling tools) might be included in the production build and middleware stack.
+
+    #### Mitigation and Best Practices
+    * Set `NODE_ENV=production` in the production environment.
+    * Implement error-handling middleware that checks `process.env.NODE_ENV` and sends generic responses in production while logging details server-side.
+    * Ensure development-only middleware (e.g., `morgan` in 'dev' mode, webpack dev middleware) is conditionally included and not active in production.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Error Handler)
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    // ... other middleware and routes ...
+
+    // SECURE: Error handling middleware (place last)
+    app.use((err, req, res, next) => {
+        const statusCode = err.status || 500;
+        // Log the full error server-side
+        console.error(`[${new Date().toISOString()}] Error: ${err.message}`, err.stack);
+
+        res.status(statusCode);
+        // Send generic response in production, details otherwise
+        if (isProd) {
+            res.json({ message: "An internal server error occurred." });
+        } else {
+            res.json({ message: err.message, stack: err.stack });
+        }
+    });
+
+    // Ensure NODE_ENV=production is set via environment variable on the server
+    ```
+
+    #### Testing Strategy
+    Check the `NODE_ENV` environment variable on the production server. Trigger application errors. Verify that generic error messages are returned in the response body and no stack traces are included. Check server logs for detailed error information.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Controlled by `config.consider_all_requests_local` and `config.log_level` in Rails environment files.
+
+    #### Vulnerable Scenario 1: `consider_all_requests_local = true` in Production
+    ```ruby
+    # config/environments/production.rb
+    Rails.application.configure do
+      # DANGEROUS: Shows detailed debug exception pages.
+      config.consider_all_requests_local = true
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Verbose Logging in Production
+    ```ruby
+    # config/environments/production.rb
+    Rails.application.configure do
+      # DANGEROUS: Excessive logging can leak operational details
+      # and impact performance.
+      config.log_level = :debug
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `config.consider_all_requests_local = false` in `config/environments/production.rb`.
+    * Set `config.log_level` to `:info`, `:warn`, or `:error` for production.
+    * Configure custom static error pages (`public/500.html` etc.) or `config.exceptions_app`.
+
+    #### Secure Code Example
+    ```ruby
+    # config/environments/production.rb (Secure)
+    Rails.application.configure do
+      # SECURE: Ensures generic public error pages are shown.
+      config.consider_all_requests_local = false
+
+      # SECURE: Set appropriate log level for production.
+      config.log_level = :info
+
+      # Configure log formatter if needed to avoid leaking sensitive data
+      # config.log_formatter = MySecureFormatter.new
+
+      # Use default static error pages or configure exceptions_app
+      # config.exceptions_app = self.routes
+    end
+    ```
+
+    #### Testing Strategy
+    Trigger application errors. Verify that generic static error pages (e.g., `public/500.html`) or custom application error pages are shown, not the detailed Rails debug exception page. Check `log/production.log` for appropriate log levels and absence of excessive debug info.
+  </Tab>
+</Tabs>
