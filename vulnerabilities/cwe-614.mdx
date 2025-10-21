@@ -1,0 +1,458 @@
+---
+title: "Sensitive Cookie Without 'Secure' Attribute"
+sidebarTitle: "Cookie Not Secure (CWE-614)"
+description: "Mitigation for sensitive cookies (session IDs, tokens) missing the 'Secure' flag, allowing transmission over HTTP."
+icon: "cookie"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application sets a **sensitive cookie** (like a session identifier, authentication token, or CSRF token) over an HTTPS connection but **fails to set the `Secure` attribute** on that cookie. Without the `Secure` flag, the browser might transmit the cookie over subsequent **unencrypted HTTP requests** to the same domain (e.g., if the user manually types `http://` or clicks an `http://` link). An attacker eavesdropping on the network (e.g., on public Wi-Fi) could then intercept this cookie and potentially hijack the user's session. 🍪🔓➡️👂
+
+---
+
+## Business Impact
+
+Failure to set the `Secure` flag on sensitive cookies transmitted over HTTPS undermines the protection offered by TLS/SSL:
+* **Session Hijacking:** Attackers sniffing network traffic can steal session cookies sent over HTTP, allowing them to impersonate the user.
+* **Exposure of Sensitive Tokens:** Other sensitive information stored in cookies (like CSRF tokens or user preferences linked to identity) can be exposed.
+* **Compliance Issues:** Many security standards (like PCI-DSS) require the `Secure` flag for cookies handling sensitive data.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-614](https://cwe.mitre.org/data/definitions/614.html)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** Medium
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is almost always a **configuration issue**. Modern web frameworks typically provide settings to enforce the `Secure` flag globally for session cookies, especially in production environments (often linked to HTTPS redirection settings). The vulnerability arises when these settings are disabled, misconfigured, or when developers set custom sensitive cookies manually without including the `Secure` flag.
+
+**Remediation:**
+1.  **Enforce HTTPS:** Ensure your entire application runs exclusively over HTTPS (see `CWE-319`).
+2.  **Configure Secure Cookies:** Set the framework's configuration option to *always* add the `Secure` flag to session cookies in production.
+3.  **Set Flag on Custom Cookies:** When creating custom cookies containing sensitive data, explicitly add the `Secure` attribute.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Controlled by `SESSION_COOKIE_SECURE` and `CSRF_COOKIE_SECURE` in Django `settings.py`. Flask requires manual setting or configuration via extensions.
+
+    #### Vulnerable Scenario 1: Django `SESSION_COOKIE_SECURE = False`
+    ```python
+    # settings.py (Production)
+    # DANGEROUS: Session cookie will be sent over HTTP if user visits an HTTP URL.
+    SESSION_COOKIE_SECURE = False
+    # Also dangerous for CSRF token:
+    CSRF_COOKIE_SECURE = False
+    # Even if SECURE_SSL_REDIRECT = True, a misconfiguration or temporary
+    # availability over HTTP could leak the cookie.
+    ```
+
+    #### Vulnerable Scenario 2: Flask Custom Cookie without `secure=True`
+    ```python
+    # app.py (Flask)
+    from flask import make_response
+
+    @app.route('/set-auth-token')
+    def set_auth_token():
+        token = generate_sensitive_token() # Assume this generates a token
+        response = make_response("Token Set")
+        # DANGEROUS: Secure flag is missing. Cookie will be sent over HTTP.
+        response.set_cookie('auth_token', token, httponly=True, samesite='Strict')
+        return response
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Set `SESSION_COOKIE_SECURE = True` and `CSRF_COOKIE_SECURE = True` in your production `settings.py`.
+    * **Flask:** When using `response.set_cookie`, explicitly set `secure=True`. Configure session extensions (like Flask-Session) to set the secure flag.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django Production - Secure)
+    # SECURE: Ensure cookies are only sent over HTTPS.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Assumes HTTPS is enforced via SECURE_SSL_REDIRECT = True or proxy config.
+    ```
+    ```python
+    # app.py (Flask - Secure Custom Cookie)
+    from flask import make_response, request
+
+    @app.route('/set-auth-token-secure')
+    def set_auth_token_secure():
+        token = generate_sensitive_token()
+        response = make_response("Token Set")
+        # SECURE: Added secure=True. Flag only effective if site is accessed via HTTPS.
+        # Use request.is_secure or config to determine if secure should be True.
+        is_https = request.is_secure or request.headers.get('X-Forwarded-Proto', 'http') == 'https'
+        response.set_cookie('auth_token', token,
+                           httponly=True,
+                           samesite='Strict',
+                           secure=is_https) # Set secure based on connection
+        return response
+    ```
+
+    #### Testing Strategy
+    Access your site over HTTPS. Use browser developer tools (Application/Storage tab) to inspect the session cookie (`sessionid`, `csrftoken`) and any custom sensitive cookies. Verify that the "Secure" column/flag is checked/true. Try accessing an HTTP version of a page (if HTTPS redirection isn't perfectly enforced) and see if the cookie is still sent (it shouldn't be if Secure is set).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Controlled by `server.servlet.session.cookie.secure` in Spring Boot `application.properties`, or programmatically via `Cookie.setSecure(true)`.
+
+    #### Vulnerable Scenario 1: `cookie.secure=false` in Properties
+    ```properties
+    # application.properties (Production)
+    # DANGEROUS: JSESSIONID cookie will be sent over HTTP.
+    server.servlet.session.cookie.secure=false
+    ```
+
+    #### Vulnerable Scenario 2: Custom Cookie without `setSecure(true)`
+    ```java
+    // controller/AuthController.java
+    import javax.servlet.http.Cookie;
+    import javax.servlet.http.HttpServletResponse;
+
+    @PostMapping("/issue-token")
+    public String issueToken(HttpServletResponse response) {
+        String token = generateSensitiveToken(); // Generate some token
+        Cookie tokenCookie = new Cookie("authToken", token);
+        tokenCookie.setHttpOnly(true);
+        tokenCookie.setPath("/");
+        // DANGEROUS: Missing tokenCookie.setSecure(true);
+        response.addCookie(tokenCookie);
+        return "tokenIssued";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `server.servlet.session.cookie.secure=true` in production `application.properties` (or `application-production.properties`).
+    * When creating custom `Cookie` objects, always call `cookie.setSecure(true)`.
+
+    #### Secure Code Example
+    ```properties
+    # application-production.properties (Secure)
+    # SECURE: Ensure JSESSIONID is only sent over HTTPS.
+    server.servlet.session.cookie.secure=true
+    # Also recommended:
+    server.servlet.session.cookie.http-only=true
+    server.servlet.session.cookie.same-site=Strict
+    ```
+    ```java
+    // controller/AuthController.java (Secure Custom Cookie)
+    @PostMapping("/issue-token-secure")
+    public String issueTokenSecure(HttpServletResponse response, HttpServletRequest request) {
+        String token = generateSensitiveToken();
+        Cookie tokenCookie = new Cookie("authToken", token);
+        tokenCookie.setHttpOnly(true);
+        tokenCookie.setPath("/");
+        // SECURE: Set the Secure flag.
+        tokenCookie.setSecure(request.isSecure()); // Base on current request or assume true if HTTPS enforced
+        response.addCookie(tokenCookie);
+        return "tokenIssued";
+    }
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the `JSESSIONID` cookie and any custom sensitive cookies. Verify the "Secure" flag is set. Use a proxy (like Burp Suite) to see if cookies are sent during subsequent HTTP requests (they shouldn't be if flagged `Secure`).
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Configured within `Startup.cs` when setting up session or authentication cookie options (`Cookie.SecurePolicy`).
+
+    #### Vulnerable Scenario 1: `CookieSecurePolicy.None` or `SameAsRequest`
+    The cookie policy doesn't enforce 'Always'. `SameAsRequest` is only secure if *all* traffic is guaranteed to be HTTPS.
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.AddSession(options =>
+    {
+        options.Cookie.Name = ".MyApp.Session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        // DANGEROUS: Allows cookie over HTTP if the request establishing it was HTTP,
+        // or always allows if set to None.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // Or .None
+    });
+
+    services.ConfigureApplicationCookie(options => // For Identity cookies
+    {
+        // DANGEROUS: Similar issue for authentication cookie.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // Or .None
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Manual Cookie Creation without `Secure=true`
+    ```csharp
+    // Controllers/SettingsController.cs
+    public IActionResult SavePreference(string prefValue)
+    {
+        // DANGEROUS: Secure flag not set to true.
+        Response.Cookies.Append("userPref", prefValue, new CookieOptions {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict
+            // Secure = true, // This is missing
+        });
+        return Ok();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Set `CookieSecurePolicy.Always` for session and authentication cookies in `Startup.cs` for production environments. When manually appending cookies via `Response.Cookies.Append`, set `CookieOptions.Secure = true`.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure)
+    services.AddSession(options =>
+    {
+        options.Cookie.Name = ".MyApp.Session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        // SECURE: Ensures cookie is only sent over HTTPS.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+    });
+
+    services.ConfigureApplicationCookie(options => // For Identity cookies
+    {
+        // SECURE: Ensures authentication cookie is only sent over HTTPS.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        // ... other Identity cookie settings ...
+    });
+    ```
+    ```csharp
+    // Controllers/SettingsController.cs (Secure)
+    public IActionResult SavePreferenceSecure(string prefValue)
+    {
+        // SECURE: Secure flag set to true.
+        Response.Cookies.Append("userPref", prefValue, new CookieOptions {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Strict,
+            Secure = true // SECURE: Flag added
+        });
+        return Ok();
+    }
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect session (`.MyApp.Session`) and authentication (`.AspNetCore.Identity.Application`) cookies. Verify the "Secure" flag is set. Check any custom cookies set by the application.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Controlled by the `session.cookie_secure` directive in `php.ini` or `ini_set()`, and the `secure` parameter in `setcookie()`. Laravel controls this via `config/session.php`.
+
+    #### Vulnerable Scenario 1: `session.cookie_secure = Off`
+    ```ini
+    ; php.ini (Production Server)
+    session.use_cookies = 1
+    session.use_only_cookies = 1
+    ; DANGEROUS: Allows PHPSESSID cookie to be sent over HTTP.
+    session.cookie_secure = Off
+    session.cookie_httponly = On ; HttpOnly is good, but Secure is missing
+    session.cookie_samesite = Lax ; SameSite is good, but Secure is missing
+    ```
+
+    #### Vulnerable Scenario 2: `setcookie()` without `$secure` flag
+    ```php
+    <?php
+    // auth.php
+    $token = generate_remember_me_token();
+    $expiry = time() + (86400 * 30); // 30 days
+    // DANGEROUS: The 6th parameter (secure) is missing or false.
+    setcookie("remember_token", $token, $expiry, "/", "yourdomain.com", false, true); // secure=false, httponly=true
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **php.ini:** Set `session.cookie_secure = On` in production.
+    * **`setcookie()`:** Always set the `$secure` parameter (6th parameter) to `true` when setting sensitive cookies.
+    * **Laravel:** Ensure `'secure' => env('SESSION_SECURE_COOKIE', true)` is set in `config/session.php` and `SESSION_SECURE_COOKIE=true` is in the production `.env`.
+
+    #### Secure Code Example
+    ```ini
+    ; php.ini (Production - Secure)
+    session.cookie_secure = On ; SECURE
+    session.cookie_httponly = On
+    session.cookie_samesite = Strict ; Stricter is better
+    ```
+    ```php
+    <?php
+    // auth.php (Secure)
+    $token = generate_remember_me_token();
+    $expiry = time() + (86400 * 30);
+    $is_https = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+    // SECURE: The 6th parameter (secure) is set to true (or based on connection).
+    setcookie("remember_token", $token, $expiry, "/", "yourdomain.com", $is_https, true); // secure=true, httponly=true
+    ?>
+    ```
+    ```php
+    // config/session.php (Laravel - Secure)
+    'secure' => env('SESSION_SECURE_COOKIE', true), // Read from .env, default true
+    'http_only' => true,
+    'same_site' => 'strict',
+    ```
+    ```ini
+    # .env (Laravel Production - Secure)
+    SESSION_SECURE_COOKIE=true
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the `PHPSESSID` (or custom session name), `laravel_session`, and any custom sensitive cookies. Verify the "Secure" flag is set. Use `phpinfo()` (if accessible, shouldn't be in prod) to check `session.cookie_secure`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Controlled by the `cookie.secure` option in `express-session` or the `secure` option in `res.cookie()`.
+
+    #### Vulnerable Scenario 1: `express-session` without `cookie.secure`
+    ```javascript
+    // app.js
+    const session = require('express-session');
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    app.use(session({
+        secret: 'my-secret',
+        cookie: {
+            httpOnly: true,
+            sameSite: 'lax',
+            // DANGEROUS: 'secure' flag is missing or explicitly false.
+            // secure: false // Or simply omitted
+        }
+    }));
+    ```
+
+    #### Vulnerable Scenario 2: `res.cookie` without `secure: true`
+    ```javascript
+    // routes/auth.js
+    router.post('/login', (req, res) => {
+        // ... authentication logic ...
+        const sessionToken = generateSessionToken();
+        res.cookie('session_token', sessionToken, {
+            httpOnly: true,
+            // DANGEROUS: secure flag omitted or false.
+            // secure: false
+        });
+        res.send('Logged in');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **`express-session`:** Set `cookie.secure` to `true` in production environments. Often done conditionally: `secure: process.env.NODE_ENV === 'production'`. Ensure your proxy correctly sets `X-Forwarded-Proto` and enable `trust proxy` in Express if behind TLS termination.
+    * **`res.cookie`:** Explicitly add `secure: true` (or the conditional check) to the options object for sensitive cookies.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure express-session)
+    const session = require('express-session');
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    // SECURE: If behind a proxy terminating TLS (like Nginx, ELB)
+    app.set('trust proxy', 1); // Adjust count if multiple proxies
+
+    app.use(session({
+        secret: 'my-secret', // Load from env vars ideally
+        cookie: {
+            httpOnly: true,
+            sameSite: 'strict', // Stricter is better
+            // SECURE: Set based on environment. Requires 'trust proxy' if applicable.
+            secure: isProd
+        }
+    }));
+
+    // routes/auth.js (Secure res.cookie)
+    router.post('/login-secure', (req, res) => {
+        // ... authentication logic ...
+        const sessionToken = generateSessionToken();
+        const isProd = (process.env.NODE_ENV === 'production');
+        res.cookie('session_token', sessionToken, {
+            httpOnly: true,
+            sameSite: 'strict',
+            // SECURE: Set secure flag based on environment.
+            secure: isProd
+        });
+        res.send('Logged in securely');
+    });
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS in a production-like environment (`NODE_ENV=production`). Inspect the session cookie (`connect.sid` or custom name) and other sensitive cookies using browser developer tools. Verify the "Secure" flag is set.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Controlled by `config.force_ssl` (which forces secure cookies globally) or the `:secure` option in `config/initializers/session_store.rb` or when setting cookies manually.
+
+    #### Vulnerable Scenario 1: `config.force_ssl = false`
+    If HTTPS is enforced only at the proxy level and `config.force_ssl` is false, cookies might not get the `Secure` flag automatically.
+    ```ruby
+    # config/environments/production.rb
+    Rails.application.configure do
+      # DANGEROUS: If set to false, Rails might not add the Secure flag by default,
+      # relying on developers to add it manually or configure session_store.
+      config.force_ssl = false
+      # ...
+    end
+
+    # config/initializers/session_store.rb
+    # If :secure option is missing or false, cookie won't be secure
+    Rails.application.config.session_store :cookie_store, key: '_my_app_session'
+    ```
+
+    #### Vulnerable Scenario 2: Manual Cookie without `:secure`
+    ```ruby
+    # app/controllers/analytics_controller.rb
+    class AnalyticsController < ApplicationController
+      def track_user
+        tracking_id = SecureRandom.hex(16)
+        # DANGEROUS: Missing secure: true option.
+        cookies[:user_tracker] = {
+           value: tracking_id,
+           expires: 1.year.from_now,
+           httponly: true
+           # secure: Rails.env.production? # This line is missing
+        }
+        render plain: "Tracked"
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **`config.force_ssl = true`:** This is the easiest and most robust way in Rails production environments. It enforces HTTPS, HSTS, and sets the `Secure` flag on cookies automatically.
+    * **Manual Cookies:** If not using `force_ssl`, always add `secure: Rails.env.production?` (or just `secure: true` if always HTTPS) to the options hash when setting sensitive cookies manually.
+
+    #### Secure Code Example
+    ```ruby
+    # config/environments/production.rb (Secure - Recommended)
+    Rails.application.configure do
+      # SECURE: Enforces HTTPS and sets Secure flag on cookies automatically.
+      config.force_ssl = true
+      # ...
+    end
+
+    # app/controllers/analytics_controller.rb (Secure Manual Cookie)
+    class AnalyticsController < ApplicationController
+      def track_user_secure
+        tracking_id = SecureRandom.hex(16)
+        # SECURE: Added secure flag.
+        cookies[:user_tracker] = {
+           value: tracking_id,
+           expires: 1.year.from_now,
+           httponly: true,
+           secure: Rails.env.production?, # SECURE
+           same_site: :strict # Recommended
+        }
+        render plain: "Tracked Securely"
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the session cookie (`_my_app_session`) and any custom sensitive cookies. Verify the "Secure" flag is set. Check `config/environments/production.rb` for `config.force_ssl = true` or review `session_store.rb` and manual cookie setting code for the `:secure` flag.
+  </Tab>
+</Tabs>
