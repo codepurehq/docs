@@ -1,0 +1,414 @@
+---
+title: "Use of Insufficiently Random Values"
+sidebarTitle: "Weak Randomness (CWE-330)"
+description: "Mitigation for using predictable or weak random number generators for security-sensitive purposes like tokens or keys."
+icon: "dice"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application uses random number generators (RNGs) that produce predictable or easily guessable outputs for security-sensitive purposes. This includes generating session IDs, CSRF tokens, password reset tokens, cryptographic keys, salts, or nonces/IVs. Using weak RNGs (often called pseudo-random number generators or PRNGs) means an attacker might be able to predict future "random" values, compromising security mechanisms. 🎲❓
+
+---
+
+## Business Impact
+
+Predictable random values can lead to various attacks:
+* **Session Hijacking:** If session IDs are predictable, attackers can guess valid IDs and take over user sessions.
+* **CSRF Token Bypass:** Predictable CSRF tokens can be guessed, nullifying CSRF protection.
+* **Password Reset Poisoning:** Predictable password reset tokens allow attackers to reset passwords for arbitrary users.
+* **Cryptographic Weaknesses:** Predictable keys, salts, IVs, or nonces weaken encryption and hashing significantly, potentially allowing decryption or cracking.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-330](https://cwe.mitre.org/data/definitions/330.html) (Includes CWE-331, CWE-335, CWE-336, CWE-337, CWE-338, CWE-340)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Modern operating systems and language runtimes provide access to **cryptographically secure pseudo-random number generators (CSPRNGs)**. These are designed to produce unpredictable outputs suitable for security purposes. The vulnerability arises when developers use **non-cryptographic PRNGs** (like Python's `random` module, Java's `java.util.Random`, or `Math.random()` in JS/PHP) for generating security-sensitive values.
+
+The fix is to **always use the system's CSPRNG** for anything security-related.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using the standard `random` module for security tokens instead of `secrets` or `os.urandom`.
+
+    #### Vulnerable Scenario 1: Predictable Session ID
+    ```python
+    # custom_session_backend.py
+    import random
+    import string
+
+    def generate_session_id():
+        # DANGEROUS: random.choice uses Mersenne Twister, a non-cryptographic PRNG.
+        # Its output can be predicted after observing enough previous outputs.
+        length = 32
+        chars = string.ascii_letters + string.digits
+        return ''.join(random.choice(chars) for _ in range(length))
+    ```
+
+    #### Vulnerable Scenario 2: Predictable Password Reset Token
+    ```python
+    # accounts/utils.py
+    import random
+    import time
+
+    def generate_reset_token():
+        # DANGEROUS: Seeding with time makes the output somewhat predictable,
+        # especially if the attacker knows roughly when the token was generated.
+        # Even without time, `random.randint` is not cryptographically secure.
+        random.seed(time.time())
+        return str(random.randint(1000000000, 9999999999))
+    ```
+
+    #### Mitigation and Best Practices
+    Use the `secrets` module (Python 3.6+) for generating tokens, keys, etc. For generating random bytes (e.g., salts, IVs), use `os.urandom()`.
+
+    #### Secure Code Example
+    ```python
+    # custom_session_backend.py (Secure)
+    import secrets
+    import string
+
+    def generate_session_id():
+        # SECURE: secrets.choice uses os.urandom() or equivalent CSPRNG.
+        length = 32
+        chars = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(chars) for _ in range(length))
+
+    # accounts/utils.py (Secure)
+    import secrets
+
+    def generate_reset_token():
+        # SECURE: Generates a cryptographically strong URL-safe text string.
+        return secrets.token_urlsafe(32) # e.g., 32 bytes gives ~43 chars
+    ```
+
+    #### Testing Strategy
+    Review code for usage of the `random` module. Ensure any security-sensitive value generation uses `secrets` or `os.urandom`. Static analysis tools can often detect use of weak PRNGs.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `java.util.Random` instead of `java.security.SecureRandom`.
+
+    #### Vulnerable Scenario 1: Predictable CSRF Token
+    ```java
+    // filter/CsrfTokenFilter.java
+    import java.util.Random;
+    import java.math.BigInteger;
+
+    public String generateCsrfToken() {
+        // DANGEROUS: java.util.Random uses a linear congruential generator (LCG),
+        // which is highly predictable.
+        Random random = new Random();
+        return new BigInteger(130, random).toString(32); // 130 bits, base32
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Predictable IV for Encryption
+    ```java
+    // service/EncryptionService.java
+    import javax.crypto.Cipher;
+    import javax.crypto.spec.IvParameterSpec;
+    import java.util.Random;
+
+    public byte[] encryptAesCbc(byte[] keyBytes, byte[] data) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        byte[] iv = new byte[16];
+        // DANGEROUS: Using the weak Random for a cryptographic IV.
+        new Random().nextBytes(iv);
+        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        // ... cipher.init(..., ivSpec) ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `java.security.SecureRandom` for generating salts, IVs, nonces, tokens, and keys.
+
+    #### Secure Code Example
+    ```java
+    // filter/CsrfTokenFilter.java (Secure)
+    import java.security.SecureRandom;
+    import java.math.BigInteger;
+
+    public String generateCsrfToken() {
+        // SECURE: SecureRandom uses a cryptographically strong source of randomness.
+        SecureRandom random = new SecureRandom();
+        return new BigInteger(130, random).toString(32);
+    }
+
+    // service/EncryptionService.java (Secure)
+    import javax.crypto.Cipher;
+    import javax.crypto.spec.IvParameterSpec;
+    import java.security.SecureRandom;
+
+    public byte[] encryptAesCbc(byte[] keyBytes, byte[] data) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        byte[] iv = new byte[16];
+        // SECURE: Use SecureRandom for cryptographic IVs.
+        new SecureRandom().nextBytes(iv);
+        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        // ... cipher.init(..., ivSpec) ...
+    }
+    ```
+
+    #### Testing Strategy
+    Review code for instances of `new Random()`. Replace them with `new SecureRandom()`. Ensure `SecureRandom` is used for generating IVs, salts, tokens, etc.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `System.Random` instead of `System.Security.Cryptography.RandomNumberGenerator`.
+
+    #### Vulnerable Scenario 1: Predictable Verification Code
+    ```csharp
+    // Services/OtpService.cs
+    using System;
+
+    public class OtpService
+    {
+        public string GenerateOtp()
+        {
+            // DANGEROUS: System.Random is not cryptographically secure.
+            // Output can be predicted, especially if seeded predictably.
+            var random = new Random();
+            return random.Next(100000, 999999).ToString("D6");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Predictable Salt Generation
+    ```csharp
+    // Services/AuthService.cs
+    using System;
+    using System.Security.Cryptography;
+
+    public byte[] GenerateSalt()
+    {
+        byte[] salt = new byte[16];
+        // DANGEROUS: Using the weak System.Random for a salt.
+        var random = new Random();
+        random.NextBytes(salt);
+        return salt;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `System.Security.Cryptography.RandomNumberGenerator` for all security-sensitive random numbers and bytes.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/OtpService.cs (Secure)
+    using System.Security.Cryptography;
+
+    public class OtpService
+    {
+        public string GenerateOtp()
+        {
+            // SECURE: Uses a CSPRNG.
+            int otpValue = RandomNumberGenerator.GetInt32(100000, 999999 + 1); // Upper bound is exclusive
+            return otpValue.ToString("D6");
+        }
+    }
+
+    // Services/AuthService.cs (Secure)
+    using System.Security.Cryptography;
+
+    public byte[] GenerateSalt()
+    {
+        byte[] salt = new byte[16];
+        // SECURE: Fills the array with cryptographically strong random bytes.
+        RandomNumberGenerator.Fill(salt);
+        return salt;
+    }
+    ```
+
+    #### Testing Strategy
+    Review code for usages of `new System.Random()`. Ensure security-related randomness uses `RandomNumberGenerator.Fill()` or `RandomNumberGenerator.GetInt32()`.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `rand()`, `mt_rand()`, or `uniqid()` for security purposes instead of `random_bytes()` or `random_int()`.
+
+    #### Vulnerable Scenario 1: Predictable Session ID with `mt_rand()`
+    ```php
+    // session_handler.php (Custom Session Handler)
+    function generate_session_id() {
+        // DANGEROUS: mt_rand() is a PRNG (Mersenne Twister) and not
+        // cryptographically secure. Its state can be predicted.
+        return bin2hex(pack('L', mt_rand()) . pack('L', mt_rand()));
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Using `uniqid()` for Tokens
+    Generating a password reset token using `uniqid()`.
+    ```php
+    // controllers/PasswordController.php
+    function send_reset_link($email) {
+        // DANGEROUS: uniqid() is based on the system time and is easily guessable.
+        // Even with more_entropy=true, it's not considered secure enough.
+        $token = uniqid('reset_', true);
+        // ... save token and send email ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `random_bytes()` to generate cryptographically secure random bytes (for salts, keys, IVs, tokens). Use `random_int()` to generate cryptographically secure random integers within a range.
+
+    #### Secure Code Example
+    ```php
+    // session_handler.php (Secure Session ID)
+    function generate_session_id() {
+        // SECURE: random_bytes() uses the OS's CSPRNG.
+        return bin2hex(random_bytes(16)); // 16 bytes = 32 hex chars
+    }
+
+    // controllers/PasswordController.php (Secure Token)
+    function send_reset_link($email) {
+        // SECURE: Generate a strong, unpredictable token.
+        $token = bin2hex(random_bytes(32)); // 32 bytes = 64 hex chars
+        // ... save token and send email ...
+    }
+    ```
+
+    #### Testing Strategy
+    Scan code for usage of `rand()`, `mt_rand()`, and `uniqid()`. Replace their usage in security contexts with `random_bytes()` or `random_int()`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using `Math.random()` instead of Node's built-in `crypto.randomBytes()` or `crypto.randomInt()`.
+
+    #### Vulnerable Scenario 1: Predictable API Key Generation
+    ```javascript
+    // utils/apiKeyGenerator.js
+    function generateApiKey() {
+      // DANGEROUS: Math.random() is NOT cryptographically secure.
+      // Its output is predictable.
+      return Math.random().toString(36).substring(2, 15) +
+             Math.random().toString(36).substring(2, 15);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Predictable Salt for Hashing
+    ```javascript
+    // utils/auth.js
+    const crypto = require('crypto');
+
+    function hashPasswordWeakSalt(password) {
+        // DANGEROUS: Using Math.random() to create a salt.
+        const weakSalt = Math.random().toString(16).substring(2);
+        const hash = crypto.createHmac('sha256', weakSalt)
+                           .update(password)
+                           .digest('hex');
+        return weakSalt + ':' + hash;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `crypto.randomBytes()` to generate secure random bytes. Use `crypto.randomInt()` for secure random integers.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/apiKeyGenerator.js (Secure)
+    const crypto = require('crypto');
+
+    function generateApiKey() {
+      // SECURE: Generate 32 cryptographically strong random bytes, encode as hex.
+      return crypto.randomBytes(32).toString('hex');
+    }
+
+    // utils/auth.js (Secure Salt)
+    const crypto = require('crypto');
+
+    function hashPasswordSecureSalt(password, callback) {
+        // SECURE: Generate a cryptographically strong salt.
+        const salt = crypto.randomBytes(16);
+        // Use PBKDF2 with the secure salt and high iterations
+        crypto.pbkdf2(password, salt, 100000, 64, 'sha512', (err, derivedKey) => {
+            if (err) throw err;
+            callback(salt.toString('hex') + ':' + derivedKey.toString('hex'));
+        });
+    }
+    ```
+
+    #### Testing Strategy
+    Review code for any usage of `Math.random()`. Replace it with `crypto.randomBytes()` or `crypto.randomInt()` in all security-sensitive contexts (token generation, key generation, IVs, salts).
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using Ruby's default `rand()` or `Random.new` instead of `SecureRandom`.
+
+    #### Vulnerable Scenario 1: Predictable Session ID
+    A custom session store using `rand()`.
+    ```ruby
+    # lib/custom_session_store.rb
+    class CustomSessionStore
+      def generate_sid
+        # DANGEROUS: Kernel#rand uses a predictable PRNG (Mersenne Twister).
+        rand(36**32).to_s(36) # Example generation
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Predictable Nonce for Encryption
+    Generating a nonce for AES-GCM using `rand()`.
+    ```ruby
+    # lib/encryption.rb
+    require 'openssl'
+
+    def encrypt_aes_gcm_weak_nonce(key, data)
+      cipher = OpenSSL::Cipher.new('aes-256-gcm')
+      cipher.encrypt
+      cipher.key = key
+      # DANGEROUS: Using weak rand() for a cryptographic nonce.
+      iv = rand(2**96).to_s(16).rjust(24, '0') # 96-bit nonce example
+      cipher.iv = [iv].pack('H*') # Convert hex string to bytes
+      # ... encryption ...
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Use `SecureRandom` for all security needs. `SecureRandom.hex(n)` for hex tokens, `SecureRandom.urlsafe_base64(n)` for URL-safe tokens, `SecureRandom.random_bytes(n)` for raw bytes.
+
+    #### Secure Code Example
+    ```ruby
+    # lib/custom_session_store.rb (Secure)
+    require 'securerandom'
+
+    class CustomSessionStore
+      def generate_sid
+        # SECURE: SecureRandom uses the OS's CSPRNG.
+        SecureRandom.hex(16) # 16 bytes = 32 hex chars
+      end
+    end
+
+    # lib/encryption.rb (Secure Nonce)
+    require 'openssl'
+    require 'securerandom'
+
+    def encrypt_aes_gcm_secure_nonce(key, data)
+      cipher = OpenSSL::Cipher.new('aes-256-gcm')
+      cipher.encrypt
+      cipher.key = key
+      # SECURE: Use SecureRandom for the nonce/IV.
+      # `cipher.random_iv` is the preferred way as it uses SecureRandom internally.
+      iv = cipher.random_iv
+      # Or SecureRandom.random_bytes(12) for GCM
+      cipher.auth_data = ""
+      # ... encryption ...
+    end
+    ```
+
+    #### Testing Strategy
+    Scan code for usage of `rand()` and `Random.new()`. Ensure all security-sensitive random value generation uses methods from the `SecureRandom` module.
+  </Tab>
+</Tabs>
