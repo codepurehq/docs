@@ -10,8 +10,6 @@ iconType: "solid"
 
 This vulnerability occurs when an application **fails to limit the number of repeated authentication attempts** from a single user or IP address within a short period. Without such restrictions, attackers can use automated tools to rapidly submit thousands or millions of password guesses (**brute-force attack**) or common passwords (**dictionary attack**) against valid usernames. This significantly increases the likelihood of an attacker guessing a correct password and gaining unauthorized access. 🔑➡️💥
 
----
-
 ## Business Impact
 
 Failure to restrict excessive authentication attempts directly leads to:
@@ -20,16 +18,12 @@ Failure to restrict excessive authentication attempts directly leads to:
 * **Resource Consumption:** Brute-force attacks can consume server CPU and network bandwidth.
 * **Detection Evasion:** Slow, distributed brute-force attacks might go unnoticed if basic attempt logging is the only defense.
 
----
-
-<Card title="Reference Details" icon="book-open" iconType:="solid">
+<Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-307](https://cwe.mitre.org/data/definitions/307.html)
   **Related CWEs:** CWE-799 (Improper Control of Interaction Frequency), CWE-1216 (Lockout Errors)
   **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
   **Severity:** High
 </Card>
-
----
 
 ## Framework-Specific Analysis and Remediation
 
@@ -42,45 +36,37 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
 4.  **Secure Lockout Mechanism:** Ensure the lockout mechanism itself cannot be abused for Denial of Service (e.g., avoid permanent lockouts triggered solely by failed attempts).
 5.  **Logging and Monitoring:** Log failed login attempts and lockout events to detect attacks. Alert administrators to high rates of failures.
 
----
-
 <Tabs>
   <Tab title="Python">
     #### Framework Context
     Using libraries like `django-ratelimit`, `django-axes`, `Flask-Limiter` to apply limits specifically to login views.
 
-    #### Vulnerable Scenario 1: Django Login View without Limits
+    #### Vulnerable Scenario 1: No Login Attempt Limit (Django)
     ```python
     # accounts/views.py
     from django.contrib.auth.views import LoginView
 
     class UserLoginView(LoginView):
         template_name = 'accounts/login.html'
-        # DANGEROUS: No rate limiting or lockout mechanism applied.
-        # Vulnerable to brute-force attacks against user passwords.
+        # DANGEROUS: No mechanism to prevent an attacker from submitting
+        # thousands of password guesses per minute for a given username.
     ```
 
-    #### Vulnerable Scenario 2: Flask Login Route without Limits
+    #### Vulnerable Scenario 2: Unprotected API Endpoint (Flask)
     ```python
     # app.py (Flask)
-    @app.route('/login', methods=['GET', 'POST'])
-    def login():
-        if request.method == 'POST':
-            username = request.form['username']
-            password = request.form['password']
-            user = find_user(username)
-            # DANGEROUS: No tracking of failed attempts per username or IP.
-            if user and check_password_hash(user.password_hash, password):
-                login_user(user) # Assume Flask-Login
-                return redirect('/dashboard')
-            else:
-                flash('Invalid credentials') # Failure not tracked/limited
-        return render_template('login.html')
+    @app.route('/api/search', methods=['GET'])
+    def api_search():
+        query = request.args.get('q')
+        # DANGEROUS: This search might be resource-intensive.
+        # An attacker can flood this endpoint, causing DoS.
+        # No rate limiting is applied.
+        results = perform_complex_search(query)
+        return jsonify(results)
     ```
 
     #### Mitigation and Best Practices
-    * **Django:** Use `django-axes` to track failed login attempts and implement lockouts, or use `django-ratelimit` to throttle login attempts based on IP, username, or other keys.
-    * **Flask:** Use `Flask-Limiter` to apply rate limits to the login route based on IP address and potentially form fields (`username`).
+    Integrate a rate-limiting library. Apply decorators or middleware to the specific views/routes that need protection. Use Redis or Memcached for distributed rate limiting in multi-server environments.
 
     #### Secure Code Example
     ```python
@@ -96,6 +82,7 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     # LoginView will automatically use the Axes backend if configured.
 
     # views.py (Django with django-ratelimit)
+    from django.contrib.auth.views import LoginView
     from ratelimit.decorators import ratelimit
     from django.utils.decorators import method_decorator
 
@@ -108,28 +95,42 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     ```
     ```python
     # app.py (Flask with Flask-Limiter)
+    from flask import Flask, request, jsonify # Added request, jsonify
     from flask_limiter import Limiter
     from flask_limiter.util import get_remote_address
 
-    limiter = Limiter(get_remote_address, app=app, storage_uri="memory://") # Use Redis in prod
+    app = Flask(__name__) # Assume app exists
+    limiter = Limiter(
+        get_remote_address, # Use IP address for tracking
+        app=app,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://" # Use "redis://localhost:6379" etc. for production
+    )
 
+    @app.route('/api/search-secure')
+    @limiter.limit("10 per minute") # SECURE: Specific limit for this endpoint
+    def api_search_secure():
+        query = request.args.get('q')
+        results = perform_complex_search(query) # Assume this exists
+        return jsonify(results)
+    
     @app.route('/login-secure', methods=['GET', 'POST'])
     # SECURE: Limit POST requests based on IP AND username form field
     @limiter.limit("5 per minute", key_func=lambda: f"{get_remote_address()}:{request.form.get('username')}", methods=['POST'])
     def login_secure():
         if request.method == 'POST':
             # ... login logic ...
-            if login_successful:
+            if login_successful: # Assume this variable is set
                  limiter.reset() # Optional: Reset limit on success for this key
                  # ...
             else:
                  # Limit applied automatically by decorator
-                 flash('Invalid credentials')
-        return render_template('login.html')
+                 flash('Invalid credentials') # Assume flash exists
+        return render_template('login.html') # Assume render_template exists
     ```
 
     #### Testing Strategy
-    Use an automated tool (Burp Intruder, Hydra, custom script) to submit multiple invalid password attempts for a valid username to the login endpoint. Verify that after the configured number of attempts (e.g., 5), subsequent requests are blocked (e.g., `429 Too Many Requests`, `403 Forbidden`, lockout page) for the configured duration. Test throttling by IP address as well by attacking different usernames from the same IP.
+    Use automated tools (like `wfuzz`, `ffuf`, Burp Intruder) or simple scripts (e.g., `curl` in a loop) to send rapid, repeated requests to login endpoints, password reset forms, and resource-intensive API endpoints. Verify that after exceeding the configured limit, the server responds with an appropriate error (e.g., `429 Too Many Requests`) and blocks further requests for a period. Test different keys (IP vs. user vs. form field).
   </Tab>
   <Tab title="Java">
     #### Framework Context
@@ -139,6 +140,7 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     The basic `formLogin()` configuration doesn't include brute-force protection out of the box.
     ```java
     // config/SecurityConfig.java
+    // Assume WebSecurityConfigurerAdapter extension
     @Override
     protected void configure(HttpSecurity http) throws Exception {
         http
@@ -151,7 +153,7 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     #### Vulnerable Scenario 2: Custom Authentication Logic without Tracking
     A custom authentication method doesn't track or limit failures.
     ```java
-    // service/AuthService.java
+    // service/AuthService.java - Assume UserDetails, UserDetailsService, PasswordEncoder exist
     public boolean authenticate(String username, String password) {
         UserDetails user = userDetailsService.loadUserByUsername(username);
         // DANGEROUS: Failure count is not tracked or limited.
@@ -223,20 +225,23 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     public class AuthenticationFailureListener
            implements ApplicationListener<AuthenticationFailureBadCredentialsEvent> {
 
-        @Autowired private HttpServletRequest request; // Inject request for IP
+        @Autowired(required = false) // Make request optional if not always in context
+        private HttpServletRequest request; // Inject request for IP
         @Autowired private LoginAttemptService loginAttemptService;
 
         @Override
         public void onApplicationEvent(AuthenticationFailureBadCredentialsEvent e) {
-            final String xfHeader = request.getHeader("X-Forwarded-For");
-            String key; // Track by IP
-            if (xfHeader == null) {
-                key = request.getRemoteAddr();
-            } else {
-                key = xfHeader.split(",")[0]; // Get client IP from proxy header
+            String key = "unknown_ip"; // Default
+            if (request != null) {
+                 final String xfHeader = request.getHeader("X-Forwarded-For");
+                 if (xfHeader == null) {
+                    key = request.getRemoteAddr();
+                 } else {
+                    key = xfHeader.split(",")[0]; // Get client IP from proxy header
+                 }
             }
             // Could also extract username: e.getAuthentication().getName();
-            loginAttemptService.loginFailed(key);
+            loginAttemptService.loginFailed(key); // Track by IP
         }
     }
     // Need a similar AuthenticationSuccess Listener to call loginSucceeded.
@@ -254,14 +259,21 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     The default Identity configuration might have lockout disabled or set with very high thresholds.
     ```csharp
     // Startup.cs (ConfigureServices)
-    services.AddDefaultIdentity<IdentityUser>(options => {
-        // ... other options ...
-        // DANGEROUS: Lockout might be disabled by default or configured weakly.
-        options.Lockout.AllowedForNewUsers = false; // Example: Disabled
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1); // Too short?
-        options.Lockout.MaxFailedAccessAttempts = 100; // Too high!
-    })
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    using Microsoft.AspNetCore.Identity; // Added namespace
+    using Microsoft.Extensions.DependencyInjection; // Added namespace
+    // Assume ApplicationDbContext, IdentityUser exist
+    public void ConfigureServices(IServiceCollection services) // Example signature
+    {
+        services.AddDefaultIdentity<IdentityUser>(options => {
+            // ... other options ...
+            // DANGEROUS: Lockout might be disabled by default or configured weakly.
+            options.Lockout.AllowedForNewUsers = false; // Example: Disabled
+            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1); // Too short?
+            options.Lockout.MaxFailedAccessAttempts = 100; // Too high!
+        })
+        .AddEntityFrameworkStores<ApplicationDbContext>();
+        // ...
+    }
     ```
 
     #### Vulnerable Scenario 2: No General Rate Limiting
@@ -274,31 +286,38 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     #### Secure Code Example
     ```csharp
     // Startup.cs (ConfigureServices - Secure Identity Lockout)
-    services.AddDefaultIdentity<IdentityUser>(options => {
-        options.SignIn.RequireConfirmedAccount = true; // Good practice
-        // SECURE: Configure sensible lockout settings.
-        options.Lockout.AllowedForNewUsers = true;
-        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15); // 15-minute lockout
-        options.Lockout.MaxFailedAccessAttempts = 5; // Lock after 5 failed attempts
-    })
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    using Microsoft.AspNetCore.Identity;
+    using Microsoft.Extensions.DependencyInjection;
+    using System; // Added for TimeSpan
+    // ...
+    public void ConfigureServices(IServiceCollection services) // Example signature
+    {
+        services.AddDefaultIdentity<IdentityUser>(options => {
+            options.SignIn.RequireConfirmedAccount = true; // Good practice
+            // SECURE: Configure sensible lockout settings.
+            options.Lockout.AllowedForNewUsers = true;
+            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15); // 15-minute lockout
+            options.Lockout.MaxFailedAccessAttempts = 5; // Lock after 5 failed attempts
+        })
+        .AddEntityFrameworkStores<ApplicationDbContext>(); // Assuming ApplicationDbContext
+        // ...
+        // Add AspNetCoreRateLimit configuration as shown in CWE-799 example,
+        // ensuring the login endpoint has appropriate IP-based rules, e.g.:
+        // { "Endpoint": "*:/Account/Login", "Period": "1m", "Limit": 10 } // Limit per IP before user lockout
+    }
 
-    // Add AspNetCoreRateLimit configuration as shown in CWE-799 example,
-    // ensuring the login endpoint has appropriate IP-based rules, e.g.:
-    // { "Endpoint": "*:/Account/Login", "Period": "1m", "Limit": 10 } // Limit per IP before user lockout
-    ```
-    ```csharp
     // Controllers/AccountController.cs (Ensure lockoutOnFailure is true)
+    // Assume _signInManager, _logger, LoginViewModel exist
     public async Task<IActionResult> Login(LoginViewModel model)
     {
-        // ... find user ...
+        // ... model state check ...
         // SECURE: Ensure lockoutOnFailure is true (default is often false).
-        var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe,
+        var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe,
             lockoutOnFailure: true);
 
         if (result.Succeeded) { /* ... */ }
         if (result.IsLockedOut) {
-             _logger.LogWarning("User account locked out.");
+             _logger.LogWarning("User account locked out: {Email}", model.Email);
              return RedirectToAction("Lockout"); // Show lockout page
         }
         // ... handle other failures ...
@@ -317,11 +336,14 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     ```php
     // app/Http/Controllers/Auth/LoginController.php (Modified)
     namespace App\Http\Controllers\Auth;
+    use App\Http\Controllers\Controller; // Added base controller
+    use Illuminate\Foundation\Auth\AuthenticatesUsers; // Added trait
     // ... use statements ...
     class LoginController extends Controller
     {
         // DANGEROUS: The ThrottlesLogins trait is removed or commented out.
         // use ThrottlesLogins;
+        use AuthenticatesUsers; // Only has auth logic, not throttling
 
         // ... constructor, redirectTo etc. ...
 
@@ -335,10 +357,11 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     // login.php (Plain PHP)
     session_start();
     // ... get username, password from POST ...
+    // Assume get_password_hash_from_db, get_user_id exist
     $stored_hash = get_password_hash_from_db($username);
 
     // DANGEROUS: No tracking of failed attempts.
-    if ($stored_hash && password_verify($input_password, $stored_hash)) {
+    if ($stored_hash && password_verify($password, $stored_hash)) {
         session_regenerate_id(true);
         $_SESSION['user_id'] = get_user_id($username);
         header('Location: /dashboard.php');
@@ -373,9 +396,11 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
         // protected $maxAttempts = 3; // Default is 5
         // protected $decayMinutes = 2; // Default is 1
 
-        protected $redirectTo = '/home';
+        protected $redirectTo = '/home'; // Define redirect path
 
-        public function __construct() { /* ... */ }
+        public function __construct() {
+             $this->middleware('guest')->except('logout');
+        }
 
         // Override username() if not using 'email'
         // public function username() { return 'username'; }
@@ -387,44 +412,50 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     session_start();
     define('MAX_LOGIN_ATTEMPTS', 5);
     define('LOCKOUT_TIME_SECONDS', 15 * 60); // 15 minutes
+    
+    // Assume helper functions using a persistent store (DB, Redis) exist:
+    // get_failed_attempts($key), is_lockout_expired($key),
+    // reset_failed_attempts($key), record_failed_attempt($key)
 
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     $ip_address = $_SERVER['REMOTE_ADDR'];
 
-    // Use a persistent store (DB, Redis, Memcached) for attempts, not session alone
-    // Example keys: "login_attempt_ip:$ip_address", "login_attempt_user:$username"
-    $ip_attempts = get_failed_attempts("ip:$ip_address"); // Assume function exists
-    $user_attempts = get_failed_attempts("user:$username"); // Assume function exists
+    $ip_key = "login_attempt_ip:$ip_address";
+    $user_key = "login_attempt_user:$username";
 
     // Check lockout
-    if ($ip_attempts >= MAX_LOGIN_ATTEMPTS * 2 || $user_attempts >= MAX_LOGIN_ATTEMPTS) {
+    if (get_failed_attempts($ip_key) >= (MAX_LOGIN_ATTEMPTS * 10) || // Stricter IP limit
+        ($username && get_failed_attempts($user_key) >= MAX_LOGIN_ATTEMPTS)) {
+        
         // Check if lockout time has passed (needs timestamp storage)
-        if (!is_lockout_expired("user:$username")) { // Assume function exists
-             die("Too many failed attempts. Please try again later.");
+        if ($username && !is_lockout_expired($user_key)) { // Check user lockout first
+             die("Too many failed attempts for this user. Please try again later.");
+        } else if (!is_lockout_expired($ip_key)) {
+             die("Too many failed attempts from this IP. Please try again later.");
         } else {
-             reset_failed_attempts("user:$username"); // Reset if expired
-             // Optionally reset IP too, or handle IPs differently
+             // Reset if expired
+             if ($username) reset_failed_attempts($user_key);
+             reset_failed_attempts($ip_key);
         }
     }
 
     $stored_hash = get_password_hash_from_db($username);
 
     if ($stored_hash && password_verify($password, $stored_hash)) {
-        reset_failed_attempts("ip:$ip_address");
-        reset_failed_attempts("user:$username");
+        reset_failed_attempts($ip_key);
+        if ($username) reset_failed_attempts($user_key);
         session_regenerate_id(true);
         $_SESSION['user_id'] = get_user_id($username);
         header('Location: /dashboard.php');
         exit;
     } else {
         // Record failed attempt
-        record_failed_attempt("ip:$ip_address");
-        if ($username) { record_failed_attempt("user:$username"); }
+        record_failed_attempt($ip_key);
+        if ($username) record_failed_attempt($user_key);
         header('Location: /login.php?error=1');
         exit;
     }
-    // Need helper functions: get_failed_attempts, is_lockout_expired, reset_failed_attempts, record_failed_attempt
     ?>
     ```
 
@@ -438,23 +469,34 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     #### Vulnerable Scenario 1: Login Route without Rate Limiting
     ```javascript
     // app.js
+    const express = require('express'); // Added imports for context
+    const app = express();
+    // Assume User model, bcrypt, session middleware exist
+    app.use(express.urlencoded({ extended: true })); // Parse form body
+
     app.post('/login', async (req, res) => {
         const { username, password } = req.body;
-        // DANGEROUS: No limit on how often this can be called.
+        // DANGEROUS: No limit on login attempts.
         const user = await User.findOne({ username });
         if (user && await bcrypt.compare(password, user.passwordHash)) {
             // ... login success ...
+            req.session.userId = user._id;
+            res.redirect('/dashboard');
         } else {
             // Failure, but no tracking/limiting
             res.status(401).send('Invalid credentials');
         }
     });
+
+    app.listen(3000);
     ```
 
     #### Vulnerable Scenario 2: Rate Limiter Only By IP
     While better than nothing, only limiting by IP allows an attacker to brute-force *many different usernames* from the same IP address without hitting the limit for any single user.
     ```javascript
     // app.js
+    const rateLimit = require('express-rate-limit');
+    // ... setup app ...
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
         max: 100, // Limit each IP to 100 requests per windowMs
@@ -469,41 +511,44 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
     #### Secure Code Example
     ```javascript
     // app.js (Secure Login Limiter)
+    const express = require('express');
     const rateLimit = require('express-rate-limit');
-    const app = require('express')(); // Initialize app
+    const app = express();
     app.use(express.json()); // Middleware to parse JSON body
     app.use(express.urlencoded({ extended: true })); // Middleware to parse form body
+    app.set('trust proxy', 1); // Trust proxy if behind one for req.ip
 
     const loginLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
         max: 5, // SECURE: Limit each user/IP combination to 5 attempts per window
-        message: 'Too many login attempts, please try again after 15 minutes',
+        message: 'Too many login attempts from this IP/user, please try again after 15 minutes',
         standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
         legacyHeaders: false, // Disable the `X-RateLimit-*` headers
         // SECURE: Key includes both IP and username from form body
         keyGenerator: (req, res) => {
-             // Ensure username exists and is sanitized if necessary, handle potential errors
+             // Ensure username exists
              const username = req.body.username || 'unknown_user';
              // Use req.ip (requires `app.set('trust proxy', 1)` if behind proxy)
              return req.ip + ':' + username.toLowerCase();
         },
         // Optional: Handler to log blocked requests
-        // handler: (req, res, next, options) => {
-        //    log.warn(`Rate limit exceeded for key: ${options.keyGenerator(req, res)}`);
-        //    res.status(options.statusCode).send(options.message);
-        // }
+        handler: (req, res, next, options) => {
+           // Assume logger exists
+           // logger.warn(`Rate limit exceeded for key: ${options.keyGenerator(req, res)}`);
+           res.status(options.statusCode).send(options.message);
+        }
     });
 
     // Apply the limiter ONLY to the login POST route
     app.post('/login-secure', loginLimiter, async (req, res) => {
         const { username, password } = req.body;
         // ... authentication logic (find user, bcrypt.compare) ...
-        if (login_successful) {
-            // Optional: Reset limiter count on success? Depends on library/store.
-            // Some stores might have methods like limiter.resetKey(key)
-             // ... login success (regenerate session etc.) ...
+        if (login_successful) { // Assume variable exists
+            // Optional: Reset limiter count on success (requires external store like Redis)
+            // await loginLimiter.resetKey(req.ip + ':' + username.toLowerCase());
+            // ... login success (regenerate session etc.) ...
         } else {
-             // Rate limiter handles blocking if needed before this point
+             // Rate limiter handles blocking if needed (or increments count)
              res.status(401).send('Invalid credentials');
         }
     });
@@ -515,85 +560,96 @@ Brute-force protection is usually implemented via **rate limiting** (temporary b
   </Tab>
   <Tab title="Ruby">
     #### Framework Context
-    Using `rack-attack` gem with specific throttle rules for login paths, keyed by IP and relevant parameters (like email).
+    Using gems like `rack-attack` as middleware. Devise has some built-in tracking (`:lockable` module), but `rack-attack` is often used for IP/request-based throttling.
 
-    #### Vulnerable Scenario 1: Devise Login Without `rack-attack`
-    A standard Devise setup without `rack-attack` configured.
+    #### Vulnerable Scenario 1: Devise Login Without `rack-attack` or `:lockable`
+    A standard Devise setup without `rack-attack` configured and without the `:lockable` module enabled on the User model.
     ```ruby
     # config/routes.rb
     devise_for :users # Standard Devise routes
-    # DANGEROUS: No rack-attack initializer or middleware configured.
-    # The /users/sign_in endpoint is vulnerable to brute-force.
+    # DANGEROUS: No rack-attack initializer configured.
+
+    # app/models/user.rb
+    class User < ApplicationRecord
+      # DANGEROUS: :lockable module is not included.
+      devise :database_authenticatable, :registerable,
+             :recoverable, :rememberable, :validatable
+    end
     ```
 
     #### Vulnerable Scenario 2: `rack-attack` Configured but Missing Login Path
     ```ruby
     # config/initializers/rack_attack.rb
-    Rack::Attack.throttle('req/ip', limit: 100, period: 5.minutes, &:ip)
-    # DANGEROUS: General request limit exists, but no specific,
-    # stricter limit for the sensitive POST /users/sign_in path.
-    # 100 attempts in 5 mins might be too high for login.
+    class Rack::Attack
+      # DANGEROUS: General request limit exists, but no specific,
+      # stricter limit for the sensitive POST /users/sign_in path.
+      throttle('req/ip', limit: 100, period: 5.minutes, &:ip)
+      # Missing: throttle('logins/ip', ...)
+    end
     ```
 
     #### Mitigation and Best Practices
-    Configure `rack-attack` middleware. Define specific, stricter `throttle` rules for the login path (`POST /users/sign_in` for Devise). Key the throttle by both IP address (`req.ip`) and the submitted email/username parameter (`req.params['user']['email']`) to prevent username cycling from a single IP.
+    * **Devise `:lockable`:** Add the `:lockable` module to your User model in Devise. Configure it in `config/initializers/devise.rb` (e.g., `config.maximum_attempts = 5`, `config.lock_strategy = :failed_attempts`, `config.unlock_strategy = :time`, `config.unlock_in = 15.minutes`). This provides *user-specific* lockout.
+    * **`rack-attack`:** Implement `rack-attack` (as a first line of defense) to throttle login attempts by **IP** and/or **email parameter** to prevent user enumeration and protect against distributed attacks.
 
     #### Secure Code Example
     ```ruby
-    # config/initializers/rack_attack.rb (Secure)
-    class Rack::Attack
+    # app/models/user.rb (Secure - Devise :lockable)
+    class User < ApplicationRecord
+      devise :database_authenticatable, :registerable,
+             :recoverable, :rememberable, :validatable,
+             # SECURE: Enable lockable module for user-specific lockout
+             :lockable
+    end
 
-      # Throttle all requests by IP (general protection)
-      # Adjust limit & period based on application needs
-      throttle('req/ip', limit: 60, period: 1.minute, &:ip)
+    # config/initializers/devise.rb (Secure - Configure :lockable)
+    Devise.setup do |config|
+      # ...
+      # ==> Configuration for :lockable
+      config.lock_strategy = :failed_attempts # Lock based on failed attempts
+      config.maximum_attempts = 5 # SECURE: Lock after 5 attempts
+      config.unlock_strategy = :time # Unlock after a time period
+      config.unlock_in = 15.minutes # SECURE: Lockout duration
+      config.lock_strategy = :both # Or track by both IP and email
+      # ...
+    end
+
+    # config/initializers/rack_attack.rb (Secure - IP/Email Throttling)
+    class Rack::Attack
+      Rack::Attack.cache.store = ActiveSupport::Cache::MemoryStore.new # Use Redis in prod
 
       # Throttle POST requests to /users/sign_in by IP address
-      # Limit: 5 requests per minute per IP
+      # Limit: 5 requests per minute per IP (stricter than general)
       throttle('logins/ip', limit: 5, period: 60.seconds) do |req|
-        if req.path == '/users/sign_in' && req.post?
+        if (req.path == '/users/sign_in' || req.path == '/login') && req.post?
           req.ip
         end
       end
 
       # Throttle POST requests to /users/sign_in by email param
-      # Limit: 5 requests per 15 minutes per email address (adjust period)
-      # This prevents hammering a single user account from multiple IPs.
+      # Limit: 5 requests per 15 minutes per email address
       throttle('logins/email', limit: 5, period: 15.minutes) do |req|
-         if req.path == '/users/sign_in' && req.post?
-           # Ensure email param exists, handle nil, normalize (downcase, strip)
-           req.params['user']['email'].to_s.downcase.strip.presence
+         if (req.path == '/users/sign_in' || req.path == '/login') && req.post?
+           # Assumes Devise params: req.params['user']['email']
+           # Adjust key if params structure is different
+           req.params['user']['email'].to_s.downcase.strip.presence if req.params['user'].is_a?(Hash)
          end
       end
 
-      # Customize response (optional but recommended)
+      # Customize throttled response
        self.throttled_response = lambda do |env|
-         now = Time.now
-         match_data = env['rack.attack.match_data']
-         retry_after = match_data[:period] - (now.to_i % match_data[:period])
-
-         headers = {
-           'Content-Type' => 'application/json',
-           'Retry-After' => retry_after.to_s
-         }
-         [ 429, headers, [{ error: "Throttle limit exceeded. Retry later." }.to_json] ]
+         retry_after = (env['rack.attack.match_data'] || {})[:period]
+         headers = { 'Content-Type' => 'text/html', 'Retry-After' => retry_after.to_s }
+         [ 429, headers, ["Too Many Requests. Retry later.\n"] ] # Example response
        end
-
-       # Track failures for potential blocking (Fail2Ban style) - Optional
-       # Rack::Attack.track("logins/ip/failures", limit: 10, period: 5.minutes) do |req|
-       #    req.ip if req.path == '/users/sign_in' && req.post? # Track attempts
-       # end
-       # Use Rack::Attack.blocklist based on track count if needed.
     end
-
     # config/application.rb (Ensure middleware is used)
-    # module MyApp
-    #  class Application < Rails::Application
-    #     config.middleware.use Rack::Attack
-    #  end
-    # end
+    # config.middleware.use Rack::Attack
     ```
 
     #### Testing Strategy
-    Use automated tools to send multiple invalid password attempts to the login path (`/users/sign_in`). Verify that `429 Too Many Requests` responses are received after exceeding the configured limits (e.g., 5 attempts per minute per IP, 5 attempts per 15 minutes per email). Check the `Retry-After` header. Test hammering different email addresses from the same IP, and the same email address from different IPs.
+    Test both lockout (`:lockable`) and throttling (`rack-attack`):
+    * **Lockout:** Submit 6 invalid passwords for one user. Verify the account is locked (DB flag `locked_at` set, login fails even with correct password). Wait 15 minutes and verify login succeeds.
+    * **Throttling:** Submit 6 invalid passwords (e.g., for *different* users) from *one IP* within a minute. Verify the 6th+ requests receive a `429 Too Many Requests` response.
   </Tab>
 </Tabs>
