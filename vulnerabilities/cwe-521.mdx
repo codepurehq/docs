@@ -1,0 +1,535 @@
+---
+title: "Weak Password Requirements"
+sidebarTitle: "Weak Passwords (CWE-521)"
+description: "Mitigation for enforcing weak password policies (length, complexity, common passwords) making accounts vulnerable to guessing or cracking."
+icon: "shield-halved"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application **fails to enforce strong password policies** during user registration or password changes. Weak requirements might allow users to set passwords that are:
+* **Too short** (e.g., less than 12 characters).
+* **Lacking complexity** (e.g., not requiring a mix of uppercase, lowercase, numbers, and symbols).
+* **Commonly used** (e.g., "password", "123456", "qwerty").
+* **Related to user context** (e.g., username, email, real name).
+* **Previously breached** (found in known data breach lists).
+
+Attackers can easily guess or crack weak passwords using dictionary attacks, brute-force, or lists of breached credentials. 💪❌
+
+---
+
+## Business Impact
+
+Allowing weak passwords significantly increases the risk of:
+* **Account Takeover:** Attackers can easily guess user passwords, leading to unauthorized access.
+* **Credential Stuffing Success:** If users reuse weak passwords across multiple sites, a breach elsewhere makes accounts on your site vulnerable.
+* **Reputational Damage:** Users expect applications to enforce basic password security; failing to do so reflects poorly on the application's security posture.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-521](https://cwe.mitre.org/data/definitions/521.html)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** Medium
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Password policies are usually enforced during user registration and password update operations. Modern frameworks often provide built-in validators or configuration options for setting complexity requirements.
+
+**Key Remediation Principles:**
+1.  **Enforce Minimum Length:** Require passwords to be reasonably long (e.g., **12 characters minimum**, longer is better).
+2.  **Enforce Complexity:** Require a mix of character types (uppercase, lowercase, numbers, symbols). NIST guidelines (SP 800-63B) suggest length is more important than forced complexity, but complexity remains a common defense-in-depth measure.
+3.  **Check Against Common Passwords:** Use a blocklist of common passwords (e.g., top 10,000 lists) and reject them.
+4.  **Check Against Breached Passwords:** Integrate with services like "Have I Been Pwned" (HIBP) Pwned Passwords API to check if the chosen password has appeared in known data breaches.
+5.  **Check Against Contextual Information:** Prevent users from using their username, email, name, or application name as their password.
+6.  **Provide Feedback:** Clearly inform users about the password requirements.
+7.  **Server-Side Enforcement:** **All** password policy checks **must** be performed server-side. Client-side checks are for usability only.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using Django's Authentication system validators (`AUTH_PASSWORD_VALIDATORS` in `settings.py`). Flask requires manual implementation or extensions.
+
+    #### Vulnerable Scenario 1: No Validators in Django
+    ```python
+    # settings.py
+    # DANGEROUS: AUTH_PASSWORD_VALIDATORS is missing or commented out.
+    # Django will accept any password, including very weak ones.
+    # AUTH_PASSWORD_VALIDATORS = [ ... ]
+    ```
+
+    #### Vulnerable Scenario 2: Manual Check Missing Complexity (Flask)
+    ```python
+    # forms.py (Flask WTForms example)
+    from wtforms import Form, StringField, PasswordField, validators
+
+    class RegistrationForm(Form):
+        username = StringField('Username', [validators.Length(min=4, max=25)])
+        password = PasswordField('New Password', [
+            validators.DataRequired(),
+            # DANGEROUS: Only checks length, not complexity or common passwords.
+            validators.Length(min=8)
+        ])
+    # Assume route handler uses this form but performs no further password checks.
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Configure `AUTH_PASSWORD_VALIDATORS` in `settings.py` with built-in validators (`UserAttributeSimilarityValidator`, `MinimumLengthValidator`, `CommonPasswordValidator`, `NumericPasswordValidator`). Consider adding custom validators or third-party packages (like `django-pwned-passwords`) for breached password checks.
+    * **Flask:** Implement server-side checks in the route handler or user service layer. Check length, complexity (using regex or character class counts), against common password lists, and optionally against the HIBP API.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django - Secure Validators)
+    # SECURE: Configure a strong set of validators.
+    AUTH_PASSWORD_VALIDATORS = [
+        { # Checks against username, email, first_name, last_name
+            'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        },
+        { # Enforces minimum length
+            'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+            'OPTIONS': {
+                'min_length': 12, # SECURE: Increased minimum length
+            }
+        },
+        { # Checks against a built-in list of common passwords
+            'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        },
+        { # Prevents purely numeric passwords
+            'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        },
+        # Optional: Add django-pwned-passwords validator here
+        # {
+        #    'NAME': 'pwned_passwords_django.validators.PwnedPasswordValidator',
+        # },
+    ]
+    ```
+    ```python
+    # services/auth_service.py (Flask - Secure Custom Validation)
+    import re
+    # Assume check_if_common_password and check_if_pwned exist
+
+    def is_password_strong(password, username, email):
+        if len(password) < 12:
+            return False, "Password must be at least 12 characters long."
+        # SECURE: Example complexity check (at least 1 upper, 1 lower, 1 digit, 1 symbol)
+        if not re.search(r"[A-Z]", password): return False, "Requires uppercase."
+        if not re.search(r"[a-z]", password): return False, "Requires lowercase."
+        if not re.search(r"\d", password): return False, "Requires digit."
+        if not re.search(r"[!@#$%^&*()_+=\-{}\[\]:;\"'|\\<>,.?/~`]", password): return False, "Requires symbol."
+
+        # SECURE: Check against common passwords
+        if check_if_common_password(password):
+            return False, "Password is too common."
+
+        # SECURE: Check against user context
+        if username.lower() in password.lower() or email.split('@')[0].lower() in password.lower():
+             return False, "Password cannot contain username or email parts."
+
+        # SECURE: Check against breached passwords (e.g., using HIBP API)
+        # if check_if_pwned(password):
+        #    return False, "Password has appeared in a data breach."
+
+        return True, "Password meets requirements."
+
+    # Flask route handler would call is_password_strong before saving.
+    ```
+
+    #### Testing Strategy
+    Attempt to register or change passwords using values that violate the intended policy:
+    * Too short (e.g., "Pass1!")
+    * Missing complexity (e.g., "passwordpassword", "123456789012", "PASSWORDPASSWORD")
+    * Common passwords ("password", "123456", "admin")
+    * Contextual passwords (username, email prefix, application name)
+    Verify that the server-side validation rejects weak passwords with appropriate error messages. Check Django `AUTH_PASSWORD_VALIDATORS` setting. Review custom validation logic.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using Bean Validation (`javax.validation.constraints`) annotations on DTOs, custom validation logic in services, or Spring Security's password policy features (less common directly).
+
+    #### Vulnerable Scenario 1: Missing Bean Validation
+    A `UserRegistrationDto` doesn't have annotations to check password complexity.
+    ```java
+    // dto/UserRegistrationDto.java
+    public class UserRegistrationDto {
+        private String username;
+        // DANGEROUS: Only basic length check, if any. No complexity.
+        // Needs @Pattern or custom validator.
+        @Size(min = 8, message = "Password must be at least 8 characters")
+        private String password;
+        // ... getters/setters ...
+    }
+    // Controller accepts this DTO but relies only on @Size.
+    ```
+
+    #### Vulnerable Scenario 2: Weak Custom Validation Logic
+    ```java
+    // service/ValidationService.java
+    public boolean isPasswordValid(String password) {
+        // DANGEROUS: Only checks length.
+        if (password == null || password.length() < 8) {
+            return false;
+        }
+        // Missing checks for complexity, common passwords, etc.
+        return true;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Bean Validation:** Use `@Size` for length and `@Pattern` with a strong regex for complexity on DTO fields. Implement custom `ConstraintValidator` classes for more complex rules (like checking against common lists, HIBP, or user context).
+    * **Service Layer:** Perform validation within the user service *before* hashing and saving the password.
+
+    #### Secure Code Example
+    ```java
+    // dto/UserRegistrationDto.java (Secure with Bean Validation)
+    import javax.validation.constraints.Size;
+    import javax.validation.constraints.Pattern;
+    // Assume @NotPwned and @NotCommonPassword are custom constraint annotations
+
+    public class UserRegistrationDto {
+        @NotNull @Size(min=4) private String username; // Added NotNull
+        @NotNull // Added NotNull
+        @Size(min = 12, message = "Password must be at least 12 characters long.")
+        // SECURE: Regex for complexity (e.g., 1 upper, 1 lower, 1 digit, 1 symbol)
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{12,}$",
+                 message = "Password must contain uppercase, lowercase, digit, and special character.")
+        // SECURE: Custom validators (conceptual)
+        // @NotCommonPassword
+        // @NotPwned
+        private String password;
+        // ... getters/setters ...
+    }
+
+    // Controller enables validation
+    // @PostMapping("/register")
+    // public String register(@Valid @ModelAttribute("user") UserRegistrationDto dto, BindingResult result) {
+    //     if (result.hasErrors()) { return "register"; }
+    //     // Proceed if validation passes...
+    // }
+    ```
+
+    #### Testing Strategy
+    Attempt registration/password changes with passwords violating length, complexity, common lists, and contextual rules. Ensure `@Valid` is used in controllers and DTOs have appropriate `@Size`, `@Pattern`, and custom constraint annotations. Verify server-side rejection.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Configuring ASP.NET Core Identity password options in `Startup.cs`.
+
+    #### Vulnerable Scenario 1: Weak Identity Options
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.AddDefaultIdentity<IdentityUser>(options => {
+        // DANGEROUS: Configuring weak password requirements.
+        options.Password.RequiredLength = 6; // Too short
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredUniqueChars = 1; // Very weak complexity
+    })
+    .AddEntityFrameworkStores<ApplicationDbContext>();
+    ```
+
+    #### Vulnerable Scenario 2: Custom Validation Missing Checks
+    If implementing a custom `IPasswordValidator<TUser>`, failing to include necessary checks.
+    ```csharp
+    // Services/MyCustomPasswordValidator.cs
+    public class MyCustomPasswordValidator : IPasswordValidator<IdentityUser>
+    {
+        public Task<IdentityResult> ValidateAsync(UserManager<IdentityUser> manager, IdentityUser user, string password)
+        {
+            // DANGEROUS: Only checks length. Missing complexity, common, contextual checks.
+            if (string.IsNullOrEmpty(password) || password.Length < 10)
+            {
+                return Task.FromResult(IdentityResult.Failed(new IdentityError { /* ... */ }));
+            }
+            return Task.FromResult(IdentityResult.Success);
+        }
+    }
+    // And registering this custom validator in Startup.cs
+    // services.AddIdentity<...>().AddPasswordValidator<MyCustomPasswordValidator>();
+    ```
+
+    #### Mitigation and Best Practices
+    * **Identity Options:** Configure `IdentityOptions.Password` in `Startup.cs` with strong requirements (e.g., `RequiredLength = 12`, `RequireDigit = true`, `RequireLowercase = true`, `RequireUppercase = true`, `RequireNonAlphanumeric = true`).
+    * **Custom Validators:** If needed, implement `IPasswordValidator<TUser>` to add checks (e.g., against common lists, HIBP, user context) *in addition* to Identity's built-in options. Register multiple validators if necessary.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure Identity Options)
+    services.AddDefaultIdentity<IdentityUser>(options => {
+        options.SignIn.RequireConfirmedAccount = true;
+        // SECURE: Configure strong password requirements.
+        options.Password.RequiredLength = 12;
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
+        options.Password.RequiredUniqueChars = 6; // Example: Higher unique chars
+    })
+    // Optional: Add custom validator for breached passwords
+    // .AddPasswordValidator<PwnedPasswordValidator>() // Assume this class exists
+    .AddEntityFrameworkStores<ApplicationDbContext>();
+    ```
+
+    #### Testing Strategy
+    Attempt registration/password changes violating the configured Identity options (length, digits, upper/lower, non-alphanumeric). Verify rejection by Identity. If custom validators are used, test their specific logic (common passwords, contextual checks, breached passwords).
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using Laravel's built-in validation rules or writing custom validation logic.
+
+    #### Vulnerable Scenario 1: Missing Validation Rules (Laravel)
+    A registration request validation doesn't include strong password checks.
+    ```php
+    // app/Http/Requests/RegisterRequest.php
+    public function rules()
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            // DANGEROUS: Only checks length and requires confirmation.
+            // No complexity, common password, or breached checks.
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ];
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Weak Plain PHP Check
+    ```php
+    <?php
+    // register.php
+    $password = $_POST['password'];
+    // DANGEROUS: Minimal check, allows weak passwords.
+    if (strlen($password) < 6) {
+        die("Password must be at least 6 characters.");
+    }
+    // No other checks performed before hashing and saving.
+    // ... hash password and save user ...
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Use built-in validation rules like `Password::min(12)->mixedCase()->numbers()->symbols()->uncompromised()` (checks HIBP). Chain rules for length, complexity, and breached status in your Form Request or controller validation.
+    * **Plain PHP:** Implement robust checks manually: length (`strlen`), complexity (regex `preg_match` for character classes), common lists (check against a file/array), contextual checks, and optionally HIBP API.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Requests/RegisterRequest.php (Laravel - Secure)
+    use Illuminate.Validation\Rules\Password; // Import Password rule
+
+    public function rules()
+    {
+        return [
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
+            // SECURE: Use the robust Password rule object.
+            'password' => ['required', 'confirmed',
+                Password::min(12) // Minimum length
+                    ->mixedCase() // Requires upper and lower case
+                    ->numbers()   // Requires numbers
+                    ->symbols()   // Requires symbols
+                    ->uncompromised(), // Checks Have I Been Pwned DB (requires internet)
+            ],
+        ];
+    }
+    ```
+    ```php
+    <?php
+    // register_secure.php (Plain PHP - Secure Checks)
+    $password = $_POST['password'];
+    $username = $_POST['username']; // Assume exists
+
+    // SECURE: Combine multiple checks
+    if (strlen($password) < 12) die("Min 12 chars.");
+    if (!preg_match('/[A-Z]/', $password)) die("Requires uppercase.");
+    if (!preg_match('/[a-z]/', $password)) die("Requires lowercase.");
+    if (!preg_match('/\d/', $password)) die("Requires digit.");
+    if (!preg_match('/[^A-Za-z0-9]/', $password)) die("Requires symbol."); // Basic symbol check
+    if (is_common_password($password)) die("Password too common."); // Assume function exists
+    if (str_contains(strtolower($password), strtolower($username))) die("No username in password.");
+    // if (is_pwned($password)) die("Password found in breach."); // Assume function exists
+
+    // ... proceed to hash and save ...
+    ?>
+    ```
+
+    #### Testing Strategy
+    Attempt registration/password changes violating the defined Laravel validation rules or custom PHP checks (length, complexity, common, contextual). Verify server-side rejection. Use known breached passwords to test the `uncompromised()` rule if implemented.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using validation libraries like `express-validator`, `joi`, or custom logic in route handlers or services.
+
+    #### Vulnerable Scenario 1: `express-validator` Missing Complexity
+    ```javascript
+    // routes/auth.js
+    const { body, validationResult } = require('express-validator');
+
+    router.post('/register',
+        body('email').isEmail(),
+        // DANGEROUS: Only validates length.
+        body('password').isLength({ min: 8 }),
+        (req, res) => {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+            // ... proceed with registration ...
+        }
+    );
+    ```
+
+    #### Vulnerable Scenario 2: Weak Manual Regex
+    ```javascript
+    // services/userService.js
+    function validatePassword(password) {
+        // DANGEROUS: Simple regex only checks for length and maybe one char type.
+        const weakRegex = /.{8,}/; // Example: Just length
+        if (!password || !weakRegex.test(password)) {
+            throw new Error("Password does not meet requirements.");
+        }
+        // Missing other checks...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **`express-validator`:** Chain multiple validators: `isLength({ min: 12 })`, `.matches(/[A-Z]/).withMessage(...)`, `.matches(/[a-z]/).withMessage(...)`, etc. Use `.custom()` validators for complex checks (common list, HIBP, context).
+    * **`joi`:** Define strong rules using `Joi.string().min(12).pattern(...)`.
+    * **Manual:** Implement robust checks for length, complexity (multiple regex), common lists, context, and potentially HIBP.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/auth.js (Secure with express-validator)
+    const { body, validationResult } = require('express-validator');
+    const { checkPasswordNotInCommonList, checkPasswordNotPwned } = require('../validators/custom'); // Assume custom validators
+
+    router.post('/register-secure',
+        body('email').isEmail().normalizeEmail(),
+        body('username').isLength({ min: 3 }).trim().escape(),
+        // SECURE: Chained validation rules
+        body('password')
+            .isLength({ min: 12 }).withMessage('Must be 12+ chars')
+            .matches(/\d/).withMessage('Must contain a digit')
+            .matches(/[A-Z]/).withMessage('Must contain uppercase')
+            .matches(/[a-z]/).withMessage('Must contain lowercase')
+            .matches(/[^A-Za-z0-9]/).withMessage('Must contain a symbol')
+            .custom((value, { req }) => { // Check context
+                if (value.toLowerCase().includes(req.body.username?.toLowerCase())) {
+                     throw new Error('Password cannot contain username');
+                } return true;
+            })
+            .custom(checkPasswordNotInCommonList) // Custom validator
+            // .custom(checkPasswordNotPwned) // Optional HIBP check
+            ,
+        body('passwordConfirmation').custom((value, { req }) => {
+            if (value !== req.body.password) { throw new Error('Passwords do not match'); } return true;
+        }),
+        (req, res) => {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ errors: errors.array() });
+            }
+            // ... proceed with registration ...
+        }
+    );
+    ```
+
+    #### Testing Strategy
+    Attempt registration/password changes violating the configured rules (length, complexity via regex, custom checks). Verify server-side rejection with appropriate messages. Test common and contextual passwords.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using Active Record validations in models or custom validation logic.
+
+    #### Vulnerable Scenario 1: Weak Active Record Validation
+    ```ruby
+    # app/models/user.rb
+    class User < ApplicationRecord
+      has_secure_password # Handles hashing, but not policy enforcement by itself
+
+      # DANGEROUS: Only validates length on password (via has_secure_password's default
+      # presence check) or a simple length validation.
+      validates :password, length: { minimum: 8 }, if: -> { new_record? || !password.nil? }
+      # No complexity, common, contextual, or breached checks.
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Devise without Strong Password Extension
+    Standard Devise enforces length but requires extensions (like `devise-security`) for more advanced policies.
+    ```ruby
+    # app/models/user.rb (Using Devise default)
+    class User < ApplicationRecord
+      devise :database_authenticatable, :registerable,
+             :recoverable, :rememberable, :validatable # :validatable checks length/presence
+
+      # DANGEROUS: Default :validatable might only check length (e.g., 6-8 chars).
+      # No complexity, common password, etc., checks included by default.
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Active Record:** Add custom `validate` methods or use `validates_format_of` with strong regex for complexity. Implement checks against common lists, context (username, email), and optionally HIBP API.
+    * **Devise:** Configure password length (`config.password_length` in `devise.rb`). Add gems like `devise-security` to enable more policies (complexity, breached passwords via HIBP).
+
+    #### Secure Code Example
+    ```ruby
+    # app/models/user.rb (Secure Active Record Validations)
+    class User < ApplicationRecord
+      has_secure_password
+
+      # SECURE: Define strong validation rules
+      validates :password, length: { minimum: 12 }, if: -> { new_record? || !password.nil? }
+      validate :password_complexity
+      validate :password_not_common
+      validate :password_not_contextual
+      # validate :password_not_pwned # Optional custom validation
+
+      private
+
+      def password_complexity
+        # return if password.blank? || password =~ /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/
+        # More readable checks:
+        return if password.blank?
+        errors.add :password, 'must include uppercase' unless password =~ /[A-Z]/
+        errors.add :password, 'must include lowercase' unless password =~ /[a-z]/
+        errors.add :password, 'must include digit' unless password =~ /\d/
+        errors.add :password, 'must include symbol' unless password =~ /[^A-Za-z0-9]/
+      end
+
+      def password_not_common
+         # Assume COMMON_PASSWORDS is a loaded Set
+         errors.add :password, 'is too common' if password.present? && COMMON_PASSWORDS.include?(password)
+      end
+
+      def password_not_contextual
+          return if password.blank? || email.blank?
+          errors.add :password, 'cannot contain email' if password.downcase.include?(email.downcase)
+          # Add checks for username, name etc.
+      end
+      # Implement password_not_pwned using HIBP API if desired
+    end
+    ```
+    ```ruby
+    # config/initializers/devise.rb (Secure Devise Configuration)
+    Devise.setup do |config|
+      # ==> Password Length
+      # SECURE: Increase minimum password length.
+      config.password_length = 12..128
+
+      # Add devise-security gem configurations here for complexity, HIBP etc.
+      # config.min_password_complexity = { digit: 1, lower: 1, upper: 1, symbol: 1 }
+      # config.pwned_password_check_enabled = true
+      # ... other devise-security options ...
+    end
+    ```
+
+    #### Testing Strategy
+    Attempt registration/password changes violating the Active Record validations or Devise configuration (length, complexity, etc.). Verify server-side rejection. Test common, contextual, and (if implemented) known breached passwords.
+  </Tab>
+</Tabs>
