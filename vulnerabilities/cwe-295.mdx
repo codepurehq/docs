@@ -1,0 +1,676 @@
+---
+title: "Improper Certificate Validation"
+sidebarTitle: "Improper Cert Validation (CWE-295)"
+description: "Mitigation for failing to properly validate TLS/SSL certificates, enabling Man-in-the-Middle (MitM) attacks."
+icon: "certificate"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application communicates over TLS/SSL (HTTPS, LDAPS, secure database connections, etc.) but **fails to properly validate the certificate** presented by the server. Common failures include:
+* **Not checking the certificate at all.**
+* **Not verifying the certificate chain** up to a trusted root Certificate Authority (CA).
+* **Accepting expired certificates.**
+* **Accepting certificates for the wrong hostname** (hostname mismatch).
+* **Accepting self-signed certificates** in production without explicit pinning.
+
+Failing to validate certificates allows attackers to perform **Man-in-the-Middle (MitM)** attacks by presenting a fake or invalid certificate, intercepting, reading, and potentially modifying the supposedly secure communication. 🔒❓➡️👨‍💻➡️🔓
+
+---
+
+## Business Impact
+
+Improper certificate validation completely undermines the security benefits of TLS/SSL:
+* **Data Interception:** Attackers can eavesdrop on sensitive data (credentials, session tokens, PII) transmitted over the connection.
+* **Data Tampering:** Attackers can modify data in transit without detection.
+* **Authentication Bypass:** If certificate validation is part of client or server authentication, bypassing it breaks the authentication mechanism.
+* **Phishing:** Users might be presented with fake websites served over HTTPS with invalid certificates if their browser or client doesn't warn them properly (though browsers are generally good at this, application-to-server connections often fail here).
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-295](https://cwe.mitre.org/data/definitions/295.html) (Related: CWE-296, CWE-297)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability typically occurs when developers use HTTP client libraries, LDAP clients, database connectors, or other network libraries and either **explicitly disable certificate validation** (often done during development to work with self-signed certificates) or use libraries with insecure defaults.
+
+**Key Remediation Principles:**
+1.  **Always Validate Certificates:** Ensure certificate validation is enabled in all production code making TLS/SSL connections.
+2.  **Verify Hostname:** Ensure the hostname in the certificate matches the hostname the application is connecting to.
+3.  **Check Chain of Trust:** Ensure the certificate chain validates back to a trusted root CA present in the system's or application's trust store.
+4.  **Check Expiry:** Ensure the certificate is within its validity period.
+5.  **Avoid Disabling Validation:** **Never** disable certificate validation in production environments, even for internal connections. Use proper internal CAs or certificates if needed.
+6.  **Keep Trust Stores Updated:** Ensure the operating system and application trust stores (containing root CA certificates) are kept up-to-date.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using libraries like `requests`, `urllib3`, or `ldap3` without verifying server certificates, often by setting `verify=False`.
+
+    #### Vulnerable Scenario 1: `requests` with `verify=False`
+    ```python
+    # api_client.py
+    import requests
+
+    def call_secure_api(url, data):
+        try:
+            # DANGEROUS: verify=False disables SSL certificate validation.
+            # Allows connection to servers with invalid, expired, self-signed,
+            # or wrong-hostname certificates, enabling MitM attacks.
+            response = requests.post(url, json=data, verify=False)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"API Call Error: {e}")
+            return None
+    ```
+
+    #### Vulnerable Scenario 2: `ldap3` Ignoring Certificate Validation
+    Connecting to LDAPS without proper TLS configuration.
+    ```python
+    # ldap_connector.py
+    from ldap3 import Server, Connection, Tls
+
+    def connect_ldap_unsafe(hostname, user, password):
+        # DANGEROUS: tls_validate=ssl.CERT_NONE disables certificate check.
+        # tls_cacerts_file might also be missing or incorrect.
+        tls_config = Tls(validate=ssl.CERT_NONE) # Problematic line
+        server = Server(hostname, use_ssl=True, tls=tls_config)
+        try:
+            conn = Connection(server, user=user, password=password, auto_bind=True)
+            # Connection established, but could be MitM.
+            print(conn.result)
+            conn.unbind()
+            return True
+        except Exception as e:
+            print(f"LDAP Connection Error: {e}")
+            return False
+    ```
+
+    #### Mitigation and Best Practices
+    * **`requests`:** Ensure `verify=True` (the default). If connecting to internal systems with custom CAs, provide the path to the CA bundle file via `verify='/path/to/ca-bundle.pem'`.
+    * **`ldap3`:** Set `validate=ssl.CERT_REQUIRED` and provide the correct CA certificate path via `tls_cacerts_file` or rely on the system's trust store.
+
+    #### Secure Code Example
+    ```python
+    # api_client.py (Secure)
+    import requests
+    import os
+
+    # Optional: Path to custom CA bundle if needed, e.g., from env var
+    CA_BUNDLE_PATH = os.environ.get('REQUESTS_CA_BUNDLE') # requests uses this by default if set
+
+    def call_secure_api_secure(url, data):
+        try:
+            # SECURE: verify=True is the default.
+            # If a custom CA is needed and REQUESTS_CA_BUNDLE env var isn't used:
+            # response = requests.post(url, json=data, verify='/path/to/custom/ca.pem')
+            response = requests.post(url, json=data, verify=True) # Explicit default
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.SSLError as e:
+            print(f"SSL Validation Error: {e}") # Specific catch for SSL issues
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"API Call Error: {e}")
+            return None
+
+    # ldap_connector.py (Secure)
+    import ssl
+    from ldap3 import Server, Connection, Tls
+
+    def connect_ldap_secure(hostname, user, password):
+        # SECURE: Require certificate validation.
+        # Provide path to CA cert if not in system trust store.
+        tls_config = Tls(validate=ssl.CERT_REQUIRED, ca_certs_file='/etc/ssl/certs/ca-certificates.crt') # Example path
+        server = Server(hostname, use_ssl=True, tls=tls_config)
+        try:
+            # Connection will fail if cert validation fails
+            conn = Connection(server, user=user, password=password, auto_bind=True)
+            print("LDAP Connection Successful & Verified")
+            conn.unbind()
+            return True
+        except Exception as e:
+            print(f"LDAP Connection Error (Validation may have failed): {e}")
+            return False
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (like Burp Suite, mitmproxy) configured with its own root CA. Configure the client system/application to trust the proxy's CA. Attempt to connect to the target HTTPS/LDAPS service through the proxy.
+    * **If `verify=False` or `ssl.CERT_NONE`:** The connection will likely succeed without warnings, allowing the proxy to decrypt traffic (MitM successful).
+    * **If `verify=True` and system trust store used:** The connection should *fail* if the target server presents the proxy's certificate (as it won't match the expected hostname or chain correctly).
+    * **If `verify='/path/to/ca'`:** The connection should fail unless the proxy can present a cert signed by that specific CA.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `java.net.HttpURLConnection`, Apache `HttpClient`, `javax.naming.ldap.LdapContext` (JNDI), or database JDBC drivers over SSL without ensuring proper `TrustManager` configuration. Often involves developers installing custom `TrustManager`s that accept all certificates during development.
+
+    #### Vulnerable Scenario 1: TrustManager Accepting All Certs
+    ```java
+    // http/NaiveTrustManager.java
+    import javax.net.ssl.X509TrustManager;
+    import java.security.cert.X509Certificate;
+
+    // DANGEROUS: Trust manager that accepts any certificate. NEVER use in production.
+    public class NaiveTrustManager implements X509TrustManager {
+        public void checkClientTrusted(X509Certificate[] certs, String authType) {}
+        public void checkServerTrusted(X509Certificate[] certs, String authType) {} // Accepts anything!
+        public X509Certificate[] getAcceptedIssuers() { return null; }
+    }
+
+    // http/ApiClient.java
+    import javax.net.ssl.*; // Other imports...
+
+    public void callApiUnsafe() throws Exception {
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        // DANGEROUS: Initializing SSLContext with the naive trust manager.
+        sslContext.init(null, new TrustManager[]{ new NaiveTrustManager() }, null);
+
+        HttpsURLConnection connection = (HttpsURLConnection) new URL("[https://unsafe.example.com](https://unsafe.example.com)").openConnection();
+        // Applies the naive trust manager globally or per connection
+        connection.setSSLSocketFactory(sslContext.getSocketFactory());
+        // Hostname verification might also be disabled separately (another vuln!)
+        connection.setHostnameVerifier((hostname, session) -> true); // DANGEROUS
+
+        // Connection proceeds even if cert is invalid/wrong host/self-signed.
+        connection.connect();
+        // ... read response ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Disabling Hostname Verification
+    Even if the certificate chain is validated, failing to check if the certificate's Common Name (CN) or Subject Alternative Name (SAN) matches the requested hostname allows MitM.
+    ```java
+    // http/ApiClientHostnameBypass.java
+    public void callApiHostnameBypass() throws Exception {
+        // Assume default SSLContext (validates chain)
+        HttpsURLConnection connection = (HttpsURLConnection) new URL("[https://trusted.example.com](https://trusted.example.com)").openConnection();
+
+        // DANGEROUS: Disables the check ensuring the cert is actually for trusted.example.com.
+        // Attacker presents valid cert for attacker.com, validation passes.
+        connection.setHostnameVerifier((hostname, session) -> true);
+
+        connection.connect(); // Connects to MitM server presenting attacker.com cert
+        // ... read response ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Rely on JVM Defaults:** Use the default `SSLContext` and `TrustManager` which uses the JVM's trust store (`cacerts`). Keep the JRE updated for the latest CA certificates.
+    * **Custom Trust Store:** If connecting to internal systems with a custom CA, configure a specific `TrustManager` that loads a custom trust store file containing only the trusted internal CA certificate(s).
+    * **Enable Hostname Verification:** Ensure hostname verification is enabled (usually the default).
+
+    #### Secure Code Example
+    ```java
+    // http/ApiClientSecure.java
+    import javax.net.ssl.HttpsURLConnection;
+    import java.net.URL;
+    // ... other imports ...
+
+    public void callApiSecure() throws Exception {
+        // SECURE: Use default SSLContext and TrustManager.
+        // This validates against JVM's cacerts and performs hostname verification.
+        HttpsURLConnection connection = (HttpsURLConnection) new URL("[https://secure.example.com](https://secure.example.com)").openConnection();
+
+        // No need to set custom TrustManager or HostnameVerifier for standard validation.
+        connection.connect(); // Will throw SSLException if validation fails
+
+        // ... read response ...
+    }
+
+    // Example with Custom Trust Store (if needed for internal CA)
+    // KeyStore trustStore = KeyStore.getInstance("JKS");
+    // trustStore.load(new FileInputStream("/path/to/my/truststore.jks"), "password".toCharArray());
+    // TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+    // tmf.init(trustStore);
+    // SSLContext sslContext = SSLContext.getInstance("TLS");
+    // sslContext.init(null, tmf.getTrustManagers(), null);
+    // connection.setSSLSocketFactory(sslContext.getSocketFactory());
+    // Hostname verification is still enabled by default.
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (Burp, mitmproxy) with its own CA certificate trusted by the client machine/JVM. Attempt connections to target HTTPS services.
+    * **Secure:** Connections should fail with `SSLHandshakeException` or similar certificate validation errors (unknown CA, hostname mismatch).
+    * **Vulnerable:** Connections succeed without error, traffic can be intercepted.
+    Check code for custom `X509TrustManager` implementations or calls like `setHostnameVerifier((h,s)->true)`.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `HttpClient` or `HttpWebRequest`. Certificate validation is generally enabled by default using the Windows certificate store. Vulnerabilities arise from using `ServerCertificateCustomValidationCallback` or older `ServicePointManager.ServerCertificateValidationCallback` to bypass checks.
+
+    #### Vulnerable Scenario 1: Bypassing Validation with Callback
+    ```csharp
+    // Services/ApiClient.cs
+    using System.Net.Http;
+    using System.Net.Security; // For SslPolicyErrors
+    using System.Security.Cryptography.X509Certificates; // For X509Certificate2
+
+    public class ApiClient
+    {
+        private readonly HttpClient _httpClient;
+
+        public ApiClient()
+        {
+            // DANGEROUS: Callback always returns true, accepting any certificate.
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+            };
+            _httpClient = new HttpClient(handler);
+        }
+
+        public async Task CallApiUnsafe(string url)
+        {
+            // Connection succeeds even with invalid certs due to callback override.
+            var response = await _httpClient.GetAsync(url);
+            // ... process response ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Legacy Global Callback (Applies process-wide!)
+    ```csharp
+    // Program.cs or Startup.cs (Legacy approach - VERY DANGEROUS)
+    using System.Net;
+    // ... other imports ...
+
+    // DANGEROUS: Globally disables certificate validation for the entire application domain.
+    ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, sslPolicyErrors) => true;
+    ```
+
+    #### Mitigation and Best Practices
+    * **Rely on Defaults:** Use the default certificate validation provided by `HttpClient` / `HttpWebRequest`, which uses the OS trust store.
+    * **Custom Validation (Carefully):** If custom validation *is* required (e.g., certificate pinning), implement the `ServerCertificateCustomValidationCallback` logic meticulously. Check `sslPolicyErrors` for `None`, verify the chain, check the hostname against the certificate's subject/SANs, and check expiry. **Never** simply return `true`.
+    * **Avoid Global Callback:** Do not use `ServicePointManager.ServerCertificateValidationCallback`.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/ApiClient.cs (Secure - Default Validation)
+    using System.Net.Http;
+    using System.Threading.Tasks;
+
+    public class ApiClientSecure
+    {
+        private readonly HttpClient _httpClient;
+
+        public ApiClientSecure()
+        {
+            // SECURE: Use default HttpClientHandler (or omit handler).
+            // It performs standard certificate validation using OS trust store.
+            _httpClient = new HttpClient();
+        }
+
+        public async Task CallApiSecure(string url)
+        {
+            try
+            {
+                // Connection will fail with HttpRequestException (inner SSLException) if cert is invalid.
+                var response = await _httpClient.GetAsync(url);
+                response.EnsureSuccessStatusCode(); // Check for HTTP errors
+                // ... process response ...
+            }
+            catch (HttpRequestException ex) when (ex.InnerException is System.Security.Authentication.AuthenticationException)
+            {
+                 Console.WriteLine($"Certificate validation failed: {ex.InnerException.Message}");
+                 // Handle validation failure
+            }
+            // ... handle other exceptions ...
+        }
+    }
+
+    // Secure Custom Validation Callback (Example: Pinning - simplified)
+    // var handler = new HttpClientHandler {
+    //     ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => {
+    //         // SECURE: Check standard errors first
+    //         if (errors != SslPolicyErrors.None) {
+    //             Console.WriteLine($"Cert Error: {errors}");
+    //             return false;
+    //         }
+    //         // SECURE: Perform custom check (e.g., check public key matches expected pinned key)
+    //         string expectedPublicKey = "YOUR_EXPECTED_PUBLIC_KEY_HASH_OR_FULL_KEY";
+    //         string actualPublicKey = cert.GetPublicKeyString(); // Example
+    //         if (actualPublicKey == expectedPublicKey) {
+    //              return true; // Pinned key matches
+    //         }
+    //         Console.WriteLine("Certificate pinning failed.");
+    //         return false;
+    //     }
+    // };
+    // _httpClient = new HttpClient(handler);
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (Burp, Fiddler, mitmproxy) with its root CA trusted by the client machine. Attempt connections to target HTTPS services.
+    * **Secure:** Connections should fail with `HttpRequestException` (wrapping `AuthenticationException` or `IOException`) indicating certificate errors (untrusted root, hostname mismatch).
+    * **Vulnerable:** Connections succeed.
+    Review code for `ServerCertificateCustomValidationCallback` or `ServicePointManager.ServerCertificateValidationCallback`. Ensure any custom callback performs thorough checks and doesn't just return `true`.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `curl`, `file_get_contents` with SSL streams, or Guzzle without proper SSL context options. PHP defaults often changed across versions, sometimes requiring explicit enabling of peer verification.
+
+    #### Vulnerable Scenario 1: `curl` Disabling Peer Verification
+    ```php
+    <?php
+    // api_client.php
+    $url = "[https://internal-api.example.com/data](https://internal-api.example.com/data)";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+    // DANGEROUS: Disables verification of the server's certificate chain.
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    // DANGEROUS: Disables hostname verification (might also need VERIFYHOST = 0).
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+
+    $response = curl_exec($ch); // Connects even if cert is invalid/MitM
+    if(curl_errno($ch)){ echo 'Curl error: ' . curl_error($ch); }
+    curl_close($ch);
+    // ... process $response ...
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: `file_get_contents` with Context Options Disabling Verification
+    ```php
+    <?php
+    // api_reader.php
+    $url = "[https://api.example.com/](https://api.example.com/)";
+    $options = [
+        "ssl" => [
+            // DANGEROUS: Disables peer certificate verification.
+            "verify_peer" => false,
+            // DANGEROUS: Disables peer name (hostname) verification.
+            "verify_peer_name" => false,
+        ],
+    ];
+    // Create stream context with unsafe options
+    $context = stream_context_create($options);
+    // DANGEROUS: Request made without proper certificate validation.
+    $response = file_get_contents($url, false, $context);
+    // ... process $response ...
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **`curl`:** Ensure `CURLOPT_SSL_VERIFYPEER` is `true` (often the default in recent PHP/curl). Ensure `CURLOPT_SSL_VERIFYHOST` is `2` (checks hostname exists and matches). If using internal CAs, set `CURLOPT_CAINFO` to the path of your CA bundle file.
+    * **Stream Contexts:** Ensure `verify_peer` and `verify_peer_name` SSL context options are `true` (defaults). If using internal CAs, set `cafile` context option.
+    * **Guzzle:** Relies on curl defaults. Ensure `verify` option is `true` (default). Provide path to CA bundle via `verify` if needed.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // api_client.php (Secure curl)
+    $url = "[https://secure.example.com/data](https://secure.example.com/data)";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+    // SECURE: Explicitly enable peer verification (often default, but explicit is good).
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    // SECURE: Explicitly enable hostname verification (value should be 2).
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+
+    // Optional: Specify CA bundle if needed (paths vary by OS)
+    // curl_setopt($ch, CURLOPT_CAINFO, '/etc/ssl/certs/ca-certificates.crt');
+
+    $response = curl_exec($ch);
+    if(curl_errno($ch)){
+        // Error here likely indicates validation failure (among other things)
+        echo 'Curl error: ' . curl_error($ch);
+    }
+    curl_close($ch);
+    // ... process $response ...
+
+    // api_reader.php (Secure stream context)
+    $url = "[https://secure.example.com/](https://secure.example.com/)";
+    $options = [
+        "ssl" => [
+            // SECURE: Rely on defaults (true) or set explicitly.
+            "verify_peer" => true,
+            "verify_peer_name" => true,
+            // Optional: Specify CA file if needed
+            // "cafile" => "/etc/ssl/certs/ca-certificates.crt",
+        ],
+    ];
+    $context = stream_context_create($options);
+    // Connection will fail if validation fails. Use try/catch.
+    try {
+         $response = file_get_contents($url, false, $context);
+         // ... process $response ...
+    } catch (Exception $e) {
+         echo "Connection failed (possibly cert validation): " . $e->getMessage();
+    }
+    ?>
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (Burp, mitmproxy) trusted by the client system. Attempt connections via `curl` or `file_get_contents`.
+    * **Secure:** Connection should fail with SSL/TLS validation errors.
+    * **Vulnerable:** Connection succeeds.
+    Review code for `curl_setopt` calls with `CURLOPT_SSL_VERIFYPEER`/`VERIFYHOST` set to `false`/`0`. Check stream context options for `verify_peer`/`verify_peer_name` set to `false`. Check Guzzle client configuration for `verify => false`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using built-in `https` module or libraries like `axios`, `request` (deprecated), `node-fetch`. Node.js performs validation by default using bundled CAs. Vulnerability is explicitly disabling it via `rejectUnauthorized: false`.
+
+    #### Vulnerable Scenario 1: `https` module with `rejectUnauthorized: false`
+    ```javascript
+    // api_client_https.js
+    const https = require('https');
+
+    const options = {
+      hostname: 'untrusted-cert.example.com',
+      port: 443,
+      path: '/',
+      method: 'GET',
+      // DANGEROUS: Disables certificate chain and hostname validation.
+      rejectUnauthorized: false
+    };
+
+    const req = https.request(options, (res) => {
+      // Response received even if cert is invalid/MitM
+      // ... process response ...
+    });
+    req.on('error', (e) => { console.error(`HTTPS request error: ${e}`); });
+    req.end();
+    ```
+
+    #### Vulnerable Scenario 2: `axios` with Custom Agent Disabling Validation
+    ```javascript
+    // api_client_axios.js
+    const axios = require('axios');
+    const https = require('https');
+
+    // DANGEROUS: Creating an agent that bypasses certificate validation.
+    const unsafeAgent = new https.Agent({
+      rejectUnauthorized: false
+    });
+
+    async function callApiUnsafe() {
+      try {
+        const response = await axios.get('[https://wrong.host.example.com/](https://wrong.host.example.com/)', {
+          httpsAgent: unsafeAgent // Using the insecure agent
+        });
+        // Request succeeds despite invalid cert/hostname.
+        console.log(response.data);
+      } catch (error) {
+        // This might catch network errors, but not cert validation errors
+        console.error('Axios error:', error.message);
+      }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Do not set `rejectUnauthorized: false`** in production code. Rely on Node.js's default validation. If connecting to internal systems with custom CAs, provide the CA certificate via the `ca` option in `https.request` or `https.Agent`.
+
+    #### Secure Code Example
+    ```javascript
+    // api_client_https.js (Secure)
+    const https = require('https');
+    const fs = require('fs'); // For loading custom CA if needed
+
+    const options = {
+      hostname: 'secure.example.com',
+      port: 443,
+      path: '/',
+      method: 'GET',
+      // SECURE: Rely on default validation (rejectUnauthorized is true by default).
+      // rejectUnauthorized: true // Explicit default
+
+      // Optional: Provide custom CA if needed
+      // ca: fs.readFileSync('/path/to/internal-ca.crt')
+    };
+
+    const req = https.request(options, (res) => {
+      // Only runs if validation succeeds
+      // ... process response ...
+    });
+    req.on('error', (e) => {
+      // Errors like CERT_UNTRUSTED or HOSTNAME_MISMATCH will be caught here
+      console.error(`HTTPS request error (Validation may have failed): ${e}`);
+    });
+    req.end();
+
+    // api_client_axios.js (Secure)
+    async function callApiSecure() {
+      try {
+        // SECURE: Use default httpsAgent which performs validation.
+        const response = await axios.get('[https://secure.example.com/](https://secure.example.com/)');
+        // Or provide custom CA via agent if needed:
+        // const secureAgent = new https.Agent({ ca: fs.readFileSync('/path/to/ca.crt') });
+        // const response = await axios.get('...', { httpsAgent: secureAgent });
+
+        console.log(response.data);
+      } catch (error) {
+        // Catches connection errors AND certificate validation errors
+        console.error('Axios error:', error.message);
+      }
+    }
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (Burp, mitmproxy) trusted by the client. Attempt connections to target HTTPS services.
+    * **Secure:** Connection should fail with errors like `CERT_UNTRUSTED`, `ERR_TLS_CERT_ALTNAME_INVALID`, `DEPTH_ZERO_SELF_SIGNED_CERT`.
+    * **Vulnerable:** Connection succeeds.
+    Review code for `rejectUnauthorized: false` in `https` options or `https.Agent` configuration used by libraries like `axios`.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using built-in `Net::HTTP`, or gems like `HTTParty`, `Faraday`. Ruby's `Net::HTTP` default settings for verification have changed over versions and can be complex. Explicit configuration is recommended.
+
+    #### Vulnerable Scenario 1: `Net::HTTP` Disabling Verification
+    ```ruby
+    # api_client.rb
+    require 'net/http'
+    require 'uri'
+
+    uri = URI.parse("[https://self-signed.internal.example.com/](https://self-signed.internal.example.com/)")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    # DANGEROUS: Disables certificate validation entirely.
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+    request = Net::HTTP::Get.new(uri.request_uri)
+    begin
+      response = http.request(request) # Connects despite invalid cert
+      # ... process response ...
+    rescue => e
+      puts "Request failed: #{e.message}"
+    end
+    ```
+
+    #### Vulnerable Scenario 2: `HTTParty` Ignoring Verification
+    ```ruby
+    # httparty_client.rb
+    require 'httparty'
+
+    class MyApiClient
+      include HTTParty
+      base_uri '[https://wrong-host.example.com](https://wrong-host.example.com)'
+
+      # DANGEROUS: Globally disabling verification for this client.
+      no_ssl_peer_verification # Deprecated alias for verify: false
+
+      # OR using options per request:
+      def get_data_unsafe(path)
+        # DANGEROUS: verify: false disables checks for this request.
+        self.class.get(path, verify: false)
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **`Net::HTTP`:** Ensure `verify_mode` is set to `OpenSSL::SSL::VERIFY_PEER` (the default in modern Ruby). If using internal CAs, set `ca_file` or `ca_path`, or configure the default certificate store.
+    * **`HTTParty`/`Faraday`:** Ensure the `verify` option is `true` (the default). Provide CA path via options (`:ca_file`, `:ca_path`, or Faraday adapter options) if needed. Avoid `no_ssl_peer_verification`.
+
+    #### Secure Code Example
+    ```ruby
+    # api_client.rb (Secure Net::HTTP)
+    require 'net/http'
+    require 'uri'
+    require 'openssl' # For constants
+
+    uri = URI.parse("[https://secure.example.com/](https://secure.example.com/)")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    # SECURE: Rely on default (VERIFY_PEER) or set explicitly.
+    http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+    # Optional: Specify CA file/path if needed
+    # http.ca_file = '/path/to/ca.pem'
+    # http.ca_path = '/etc/ssl/certs'
+
+    request = Net::HTTP::Get.new(uri.request_uri)
+    begin
+      response = http.request(request) # Fails if validation fails
+      # ... process response ...
+    rescue OpenSSL::SSL::SSLError => e
+      puts "SSL Validation Error: #{e.message}"
+    rescue => e
+      puts "Request failed: #{e.message}"
+    end
+
+    # httparty_client.rb (Secure HTTParty)
+    require 'httparty'
+
+    class MySecureApiClient
+      include HTTParty
+      base_uri '[https://secure.example.com](https://secure.example.com)'
+
+      # SECURE: Rely on default verify: true.
+      # Or explicitly: default_options verify: true
+
+      # Optional: Specify CA file globally if needed
+      # ssl_ca_file '/path/to/ca.pem'
+
+      def get_data_secure(path)
+        # SECURE: Uses default verification settings.
+        # Request will raise SSLError on validation failure.
+        begin
+             self.class.get(path)
+             # Or specify CA per request: self.class.get(path, ssl_ca_file: '/path/ca.pem')
+        rescue OpenSSL::SSL::SSLError => e
+             puts "SSL Error: #{e.message}"
+             nil # Handle error
+        end
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy (Burp, mitmproxy) trusted by the client. Attempt connections using `Net::HTTP`, `HTTParty`, etc.
+    * **Secure:** Connection should fail with `OpenSSL::SSL::SSLError`.
+    * **Vulnerable:** Connection succeeds.
+    Review code for `http.verify_mode = OpenSSL::SSL::VERIFY_NONE`, `verify: false`, or `no_ssl_peer_verification`. Check default settings for the Ruby version in use.
+  </Tab>
+</Tabs>
