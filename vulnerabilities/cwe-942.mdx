@@ -1,0 +1,580 @@
+---
+title: "Permissive Cross-domain Policy with Untrusted Domains"
+sidebarTitle: "Permissive CORS (CWE-942)"
+description: "Mitigation for overly permissive Cross-Origin Resource Sharing (CORS) policies that allow untrusted domains to interact with the application."
+icon: "arrow-right-arrow-left"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when a web application implements **Cross-Origin Resource Sharing (CORS)** policies that are too permissive, particularly by setting the `Access-Control-Allow-Origin` header to overly broad values like the wildcard (`*`) or by dynamically reflecting the requesting `Origin` header without proper validation. This allows malicious websites, visited by an authenticated user, to make requests **to the vulnerable application** and read the responses, potentially stealing sensitive user data or performing unauthorized actions via the user's session. 🌐🔓➡️😈
+
+---
+
+## Business Impact
+
+Permissive CORS policies undermine the browser's Same-Origin Policy, leading to:
+* **Sensitive Data Exposure:** Malicious websites can make authenticated requests (using the victim's cookies) to the vulnerable application's API endpoints and read sensitive data returned in the response (e.g., user profile details, messages, financial information).
+* **Unauthorized Actions:** While the primary risk is data *reading*, permissive CORS can sometimes facilitate actions if combined with other vulnerabilities or if the endpoint relies solely on cookies for authorization and performs state changes via GET requests (though this is less common).
+* **Trust Exploitation:** It abuses the trust relationship between the user and the vulnerable application.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-942](https://cwe.mitre.org/data/definitions/942.html) (Related: CWE-346 Origin Validation Error, CWE-264 Permissions/Privileges)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** High (especially if sensitive data is exposed)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+CORS is typically configured either at the **web server/proxy level** (Nginx, Apache) or within the **application framework** using middleware or filters. The vulnerability is allowing origins that should not be trusted.
+
+**Key Remediation Principles:**
+1.  **Avoid Wildcard (`*`) if Credentials Allowed:** **Never** set `Access-Control-Allow-Origin: *` if `Access-Control-Allow-Credentials: true` is also set. Browsers generally block this combination anyway, but relying on it is insecure.
+2.  **Use Strict Allow-lists:** Maintain an explicit list of trusted origin domains that are permitted to make cross-origin requests.
+3.  **Validate Dynamic Origins:** If dynamically reflecting the `Origin` header, **strictly validate** it against the allow-list. Do not simply echo back any origin.
+4.  **Least Privilege:** Only allow the specific HTTP methods (`Access-Control-Allow-Methods`) and headers (`Access-Control-Allow-Headers`) required by the trusted origins.
+5.  **Vary Header:** Consider using the `Vary: Origin` header to prevent caching issues when serving different `Access-Control-Allow-Origin` headers based on the request origin.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using libraries like `django-cors-headers` (Django) or `Flask-CORS` (Flask) with insecure configurations.
+
+    #### Vulnerable Scenario 1: Django `CORS_ALLOW_ALL_ORIGINS = True`
+    ```python
+    # settings.py (Django)
+
+    INSTALLED_APPS = [ ..., 'corsheaders', ... ]
+    MIDDLEWARE = [ ..., 'corsheaders.middleware.CorsMiddleware', ... ]
+
+    # DANGEROUS: Allows any origin to make requests.
+    # If ALLOW_CREDENTIALS is True (or default), sensitive data can be read.
+    CORS_ALLOW_ALL_ORIGINS = True
+    # CORS_ALLOW_CREDENTIALS = True # Defaults to False, but True makes '*' deadly
+    ```
+
+    #### Vulnerable Scenario 2: Flask-CORS Allowing Any Origin
+    ```python
+    # app.py (Flask)
+    from flask import Flask, jsonify
+    from flask_cors import CORS
+
+    app = Flask(__name__)
+    # DANGEROUS: origins="*" allows any domain.
+    # supports_credentials=True makes this exploitable for authenticated endpoints.
+    CORS(app, resources={r"/api/*": {"origins": "*", "supports_credentials": True}})
+
+    @app.route('/api/user/profile')
+    # Assume requires login via session cookie
+    def get_user_profile():
+        # Attacker on evil.com uses victim's browser (with valid cookie)
+        # to fetch this data via JavaScript. CORS allows the read.
+        user_data = get_sensitive_user_data()
+        return jsonify(user_data)
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Set `CORS_ALLOW_ALL_ORIGINS = False`. Define `CORS_ALLOWED_ORIGINS` (list of specific domains like `https://trusted.example.com`) or `CORS_ALLOWED_ORIGIN_REGEXES`. Set `CORS_ALLOW_CREDENTIALS = True` only if necessary and origins are strictly controlled.
+    * **Flask:** Replace `"origins": "*"` with a specific list: `"origins": ["https://trusted.example.com", "https://another.trusted.com"]`. Only set `supports_credentials=True` if absolutely needed and origins are restricted.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django - Secure)
+    CORS_ALLOW_ALL_ORIGINS = False # SECURE
+    # SECURE: Explicitly list trusted origins
+    CORS_ALLOWED_ORIGINS = [
+        "[https://trusted.frontend.com](https://trusted.frontend.com)",
+        "[https://api-consumer.internal](https://api-consumer.internal)",
+    ]
+    # Allow credentials only if needed by trusted origins
+    CORS_ALLOW_CREDENTIALS = True
+    ```
+    ```python
+    # app.py (Flask - Secure)
+    # SECURE: List specific trusted origins
+    trusted_origins = ["[https://trusted.frontend.com](https://trusted.frontend.com)", "[https://sub.trusted.com](https://sub.trusted.com)"]
+    CORS(app, resources={r"/api/*": {"origins": trusted_origins, "supports_credentials": True}})
+    ```
+
+    #### Testing Strategy
+    Use `curl` or browser developer tools to send requests to your API endpoints from a different origin (e.g., set the `Origin` header manually in `curl`).
+    * Check `Access-Control-Allow-Origin`. Is it `*`? Is it reflecting an untrusted origin?
+    * Check `Access-Control-Allow-Credentials`. Is it `true`?
+    * If both `Origin: *` and `Credentials: true` are returned (or if an untrusted origin is reflected with `Credentials: true`), the configuration is vulnerable. Test by making a JavaScript `fetch` request from a dummy HTML page served on a different domain to see if you can read authenticated data.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using Spring Framework's CORS configuration (`@CrossOrigin` annotation, `WebMvcConfigurer`, Security Filters) with overly broad settings.
+
+    #### Vulnerable Scenario 1: `@CrossOrigin` Allowing Any Origin
+    ```java
+    // controller/UserController.java
+    import org.springframework.web.bind.annotation.CrossOrigin;
+    import org.springframework.web.bind.annotation.GetMapping;
+    import org.springframework.web.bind.annotation.RestController;
+
+    @RestController
+    public class UserController {
+
+        // DANGEROUS: origins="*" allows any domain.
+        // allowCredentials="true" makes it exploitable with cookies/auth headers.
+        @CrossOrigin(origins = "*", allowCredentials = "true")
+        @GetMapping("/api/user/details")
+        public UserDetails getUserDetails(Principal principal) {
+            // Assume this returns sensitive info and requires authentication
+            return userService.getSensitiveDetails(principal.getName());
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Global Configuration Allowing Any Origin
+    ```java
+    // config/WebConfig.java
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.web.servlet.config.annotation.CorsRegistry;
+    import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+    @Configuration
+    public class WebConfig {
+        @Bean
+        public WebMvcConfigurer corsConfigurer() {
+            return new WebMvcConfigurer() {
+                @Override
+                public void addCorsMappings(CorsRegistry registry) {
+                    // DANGEROUS: Allows any origin for /api/** with credentials.
+                    registry.addMapping("/api/**")
+                            .allowedOrigins("*") // Too broad
+                            .allowCredentials(true) // Risky with wildcard origin
+                            .allowedMethods("GET", "POST", "PUT", "DELETE");
+                }
+            };
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Replace `allowedOrigins("*")` or `@CrossOrigin(origins = "*")` with specific, trusted origins: `allowedOrigins("https://trusted.com")` or `@CrossOrigin(origins = "https://trusted.com")`. Only set `allowCredentials(true)` / `allowCredentials = "true"` when strictly necessary and origins are limited.
+
+    #### Secure Code Example
+    ```java
+    // controller/UserController.java (Secure Annotation)
+    // SECURE: Specify allowed origins explicitly.
+    @CrossOrigin(origins = "[https://trusted.frontend.com](https://trusted.frontend.com)", allowCredentials = "true")
+    @GetMapping("/api/user/details")
+    public UserDetails getUserDetails(Principal principal) {
+        // ...
+    }
+
+    // config/WebConfig.java (Secure Global Config)
+    @Configuration
+    public class WebConfig {
+        @Value("${app.cors.allowed-origins}") // Load from properties/env
+        private String[] allowedOrigins;
+
+        @Bean
+        public WebMvcConfigurer corsConfigurerSecure() {
+            return new WebMvcConfigurer() {
+                @Override
+                public void addCorsMappings(CorsRegistry registry) {
+                    // SECURE: Use allow-list loaded from configuration.
+                    registry.addMapping("/api/**")
+                            .allowedOrigins(allowedOrigins) // Use the list
+                            .allowCredentials(true) // Only if needed
+                            .allowedMethods("GET", "POST", "PUT", "DELETE"); // Be specific
+                }
+            };
+        }
+    }
+    ```
+    ```properties
+    # application.properties (Secure)
+    # Comma-separated list of trusted origins
+    app.cors.allowed-origins=[https://trusted.frontend.com](https://trusted.frontend.com),[https://partner.com](https://partner.com)
+    ```
+
+    #### Testing Strategy
+    Send requests with different `Origin` headers (trusted, untrusted, null) to API endpoints requiring authentication. Examine the `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` response headers. Use browser-based tests (JavaScript `fetch` from another domain) to confirm if authenticated data can be read from untrusted origins when `allowCredentials` is true.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Configuring CORS in `Startup.cs` using `services.AddCors()` and `app.UseCors()` with permissive policies.
+
+    #### Vulnerable Scenario 1: Allowing Any Origin with Credentials
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAllWithCreds", builder =>
+            {
+                // DANGEROUS: Allows any origin AND allows credentials.
+                builder.AllowAnyOrigin()
+                       .AllowCredentials() // HIGHLY RISKY with AllowAnyOrigin
+                       .AllowAnyMethod()
+                       .AllowAnyHeader();
+            });
+        });
+        // ...
+    }
+
+    // Startup.cs (Configure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // ...
+        app.UseRouting();
+        // DANGEROUS: Applying the permissive policy globally or to sensitive endpoints.
+        app.UseCors("AllowAllWithCreds");
+        app.UseAuthentication();
+        app.UseAuthorization();
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Reflecting Origin Without Validation
+    Building a custom CORS middleware or logic that incorrectly reflects the `Origin` header.
+    ```csharp
+    // Custom Middleware (Conceptual)
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var origin = context.Request.Headers["Origin"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(origin))
+        {
+            // DANGEROUS: Reflecting any origin back without checking an allow-list.
+            context.Response.Headers.Add("Access-Control-Allow-Origin", origin);
+            context.Response.Headers.Add("Access-Control-Allow-Credentials", "true"); // Also dangerous
+        }
+        await _next(context);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Define CORS policies with specific origins using `WithOrigins("https://trusted.com", ...)`. **Never** use `AllowAnyOrigin()` together with `AllowCredentials()`. If dynamic origin validation is needed, implement logic to check the incoming `Origin` header against a configured allow-list *before* setting the `Access-Control-Allow-Origin` header.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Load allowed origins from configuration (appsettings.json, env vars)
+        var allowedOrigins = Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new string[0];
+
+        services.AddCors(options =>
+        {
+            options.AddPolicy("AllowTrustedOrigins", builder =>
+            {
+                // SECURE: Use specific origins from configuration.
+                builder.WithOrigins(allowedOrigins)
+                       .AllowCredentials() // Allow creds only for trusted origins
+                       .AllowAnyMethod() // Or specific methods: WithMethods("GET", "POST")
+                       .AllowAnyHeader(); // Or specific headers: WithHeaders(...)
+            });
+        });
+        // ...
+    }
+
+    // Startup.cs (Configure - Secure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // ...
+        app.UseRouting();
+        // SECURE: Apply the strict policy.
+        app.UseCors("AllowTrustedOrigins");
+        app.UseAuthentication();
+        app.UseAuthorization();
+        // ...
+    }
+
+    // appsettings.json (Secure Origins List)
+    {
+      "Cors": {
+        "AllowedOrigins": [
+          "[https://trusted.frontend.com](https://trusted.frontend.com)",
+          "[https://partner.site.net](https://partner.site.net)"
+        ]
+      },
+      // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Send requests with various `Origin` headers (trusted, untrusted, null). Inspect `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials`. Use browser JS (`fetch`) from an untrusted domain to attempt reading data from authenticated endpoints. Verify that only requests from origins listed in the policy succeed when `AllowCredentials` is true.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using libraries like `fruitcake/laravel-cors` (Laravel) or manually setting CORS headers with `header()` using broad values.
+
+    #### Vulnerable Scenario 1: Laravel CORS Config Allowing All
+    ```php
+    // config/cors.php (Laravel)
+    return [
+        'paths' => ['api/*'], // Applies to API routes
+        'allowed_methods' => ['*'],
+        // DANGEROUS: Allows any origin.
+        'allowed_origins' => ['*'],
+        // DANGEROUS: Allows any pattern (effectively wildcard).
+        'allowed_origins_patterns' => [],
+        'allowed_headers' => ['*'],
+        'exposed_headers' => [],
+        'max_age' => 0,
+        // DANGEROUS: Allows credentials with wildcard origin.
+        'supports_credentials' => true,
+    ];
+    ```
+
+    #### Vulnerable Scenario 2: Manual Headers Allowing All
+    ```php
+    <?php
+    // api/endpoint.php (Plain PHP)
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '*'; // Default to wildcard or use Origin
+
+    // DANGEROUS: Setting Allow-Origin to '*' or reflecting untrusted Origin.
+    header("Access-Control-Allow-Origin: *");
+    // DANGEROUS: Allowing credentials with wildcard origin.
+    header("Access-Control-Allow-Credentials: true");
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization");
+
+    // Check if it's a preflight OPTIONS request
+    if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+        exit(0);
+    }
+
+    // Assume session cookie is used for authentication
+    session_start();
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized']);
+        exit;
+    }
+
+    // Send sensitive data
+    echo json_encode(['user_data' => get_sensitive_data($_SESSION['user_id'])]);
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Configure `config/cors.php`. Set `allowed_origins` to an explicit array of trusted domains. Set `supports_credentials` to `true` only if needed and origins are restricted. Avoid `['*']` for origins if credentials are true.
+    * **Manual:** Maintain an allow-list of trusted origins. Check the incoming `$_SERVER['HTTP_ORIGIN']` against this list. If it matches, set `Access-Control-Allow-Origin` to that specific origin. Only set `Access-Control-Allow-Credentials: true` for matched, trusted origins.
+
+    #### Secure Code Example
+    ```php
+    // config/cors.php (Laravel - Secure)
+    return [
+        'paths' => ['api/*'],
+        'allowed_methods' => ['GET', 'POST', 'PUT', 'DELETE'], // Be specific
+        // SECURE: List specific trusted origins (load from .env ideally).
+        'allowed_origins' => explode(',', env('CORS_ALLOWED_ORIGINS', '')),
+        'allowed_origins_patterns' => [],
+        'allowed_headers' => ['Content-Type', 'Authorization', 'X-Requested-With'], // Be specific
+        'exposed_headers' => [],
+        'max_age' => 0,
+        // SECURE: Allow credentials only for the specific origins listed above.
+        'supports_credentials' => true,
+    ];
+    ```
+    ```ini
+    # .env (Laravel - Secure)
+    CORS_ALLOWED_ORIGINS="[https://trusted.frontend.com](https://trusted.frontend.com),[https://partner.com](https://partner.com)"
+    ```
+    ```php
+    <?php
+    // api/endpoint.php (Plain PHP - Secure)
+    $allowed_origins = [
+        "[https://trusted.frontend.com](https://trusted.frontend.com)",
+        "[https://sub.trusted.com](https://sub.trusted.com)"
+    ];
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+    $origin_allowed = false;
+
+    if ($origin && in_array($origin, $allowed_origins)) {
+        // SECURE: Reflect the specific allowed origin.
+        header("Access-Control-Allow-Origin: " . $origin);
+        // SECURE: Allow credentials only for specific origins.
+        header("Access-Control-Allow-Credentials: true");
+        $origin_allowed = true;
+    } else {
+        // Optionally handle origins not in allow-list (e.g., no CORS headers)
+        // Or set a default restrictive policy if needed: header("Access-Control-Allow-Origin: [https://default.safe.origin](https://default.safe.origin)");
+    }
+
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS"); // Be specific
+    header("Access-Control-Allow-Headers: Content-Type, Authorization"); // Be specific
+    header("Vary: Origin"); // Important when reflecting origin
+
+    if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+        exit(0);
+    }
+
+    session_start(); // Needs careful session handling
+    if (!isset($_SESSION['user_id'])) { /* ... handle unauthorized ... */ exit; }
+
+    // Only proceed if origin was allowed or if same-origin request (origin is null/same)
+    if ($origin_allowed || $origin === null /* Add same-origin check if needed */) {
+         echo json_encode(['user_data' => get_sensitive_data($_SESSION['user_id'])]);
+    } else {
+         http_response_code(403); // Forbidden from this origin
+         echo json_encode(['error' => 'Origin not allowed']);
+    }
+    ?>
+    ```
+
+    #### Testing Strategy
+    Use `curl` with `-H "Origin: <domain>"` (testing trusted, untrusted, and null origins) against authenticated endpoints. Check the `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` headers. Use browser JS (`fetch`) from an untrusted domain to attempt reading authenticated data. Verify only allow-listed origins succeed when `credentials` is true.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using the `cors` middleware package for Express with overly permissive options.
+
+    #### Vulnerable Scenario 1: `cors()` Allowing All Origins with Credentials
+    ```javascript
+    // app.js
+    const express = require('express');
+    const cors = require('cors');
+    const app = express();
+
+    // DANGEROUS: Allows any origin and allows credentials.
+    const corsOptions = {
+      origin: '*', // Allows any origin
+      credentials: true // Allows cookies/auth headers
+    };
+    app.use(cors(corsOptions));
+
+    app.get('/api/sensitive-data', ensureAuthenticated, (req, res) => {
+        // Attacker on evil.com makes request using victim's cookie,
+        // CORS allows the response with sensitive data to be read.
+        res.json({ secret: getSecretData(req.user.id) });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Reflecting Origin Without Validation
+    ```javascript
+    // app.js
+    const corsOptionsDelegate = function (req, callback) {
+      const origin = req.header('Origin');
+      // DANGEROUS: Reflects any origin back without checking an allow-list.
+      const corsOptions = { origin: origin, credentials: true };
+      callback(null, corsOptions); // Pass options to callback.
+    };
+    app.use(cors(corsOptionsDelegate));
+    // ... sensitive routes ...
+    ```
+
+    #### Mitigation and Best Practices
+    Configure the `cors` middleware with a specific list of allowed origins. **Never** use `origin: '*'` with `credentials: true`. If using a function for `origin`, validate the incoming origin against your allow-list.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    const express = require('express');
+    const cors = require('cors');
+    const app = express();
+
+    // SECURE: Load allowed origins from environment/config
+    const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : [];
+    if (allowedOrigins.length === 0) { console.warn("CORS allowed origins not set!"); }
+
+    const secureCorsOptions = {
+      // origin: allowedOrigins, // Option 1: Provide the array directly
+      // Option 2: Use a function for more control or complex validation
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        // OR check if origin is in our allow-list
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+          callback(null, true); // Allow
+        } else {
+          callback(new Error('Not allowed by CORS')); // Disallow
+        }
+      },
+      credentials: true // Allow credentials only for the matched origins
+    };
+
+    // Apply CORS globally or selectively before protected routes
+    app.use(cors(secureCorsOptions));
+    // Alternatively: app.use('/api/', cors(secureCorsOptions));
+
+    app.get('/api/sensitive-data', ensureAuthenticated, (req, res) => {
+        res.json({ secret: getSecretData(req.user.id) });
+    });
+    ```
+    ```ini
+    # .env (Secure)
+    # Comma-separated list
+    CORS_ALLOWED_ORIGINS=[https://trusted.frontend.com](https://trusted.frontend.com),[https://another.trusted.app](https://another.trusted.app)
+    ```
+
+    #### Testing Strategy
+    Use `curl` with different `Origin` headers (trusted, untrusted) against authenticated endpoints. Check `Access-Control-Allow-Origin` (should match trusted origin or be absent for untrusted) and `Access-Control-Allow-Credentials` (should be `true` only for trusted origin). Use browser JS (`fetch`) from an untrusted domain to confirm data cannot be read.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using the `rack-cors` gem in Rails (`config/initializers/cors.rb`) with permissive settings.
+
+    #### Vulnerable Scenario 1: Allowing All Origins with Credentials
+    ```ruby
+    # config/initializers/cors.rb
+    Rails.application.config.middleware.insert_before 0, Rack::Cors do
+      allow do
+        # DANGEROUS: Allows any origin.
+        origins '*'
+        resource '/api/*', # Applied to API path
+          headers: :any,
+          methods: [:get, :post, :put, :patch, :delete, :options, :head],
+          # DANGEROUS: Allows credentials with wildcard origin.
+          credentials: true
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Reflecting Origin Unsafely (Less Common)
+    While `rack-cors` doesn't directly reflect origins, custom middleware attempting this could be vulnerable if not validating.
+
+    #### Mitigation and Best Practices
+    Configure `rack-cors` in `config/initializers/cors.rb` to specify an explicit list of trusted `origins`. Avoid `origins '*'`. Only set `credentials: true` if required and paired with the explicit origin list.
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/cors.rb (Secure)
+
+    # SECURE: Load allowed origins from environment variables or Rails credentials
+    allowed_origins = ENV['CORS_ALLOWED_ORIGINS']&.split(',') || []
+    # Example using credentials:
+    # allowed_origins = Rails.application.credentials.dig(:cors, :allowed_origins) || []
+
+    Rails.application.config.middleware.insert_before 0, Rack::Cors do
+      allow do
+        # SECURE: Use the allow-list of origins.
+        origins allowed_origins
+
+        resource '/api/*', # Apply to relevant paths
+          headers: :any, # Or specify needed headers
+          methods: [:get, :post, :put, :patch, :delete, :options, :head], # Specify needed methods
+          # SECURE: Allow credentials only for the specified origins.
+          credentials: true
+      end
+
+      # Optional: Add another 'allow' block for public resources with different settings if needed
+      # allow do
+      #   origins '*' # Example: Allow any origin for public, non-credentialed resources
+      #   resource '/public-assets/*', headers: :any, methods: :get
+      #   # credentials: false # Default
+      # end
+    end
+    ```
+    ```bash
+    # Example Environment Variable (comma-separated)
+    # export CORS_ALLOWED_ORIGINS="[https://trusted.frontend.com](https://trusted.frontend.com),[https://partner.app](https://partner.app)"
+    ```
+
+    #### Testing Strategy
+    Use `curl` with different `Origin` headers (trusted, untrusted) against authenticated API endpoints. Check `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials`. Use browser JS (`fetch`) from an untrusted domain to try reading authenticated data. Verify only origins in the configuration allow credentialed requests.
+  </Tab>
+</Tabs>
