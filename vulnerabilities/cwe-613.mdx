@@ -1,0 +1,469 @@
+---
+title: "Insufficient Session Expiration"
+sidebarTitle: "Insufficient Expiration (CWE-613)"
+description: "Mitigation for sessions that don't expire or have excessively long timeouts, increasing the window for session hijacking."
+icon: "hourglass-end"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application **fails to properly invalidate user sessions** after a period of inactivity (**idle timeout**) or after a maximum total duration (**absolute timeout**). If sessions remain valid indefinitely or for excessively long periods (e.g., months or years), the risk of session hijacking increases significantly. An attacker who manages to steal a session identifier (e.g., via XSS, network sniffing if not `Secure`, or guessing) has a much larger window of opportunity to reuse it. Furthermore, users accessing the application from shared computers might leave their sessions active inadvertently if there's no timeout. ⏳➡️🔓
+
+---
+
+## Business Impact
+
+Insufficient session expiration leads to:
+* **Prolonged Session Hijacking Window:** Stolen session tokens remain valid for longer, increasing the chance an attacker can successfully use them.
+* **Increased Risk from Shared Computers:** Users might remain logged in on public terminals, allowing subsequent users to access their accounts.
+* **Resource Consumption:** Maintaining a large number of inactive sessions can consume server memory.
+* **Compliance Issues:** Many security standards mandate specific session timeout durations.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-613](https://cwe.mitre.org/data/definitions/613.html)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** Medium
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Session expiration is typically managed through framework configuration settings that control cookie expiry and server-side session data lifetime.
+
+**Key Remediation Principles:**
+1.  **Implement Idle Timeout:** Automatically log out users after a period of inactivity (e.g., 15-30 minutes). This involves tracking the last activity time on the server-side session.
+2.  **Implement Absolute Timeout:** Automatically log out users after a fixed maximum duration, regardless of activity (e.g., 8-24 hours). This limits the maximum lifetime of any session identifier.
+3.  **Secure Logout Functionality:** Provide a clear logout button that properly invalidates the session on the server-side.
+4.  **Cookie Expiry vs. Server Expiry:** Ensure both the session cookie's expiry (`Expires`/`Max-Age` attributes) and the server-side session data's lifetime are configured appropriately. Server-side expiration is generally more critical.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Configuring `SESSION_COOKIE_AGE` and `SESSION_SAVE_EVERY_REQUEST` in Django `settings.py`. Flask requires configuring the session interface (e.g., `PERMANENT_SESSION_LIFETIME` for Flask-Session).
+
+    #### Vulnerable Scenario 1: Django Session Never Expires
+    ```python
+    # settings.py (Django)
+    # DANGEROUS: Setting age to None or a very large number means the session
+    # cookie might persist indefinitely based on browser settings, and server-side
+    # data might not be cleaned up efficiently depending on session backend.
+    SESSION_COOKIE_AGE = None # Or a huge value like 315360000 (10 years)
+
+    # DANGEROUS: If False (default is False), idle timeout doesn't work effectively.
+    # The session expiry is only updated when the session is modified.
+    SESSION_SAVE_EVERY_REQUEST = False
+    ```
+
+    #### Vulnerable Scenario 2: Flask Default Session Lifetime (Browser Session)
+    Flask's default client-side cookie session typically lasts only for the browser session unless `session.permanent = True` is set along with `PERMANENT_SESSION_LIFETIME`. If using server-side sessions (like Flask-Session), defaults might be too long or missing.
+    ```python
+    # app.py (Flask - built-in session)
+    app.secret_key = '...' # Needed for session
+    # No PERMANENT_SESSION_LIFETIME configured, session might expire only on browser close.
+
+    @app.route('/login')
+    def login():
+        # ... login logic ...
+        # DANGEROUS: If PERMANENT_SESSION_LIFETIME is very long or default (31 days).
+        session.permanent = True # Mark session to use lifetime
+        # ...
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Set `SESSION_COOKIE_AGE` to a reasonable absolute timeout (e.g., `8 * 60 * 60` for 8 hours). Set `SESSION_SAVE_EVERY_REQUEST = True` to enable idle timeout behavior (session expiry is reset on each request). Configure the session cleanup mechanism (`./manage.py clearsessions`).
+    * **Flask:** Set `PERMANENT_SESSION_LIFETIME` (a `timedelta` object or seconds) to a reasonable absolute timeout. Ensure `session.permanent = True` is set after login if using this lifetime. For idle timeout, custom logic tracking last activity time in the session is usually needed.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django - Secure)
+    # SECURE: Absolute timeout (e.g., 8 hours)
+    SESSION_COOKIE_AGE = 8 * 60 * 60
+
+    # SECURE: Enable idle timeout (resets expiry on each request)
+    SESSION_SAVE_EVERY_REQUEST = True
+
+    # Ensure SESSION_EXPIRE_AT_BROWSER_CLOSE = False if using AGE for persistence
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+    ```
+    ```python
+    # app.py (Flask - Secure Lifetime)
+    from datetime import timedelta
+
+    app.secret_key = os.environ.get('SECRET_KEY') # Load securely
+    # SECURE: Set absolute timeout (e.g., 4 hours)
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=4)
+
+    @app.route('/login-secure')
+    def login_secure():
+        # ... login logic ...
+        session.permanent = True # SECURE: Apply the configured lifetime
+        session['user_id'] = user.id
+        # Optional: Store initial login time for absolute timeout independent of activity
+        session['login_time'] = datetime.utcnow()
+        # Optional: Update last activity time for idle timeout (requires checking on each request)
+        session['last_activity'] = datetime.utcnow()
+        # ...
+
+    # Add a check in a @app.before_request handler for idle/absolute timeout
+    ```
+
+    #### Testing Strategy
+    Log into the application.
+    * **Idle Timeout:** Leave the browser inactive for longer than the configured idle timeout period. Try performing an action (e.g., refresh page, click link). You should be logged out or prompted to log back in.
+    * **Absolute Timeout:** Note the login time. Wait longer than the configured absolute timeout period (even if you were active). Try performing an action. You should be logged out.
+    Inspect the session cookie's `Expires`/`Max-Age` attribute in browser developer tools (though server-side expiration is more important).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Configuring session timeout in `application.properties` (`server.servlet.session.timeout`) for Spring Boot, or `session-timeout` in `web.xml` for traditional Servlets.
+
+    #### Vulnerable Scenario 1: No Timeout Configured (Servlet Default)
+    In older servlet containers or if not explicitly configured, the default timeout might be too long (e.g., 30 minutes, but could be longer or server-dependent).
+    ```xml
+    <web-app ...>
+        </web-app>
+    ```
+
+    #### Vulnerable Scenario 2: Excessively Long Timeout (Spring Boot)
+    ```properties
+    # application.properties
+    # DANGEROUS: Setting timeout to 24 hours allows sessions to persist too long.
+    # Should be much shorter for idle timeout.
+    server.servlet.session.timeout=24h
+    # Or using seconds: server.servlet.session.timeout=86400
+    ```
+
+    #### Mitigation and Best Practices
+    * Configure a reasonably short **idle timeout** (e.g., 15-30 minutes) using `server.servlet.session.timeout` (Spring Boot) or `<session-timeout>` (web.xml).
+    * Implement **absolute timeout** logic manually if needed (e.g., store login timestamp in session, check duration in a filter).
+
+    #### Secure Code Example
+    ```properties
+    # application.properties (Spring Boot - Secure Idle Timeout)
+    # SECURE: Set idle timeout (e.g., 30 minutes).
+    server.servlet.session.timeout=30m
+    # Or in seconds: server.servlet.session.timeout=1800
+    ```
+    ```xml
+    <web-app ...>
+        <session-config>
+            <session-timeout>30</session-timeout>
+        </session-config>
+        </web-app>
+    ```
+    ```java
+    // Example Filter for Absolute Timeout (Conceptual)
+    public class AbsoluteTimeoutFilter implements Filter {
+        private static final long MAX_SESSION_DURATION_MS = Duration.ofHours(8).toMillis();
+
+        @Override
+        public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+                throws IOException, ServletException {
+            HttpServletRequest httpRequest = (HttpServletRequest) request;
+            HttpSession session = httpRequest.getSession(false); // Don't create if none exists
+
+            if (session != null && session.getAttribute("loginTime") != null) {
+                long loginTime = (long) session.getAttribute("loginTime");
+                if (System.currentTimeMillis() - loginTime > MAX_SESSION_DURATION_MS) {
+                    session.invalidate(); // Invalidate session
+                    // Redirect to login page or return error
+                    ((HttpServletResponse)response).sendRedirect("/login?expired=absolute");
+                    return; // Stop processing
+                }
+            }
+            chain.doFilter(request, response);
+        }
+        // Remember to set "loginTime" attribute (System.currentTimeMillis()) in session upon successful login.
+    }
+    ```
+
+    #### Testing Strategy
+    Test idle and absolute timeouts as described for Python. Log in, wait longer than the configured `server.servlet.session.timeout` without activity, then try accessing a protected resource. Verify logout/redirect. Check server configuration files (`application.properties`, `web.xml`) for timeout settings.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Configuring session `IdleTimeout` (for `HttpContext.Session`) and authentication cookie `ExpireTimeSpan` / `SlidingExpiration` (for ASP.NET Core Identity).
+
+    #### Vulnerable Scenario 1: Long Session Idle Timeout
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.AddSession(options =>
+    {
+        // DANGEROUS: Very long idle timeout (e.g., 8 hours).
+        // User stays logged in as long as they click something every 7 hours.
+        options.IdleTimeout = TimeSpan.FromHours(8);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Long Auth Cookie Lifetime without Sliding Expiration
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.ConfigureApplicationCookie(options =>
+    {
+        // DANGEROUS: Cookie lasts for 30 days regardless of activity.
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        // DANGEROUS: SlidingExpiration is off (or default might be off).
+        // Combined with long ExpireTimeSpan, this is very insecure.
+        options.SlidingExpiration = false;
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Session:** Set `options.IdleTimeout` to a short duration (e.g., 15-30 minutes).
+    * **Auth Cookie:** Set `options.ExpireTimeSpan` to a moderate absolute lifetime (e.g., 8-12 hours). **Enable `options.SlidingExpiration = true`** so the cookie expiry is renewed on activity, but only up to the `ExpireTimeSpan`. This provides both idle and absolute timeout behavior for the authentication cookie.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure)
+    services.AddSession(options =>
+    {
+        // SECURE: Short idle timeout for session data.
+        options.IdleTimeout = TimeSpan.FromMinutes(20);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Recommended
+        options.Cookie.SameSite = SameSiteMode.Strict; // Recommended
+        options.Cookie.IsEssential = true;
+    });
+
+    services.ConfigureApplicationCookie(options => // For Identity cookies
+    {
+        // SECURE: Moderate absolute lifetime (e.g., 8 hours).
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        // SECURE: Renew cookie on activity within the ExpireTimeSpan window.
+        options.SlidingExpiration = true;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Recommended
+        options.Cookie.SameSite = SameSiteMode.Strict; // Recommended
+        // ... other settings like LoginPath ...
+    });
+    ```
+
+    #### Testing Strategy
+    Test both timeouts:
+    * **Idle:** Log in. Wait longer than `IdleTimeout` (session) or the effective idle period implied by `SlidingExpiration` (auth cookie). Try accessing resources. Verify logout/redirect. Note that `SlidingExpiration` renews the cookie, effectively acting like an idle timeout up to the `ExpireTimeSpan`.
+    * **Absolute:** Log in. Wait longer than `ExpireTimeSpan`. Try accessing resources. Verify logout/redirect, even if active during the period.
+    Check `Startup.cs` configuration.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Controlled by `session.gc_maxlifetime` in `php.ini` (server-side idle timeout) and `session.cookie_lifetime` (client-side cookie expiry). Laravel uses `lifetime` and `expire_on_close` in `config/session.php`.
+
+    #### Vulnerable Scenario 1: Long `gc_maxlifetime` (Plain PHP)
+    ```ini
+    ; php.ini
+    ; DANGEROUS: Session data persists on server for 1 day of inactivity.
+    session.gc_maxlifetime = 86400 ; (seconds = 24 hours)
+    ; DANGEROUS: Cookie persists even after browser close if lifetime > 0.
+    session.cookie_lifetime = 0 ; 0 means until browser close, but long gc_maxlifetime is still risky.
+    ; If cookie_lifetime was set to 86400*30 (30 days), it's even worse.
+    ```
+
+    #### Vulnerable Scenario 2: Long `lifetime` in Laravel
+    ```php
+    // config/session.php (Laravel)
+    return [
+        // DANGEROUS: Session lasts for 1 week (in minutes).
+        'lifetime' => 10080, // 60 * 24 * 7
+        // DANGEROUS: If true, session ends only when browser closes, ignoring lifetime unless cookie expires.
+        'expire_on_close' => false, // Default is false
+    ];
+    ```
+
+    #### Mitigation and Best Practices
+    * **Plain PHP:** Set `session.gc_maxlifetime` to a reasonable idle timeout in seconds (e.g., `1800` for 30 minutes). Set `session.cookie_lifetime = 0` to make it a session cookie (expires on browser close) which relies on `gc_maxlifetime` for idle timeout.
+    * **Laravel:** Set `'lifetime'` (in minutes) to a reasonable idle timeout (e.g., `30`). Set `'expire_on_close' => false` (default) to respect the idle timeout. Consider implementing manual absolute timeout logic if needed.
+
+    #### Secure Code Example
+    ```ini
+    ; php.ini (Production - Secure Idle Timeout)
+    session.gc_maxlifetime = 1800 ; 30 minutes idle timeout (server-side)
+    session.cookie_secure = On
+    session.cookie_httponly = On
+    session.cookie_samesite = Strict
+    session.cookie_lifetime = 0 ; Cookie lasts until browser close (relies on server gc)
+    ```
+    ```php
+    // config/session.php (Laravel - Secure Idle Timeout)
+    return [
+        'driver' => env('SESSION_DRIVER', 'file'),
+        // SECURE: Set idle timeout (e.g., 30 minutes).
+        'lifetime' => env('SESSION_LIFETIME', 30),
+        // SECURE: Ensure session expires based on lifetime, not just browser close.
+        'expire_on_close' => false,
+        'encrypt' => false, // Depends on driver, consider true if sensitive data in session
+        'files' => storage_path('framework/sessions'),
+        'connection' => env('SESSION_CONNECTION'),
+        'table' => 'sessions',
+        'store' => env('SESSION_STORE'),
+        'lottery' => [2, 100],
+        'cookie' => env('SESSION_COOKIE', Str::slug(env('APP_NAME', 'laravel'), '_').'_session'),
+        'path' => '/',
+        'domain' => env('SESSION_DOMAIN'),
+        'secure' => env('SESSION_SECURE_COOKIE', true), // Use env var
+        'http_only' => true,
+        'same_site' => 'strict', // Stricter is better
+    ];
+    ```
+
+    #### Testing Strategy
+    Test idle timeout by logging in, waiting longer than `session.gc_maxlifetime` (PHP) or `lifetime` (Laravel), and trying an action. Test `session.cookie_lifetime` / `expire_on_close` behavior by closing and reopening the browser. Check `php.ini` and `config/session.php` settings.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Configuring `cookie.maxAge` (absolute timeout based on cookie) and `rolling: true` (idle timeout behavior) in `express-session`.
+
+    #### Vulnerable Scenario 1: No Expiry (`maxAge` omitted)
+    ```javascript
+    // app.js
+    app.use(session({
+        secret: 'my-secret',
+        cookie: {
+            // DANGEROUS: maxAge is omitted. Cookie might be session-only (browser close)
+            // or have a long default depending on session store. Server-side store
+            // might also lack cleanup. Effectively no reliable timeout.
+            httpOnly: true,
+            secure: isProd
+        }
+    }));
+    ```
+
+    #### Vulnerable Scenario 2: Very Long `maxAge`
+    ```javascript
+    // app.js
+    app.use(session({
+        secret: 'my-secret',
+        cookie: {
+            // DANGEROUS: Cookie lasts for 30 days.
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days in milliseconds
+            httpOnly: true,
+            secure: isProd,
+            // rolling: false // If rolling is false (default), no idle timeout
+        }
+    }));
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `cookie.maxAge` to a reasonable absolute timeout (e.g., 8 hours in milliseconds).
+    * Set `rolling: true` to reset the `maxAge` timer on every response (effectively implementing an idle timeout equal to `maxAge`).
+    * Alternatively, keep `rolling: false` for a fixed absolute timeout, and implement manual idle timeout by checking a timestamp stored in the session data.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure - Idle Timeout via rolling maxAge)
+    const session = require('express-session');
+    const isProd = (process.env.NODE_ENV === 'production');
+    app.set('trust proxy', 1); // If behind proxy
+
+    app.use(session({
+        secret: process.env.SESSION_SECRET, // Load securely
+        resave: false, // Don't save session if unmodified
+        saveUninitialized: false, // Don't save empty sessions
+        cookie: {
+            // SECURE: Set cookie lifetime (acts as idle timeout due to rolling: true)
+            // Example: 30 minutes
+            maxAge: 30 * 60 * 1000,
+            httpOnly: true,
+            secure: isProd, // Requires HTTPS
+            sameSite: 'strict'
+        },
+        // SECURE: Reset maxAge on every response (idle timeout behavior)
+        rolling: true
+        // Configure store (e.g., connect-redis) for production
+    }));
+
+    // OR Secure - Absolute Timeout (rolling: false) + Manual Idle Check
+    // app.use(session({
+    //    cookie: { maxAge: 8 * 60 * 60 * 1000 /* 8 hours */, ... },
+    //    rolling: false, ...
+    // }));
+    // app.use((req, res, next) => { // Middleware to check idle time
+    //    if (req.session && req.session.lastActivity) {
+    //        const idleTime = Date.now() - req.session.lastActivity;
+    //        if (idleTime > (30 * 60 * 1000 /* 30 mins */)) {
+    //             req.session.destroy(); // Or logout logic
+    //             return res.redirect('/login?expired=idle');
+    //        }
+    //    }
+    //    if (req.session) req.session.lastActivity = Date.now(); // Update activity time
+    //    next();
+    // });
+    ```
+
+    #### Testing Strategy
+    Test idle timeout (if `rolling: true`) by waiting longer than `maxAge` without activity. Test absolute timeout (if `rolling: false`) by waiting longer than `maxAge` even with activity. Inspect the cookie's `Expires`/`Max-Age` attribute. Check `express-session` configuration options.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Configuring session expiry in `config/initializers/session_store.rb`. Devise uses `config.timeout_in` for idle timeout.
+
+    #### Vulnerable Scenario 1: No Session Store Expiry
+    ```ruby
+    # config/initializers/session_store.rb
+    # DANGEROUS: No :expire_after option set. Cookie might be session-only,
+    # or rely on server defaults. No explicit timeout configured.
+    Rails.application.config.session_store :cookie_store, key: '_my_app_session',
+      httponly: true,
+      secure: Rails.env.production?
+    ```
+
+    #### Vulnerable Scenario 2: Devise without Timeoutable
+    The `:timeoutable` module is not included in the Devise model, disabling idle timeout.
+    ```ruby
+    # app/models/user.rb
+    class User < ApplicationRecord
+      # Include default devise modules. Others available are:
+      # :confirmable, :lockable, :omniauthable
+      # DANGEROUS: :timeoutable module is missing. User stays logged in indefinitely unless cookie expires.
+      devise :database_authenticatable, :registerable,
+             :recoverable, :rememberable, :validatable # Missing :timeoutable
+    end
+
+    # config/initializers/devise.rb
+    # config.timeout_in = 30.minutes # This setting has no effect if model doesn't use :timeoutable
+    ```
+
+    #### Mitigation and Best Practices
+    * **Rails Sessions:** Set the `:expire_after` option in `session_store.rb` to configure an absolute session lifetime tied to the cookie. Implement manual idle timeout tracking in the session if needed.
+    * **Devise:** Include the `:timeoutable` module in your User model. Configure `config.timeout_in` in `config/initializers/devise.rb` to set the idle timeout duration (e.g., `30.minutes`).
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/session_store.rb (Secure - Absolute Expiry)
+    # SECURE: Cookie and session expire after 8 hours regardless of activity.
+    Rails.application.config.session_store :cookie_store, key: '_my_app_session',
+      httponly: true,
+      secure: Rails.env.production?,
+      same_site: :strict,
+      expire_after: 8.hours # Absolute timeout
+    ```
+    ```ruby
+    # app/models/user.rb (Secure - Devise Idle Timeout)
+    class User < ApplicationRecord
+      devise :database_authenticatable, :registerable,
+             :recoverable, :rememberable, :validatable,
+             # SECURE: Include timeoutable module.
+             :timeoutable
+    end
+
+    # config/initializers/devise.rb (Secure - Devise Idle Timeout)
+    Devise.setup do |config|
+      # ==> Configuration for :timeoutable
+      # The time you want the user session to be expired after inactivity.
+      # SECURE: Set idle timeout duration (e.g., 30 minutes).
+      config.timeout_in = 30.minutes
+      # ... other devise settings ...
+    end
+    ```
+
+    #### Testing Strategy
+    Test idle timeout (if using Devise `:timeoutable` or manual tracking) by waiting longer than `config.timeout_in` without activity. Test absolute timeout (if using `expire_after`) by waiting longer than the specified duration. Check `session_store.rb` and `devise.rb` configurations. Inspect cookie `Expires`/`Max-Age`.
+  </Tab>
+</Tabs>
