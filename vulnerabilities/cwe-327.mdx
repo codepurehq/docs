@@ -1,5 +1,5 @@
 ---
-title: "Useeeeeeee of a Broken or Risky Cryptographic Algorithm"
+title: "Use of a Broken or Risky Cryptographic Algorithm"
 sidebarTitle: "Broken/Risky Crypto (CWE-327)"
 description: "Mitigation for using weak or broken crypto (MD5, SHA1, DES) in Django, Spring Boot, Rails, Express, ASP.NET Core, and Laravel."
 icon: "unlock-keyhole"
@@ -48,16 +48,17 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     # utils/encryption.py
     from Crypto.Cipher import DES, AES
     from Crypto.Random import get_random_bytes
+    from Crypto.Util.Padding import pad # Added import
 
     def encrypt_data_des(key, data):
         # DANGEROUS: DES has a small key size (56-bit) and is broken.
         cipher = DES.new(key, DES.MODE_ECB) # ECB mode is also insecure
-        return cipher.encrypt(pad(data))
+        return cipher.encrypt(pad(data.encode(), DES.block_size)) # Added encode() and block_size
         
     def encrypt_data_aes_ecb(key, data):
         # DANGEROUS: AES itself is strong, but ECB mode leaks patterns.
         cipher = AES.new(key, AES.MODE_ECB)
-        return cipher.encrypt(pad(data))
+        return cipher.encrypt(pad(data.encode(), AES.block_size)) # Added encode() and block_size
     ```
 
     #### Mitigation and Best Practices
@@ -79,11 +80,11 @@ The fix is to **always use current, industry-standard algorithms** recommended b
 
     def encrypt_data_aes_gcm(key, data):
         # SECURE: AES-GCM provides confidentiality and integrity.
-        nonce = get_random_bytes(12)
+        nonce = get_random_bytes(12) # GCM recommended nonce size
         cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
         ciphertext, tag = cipher.encrypt_and_digest(data.encode())
         # Store or transmit nonce + ciphertext + tag
-        return nonce + ciphertext + tag 
+        return nonce + ciphertext + tag
     ```
 
     #### Testing Strategy
@@ -97,11 +98,17 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     Configuring Spring Security to use an old, insecure `PasswordEncoder`.
     ```java
     // config/SecurityConfig.java
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.security.crypto.password.MessageDigestPasswordEncoder; // Use specific class
+
+    // ... other imports ...
     @Bean
     public PasswordEncoder passwordEncoder() {
         // DANGEROUS: MD5 is broken.
         // Also avoid SHA1PasswordEncoder, PlaintextPasswordEncoder.
-        return new MessageDigestPasswordEncoder("MD5"); 
+        // Use of deprecated classes might also be flagged.
+        return new MessageDigestPasswordEncoder("MD5");
     }
     ```
 
@@ -113,9 +120,9 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     import javax.crypto.spec.SecretKeySpec;
 
     public byte[] encryptDesEcb(byte[] keyBytes, byte[] data) throws Exception {
-        // DANGEROUS: DES/ECB is insecure.
+        // DANGEROUS: DES/ECB is insecure. Check key length for DES (8 bytes).
         SecretKeySpec key = new SecretKeySpec(keyBytes, "DES");
-        Cipher cipher = Cipher.getInstance("DES/ECB/PKCS5Padding"); 
+        Cipher cipher = Cipher.getInstance("DES/ECB/PKCS5Padding");
         cipher.init(Cipher.ENCRYPT_MODE, key);
         return cipher.doFinal(data);
     }
@@ -127,11 +134,15 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     #### Secure Code Example
     ```java
     // config/SecurityConfig.java (Secure)
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    // ... other imports ...
     @Bean
     public PasswordEncoder passwordEncoder() {
         // SECURE: BCrypt is the default and recommended.
         // Or use Argon2PasswordEncoder.
-        return new BCryptPasswordEncoder(); 
+        return new BCryptPasswordEncoder();
     }
 
     // service/EncryptionService.java (Secure AES-GCM)
@@ -139,19 +150,20 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     import javax.crypto.spec.GCMParameterSpec;
     import javax.crypto.spec.SecretKeySpec;
     import java.security.SecureRandom;
+    import java.util.Arrays; // Added import
 
     public byte[] encryptAesGcm(byte[] keyBytes, byte[] data) throws Exception {
         // SECURE: AES/GCM/NoPadding is recommended.
         SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        
-        // Use a random 12-byte nonce
+
+        // Use a random 12-byte nonce (GCM standard)
         byte[] nonce = new byte[12];
         new SecureRandom().nextBytes(nonce);
-        GCMParameterSpec spec = new GCMParameterSpec(128, nonce); // 128-bit tag
+        GCMParameterSpec spec = new GCMParameterSpec(128, nonce); // 128-bit tag length
 
         cipher.init(Cipher.ENCRYPT_MODE, key, spec);
-        
+
         byte[] ciphertext = cipher.doFinal(data);
         // Prepend nonce to ciphertext for storage/transmission
         byte[] result = new byte[nonce.length + ciphertext.length];
@@ -172,11 +184,14 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     Configuring ASP.NET Identity to use an older, weaker hashing algorithm for compatibility.
     ```csharp
     // Startup.cs (ConfigureServices)
+    using Microsoft.AspNetCore.Identity; // Added namespace
+    // ... other using statements ...
     services.AddIdentity<ApplicationUser, IdentityRole>(options => {
         // DANGEROUS: V2 uses SHA1, V3 uses PBKDF2. Avoid V2.
         options.Password.RequireDigit = false; // Example option
         options.PasswordHasherCompatibilityMode = PasswordHasherCompatibilityMode.IdentityV2;
-    })
+    }) // Removed semicolon and added chaining if needed
+    .AddEntityFrameworkStores<ApplicationDbContext>(); // Example chaining
     ```
 
     #### Vulnerable Scenario 2: Using Weak Algorithm (DES/TripleDES)
@@ -184,16 +199,25 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     ```csharp
     // Services/EncryptionService.cs
     using System.Security.Cryptography;
+    using System.IO; // Added namespace for MemoryStream etc.
 
     public byte[] EncryptDes(byte[] key, byte[] data)
     {
         // DANGEROUS: DES is broken. Avoid TripleDES too.
-        using (var des = DES.Create()) 
+        using (var des = DES.Create())
         {
-            des.Key = key;
+            des.Key = key; // Ensure key length is correct for DES (8 bytes)
             des.Mode = CipherMode.ECB; // DANGEROUS: ECB is weak
-            using (var encryptor = des.CreateEncryptor())
-            // ... encryption logic ...
+            des.Padding = PaddingMode.PKCS7; // Specify padding explicitly
+            using (var encryptor = des.CreateEncryptor(des.Key, des.IV)) // IV is often ignored/zeros in ECB
+            using (var ms = new MemoryStream())
+            {
+                using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                {
+                    cs.Write(data, 0, data.Length);
+                } // Ensures flush
+                return ms.ToArray();
+            }
         }
     }
     ```
@@ -204,30 +228,44 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     #### Secure Code Example
     ```csharp
     // Startup.cs (ConfigureServices - Secure Default)
-    services.AddDefaultIdentity<ApplicationUser>(options => {
+    using Microsoft.AspNetCore.Identity; // Added namespace
+    using Microsoft.EntityFrameworkCore; // Added namespace for DbContext example
+    // ... other using statements ...
+    services.AddDefaultIdentity<IdentityUser>(options => { // Assuming IdentityUser, replace if needed
         // Default hasher is secure (PBKDF2 HMAC-SHA256)
         options.SignIn.RequireConfirmedAccount = true;
     })
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    .AddEntityFrameworkStores<ApplicationDbContext>(); // Assuming ApplicationDbContext
 
     // Services/EncryptionService.cs (Secure AES-GCM)
     using System.Security.Cryptography;
+    using System; // Added namespace for Convert, ArgumentOutOfRangeException etc.
 
     public byte[] EncryptAesGcm(byte[] key, byte[] data)
     {
         // SECURE: AES-GCM provides confidentiality and integrity.
+        // Requires .NET Core 3.0+
+        // Ensure key length is valid (16, 24, 32 bytes)
+        if (key.Length != 16 && key.Length != 24 && key.Length != 32)
+            throw new ArgumentOutOfRangeException(nameof(key), "Key length must be 16, 24, or 32 bytes.");
+
         using (var aes = new AesGcm(key))
         {
-            var nonce = new byte[AesGcm.NonceByteSizes.MaxSize]; // 12 bytes
+            // GCM standard nonce size is 12 bytes
+            var nonce = new byte[AesGcm.NonceByteSizes.MaxSize]; // Use MaxSize for flexibility or specify 12
             RandomNumberGenerator.Fill(nonce);
-            var tag = new byte[AesGcm.TagByteSizes.MaxSize]; // 16 bytes
+
+            // GCM standard tag size is 16 bytes (128 bits)
+            var tag = new byte[AesGcm.TagByteSizes.MaxSize]; // Use MaxSize or specify 16
             var ciphertext = new byte[data.Length];
 
             aes.Encrypt(nonce, data, ciphertext, tag);
-            
+
             // Return nonce + tag + ciphertext for storage/transmission
             byte[] result = new byte[nonce.Length + tag.Length + ciphertext.Length];
-            // ... combine arrays ...
+            Buffer.BlockCopy(nonce, 0, result, 0, nonce.Length);
+            Buffer.BlockCopy(tag, 0, result, nonce.Length, tag.Length);
+            Buffer.BlockCopy(ciphertext, 0, result, nonce.Length + tag.Length, ciphertext.Length);
             return result;
         }
     }
@@ -244,13 +282,18 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     A developer manually hashes a password using `md5()`.
     ```php
     // app/Http/Controllers/RegisterController.php
+    use App\Models\User; // Added namespace
+    use Illuminate\Http\Request; // Added namespace for type hinting if needed
+    use Illuminate\Support\Facades\Hash; // Use Hash facade correctly
+    // ... other imports ...
+
     protected function create(array $data)
     {
         return User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             // DANGEROUS: md5() is broken.
-            'password' => md5($data['password']), 
+            'password' => md5($data['password']),
         ]);
     }
     ```
@@ -260,10 +303,11 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     ```php
     // app/Utils/Encryption.php
     function encrypt_weak($key, $data) {
+        // DANGEROUS: 'DES-ECB' is broken. IV length needs to match cipher (8 bytes for DES)
         $iv = openssl_random_pseudo_bytes(8);
-        // DANGEROUS: 'DES-ECB' is broken.
-        $ciphertext = openssl_encrypt($data, 'DES-ECB', $key, OPENSSL_RAW_DATA, $iv);
-        return $iv . $ciphertext;
+        $ciphertext = openssl_encrypt($data, 'DES-ECB', $key, OPENSSL_RAW_DATA, $iv); // ECB often ignores IV
+        // It's better to store IV even if ECB ignores it, but the main issue is DES-ECB itself
+        return base64_encode($iv . $ciphertext); // Encoding IV and ciphertext
     }
     ```
 
@@ -274,14 +318,16 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     ```php
     // app/Http/Controllers/RegisterController.php (Secure)
     use Illuminate\Support\Facades\Hash;
-    
+    use App\Models\User; // Added namespace
+    // ... other imports ...
+
     protected function create(array $data)
     {
         return User::create([
             'name' => $data['name'],
             'email' => $data['email'],
             // SECURE: Uses Laravel's default (bcrypt).
-            'password' => Hash::make($data['password']), 
+            'password' => Hash::make($data['password']),
         ]);
     }
 
@@ -289,12 +335,17 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     use Illuminate\Support\Facades\Crypt;
 
     function encrypt_secure($data) {
-        // SECURE: Uses AES-CBC with MAC by default.
+        // SECURE: Uses AES-CBC with MAC by default (from APP_KEY and cipher in config/app.php).
         return Crypt::encryptString($data);
     }
-    
+
     function decrypt_secure($encrypted_data) {
-        return Crypt::decryptString($encrypted_data);
+        try { // Add try-catch for decryption errors
+             return Crypt::decryptString($encrypted_data);
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+             // Handle exception: log error, return null, etc.
+             return null;
+        }
     }
     ```
 
@@ -324,17 +375,20 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     const crypto = require('crypto');
 
     function encryptDesEcb(key, data) {
-      // DANGEROUS: 'des-ecb' is broken.
+      // DANGEROUS: 'des-ecb' is broken. Key must be 8 bytes for DES.
       const cipher = crypto.createCipheriv('des-ecb', key, null); // IV ignored in ECB
       let encrypted = cipher.update(data, 'utf8', 'hex');
       encrypted += cipher.final('hex');
       return encrypted;
     }
-    
+
     function encryptAesEcb(key, data) {
-      // DANGEROUS: 'aes-128-ecb' leaks patterns.
-      const cipher = crypto.createCipheriv('aes-128-ecb', key, null); 
-      // ...
+      // DANGEROUS: 'aes-128-ecb', 'aes-192-ecb', 'aes-256-ecb' leak patterns.
+      // Ensure key length matches (16, 24, 32 bytes).
+      const cipher = crypto.createCipheriv('aes-128-ecb', key, null);
+      let encrypted = cipher.update(data, 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      return encrypted; // IV usually omitted for ECB
     }
     ```
 
@@ -348,7 +402,7 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     const saltRounds = 12; // Recommended salt rounds
 
     function hashPasswordSecure(password) {
-      // SECURE: Uses bcrypt with a salt
+      // SECURE: Uses bcrypt with a salt (salt generated automatically)
       return bcrypt.hashSync(password, saltRounds);
     }
 
@@ -360,16 +414,16 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     const crypto = require('crypto');
 
     function encryptAesGcm(key, data) {
-      // SECURE: AES-256-GCM is recommended
-      const iv = crypto.randomBytes(12); // 96-bit nonce
+      // SECURE: AES-256-GCM is recommended. Key must be 32 bytes.
+      const iv = crypto.randomBytes(12); // 96-bit nonce recommended for GCM
       const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-      
+
       let encrypted = cipher.update(data, 'utf8', 'hex');
       encrypted += cipher.final('hex');
       const tag = cipher.getAuthTag(); // Get the authentication tag
-      
+
       // Return IV + Tag + Ciphertext for storage/transmission
-      return iv.toString('hex') + tag.toString('hex') + encrypted;
+      return iv.toString('hex') + ':' + tag.toString('hex') + ':' + encrypted; // Use separator
     }
     ```
 
@@ -386,9 +440,12 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     # app/models/user.rb
     require 'digest'
 
-    def password=(new_password)
-      # DANGEROUS: MD5 is broken.
-      self.password_digest = Digest::MD5.hexdigest(new_password)
+    class User < ApplicationRecord # Ensure inheriting from ApplicationRecord
+      # Example of manual hashing (vulnerable)
+      def password=(new_password)
+        # DANGEROUS: MD5 is broken. Also avoid Digest::SHA1.
+        self.password_digest = Digest::MD5.hexdigest(new_password)
+      end
     end
     ```
 
@@ -399,11 +456,14 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     require 'openssl'
 
     def encrypt_des_ecb(key, data)
-      # DANGEROUS: 'DES-ECB' is broken.
+      # DANGEROUS: 'DES-ECB' is broken. Ensure key length is correct (8 bytes).
       cipher = OpenSSL::Cipher.new('DES-ECB')
       cipher.encrypt
       cipher.key = key
-      # ... encryption logic ...
+      # ECB mode typically uses a null or static IV, which is insecure
+      # cipher.iv = some_static_or_null_iv
+      encrypted = cipher.update(data) + cipher.final
+      return encrypted # IV might be omitted or static
     end
     ```
 
@@ -414,25 +474,26 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     ```ruby
     # app/models/user.rb (Secure)
     class User < ApplicationRecord
-      # SECURE: Uses bcrypt by default.
-      has_secure_password 
+      # SECURE: Uses bcrypt by default. Requires 'bcrypt' gem.
+      has_secure_password
     end
 
     # lib/encryption.rb (Secure AES-GCM)
     require 'openssl'
+    require 'securerandom' # For generating keys if needed
 
     def encrypt_aes_gcm(key, data)
-      # SECURE: AES-256-GCM is recommended.
+      # SECURE: AES-256-GCM is recommended. Key must be 32 bytes.
       cipher = OpenSSL::Cipher.new('aes-256-gcm')
       cipher.encrypt
       cipher.key = key
-      iv = cipher.random_iv # Generate random IV/nonce
+      iv = cipher.random_iv # Generate random IV/nonce (12 bytes recommended for GCM)
       cipher.auth_data = "" # Optional additional authenticated data
-      
+
       encrypted = cipher.update(data) + cipher.final
-      tag = cipher.auth_tag # Get the authentication tag
-      
-      # Return IV + Tag + Ciphertext
+      tag = cipher.auth_tag # Get the authentication tag (16 bytes recommended)
+
+      # Return IV + Tag + Ciphertext (ensure consistent lengths)
       { iv: iv, tag: tag, ciphertext: encrypted }
     end
     ```
