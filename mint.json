@@ -96,7 +96,8 @@
         "vulnerabilities/cwe-94",
         "vulnerabilities/ldap-injection",
         "vulnerabilities/cwe-643",
-        "vulnerabilities/cwe-917"
+        "vulnerabilities/cwe-917",
+        "vulnerabilities/cwe-113"
       ]
     },
     {

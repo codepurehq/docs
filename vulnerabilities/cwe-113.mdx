@@ -1,0 +1,494 @@
+---
+title: "CRLF Injection (HTTP Response Splitting)"
+sidebarTitle: "CRLF Injection (CWE-113)"
+description: "Mitigation for CRLF Injection vulnerabilities where user input containing CR/LF characters manipulates HTTP headers or body."
+icon: "file-invoice"
+iconType: "solid"
+---
+
+## Overview
+
+CRLF Injection occurs when an attacker can inject Carriage Return (`CR`, `%0d`, `\r`) and Line Feed (`LF`, `%0a`, `\n`) characters into an application's output that is included in an HTTP response header. Since CR+LF sequences (`\r\n`) are used to separate headers and delimit the start of the response body in HTTP/1.1, injecting them allows an attacker to add fake headers or even inject content into the response body. This can lead to **HTTP Response Splitting**, Cross-Site Scripting (XSS), session fixation, or cache poisoning. 📄✂️
+
+---
+
+## Business Impact
+
+CRLF Injection enables several other attacks:
+* **Cross-Site Scripting (XSS):** By injecting CRLF sequences followed by HTML/JavaScript into the response body.
+* **Session Fixation:** By injecting a `Set-Cookie` header with a session ID they control.
+* **Cache Poisoning:** By crafting a response that gets stored in intermediate caches, affecting other users.
+* **Phishing/Defacement:** By injecting custom content into the response body.
+* **Information Disclosure:** By manipulating headers (e.g., `Location`) to redirect requests or expose internal details.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-113](https://cwe.mitre.org/data/definitions/113.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Medium to High (depending on the resulting attack)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability happens when user-supplied data is directly included in HTTP response headers **without proper sanitization** to remove or encode CR (`\r`) and LF (`\n`) characters. Common sinks include custom header values, redirect URLs (`Location` header), and cookie values (`Set-Cookie` header).
+
+Modern web frameworks and libraries often provide some level of automatic protection by validating or encoding header values, but vulnerabilities can still occur in custom code or older/misconfigured setups. The primary defense is **output encoding/sanitization** specifically targeting CR and LF characters in any data destined for headers.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Manually setting headers in Django/Flask using user input without sanitization. Django's built-in `HttpResponseRedirect` generally handles the `Location` header safely, but custom headers are a risk.
+
+    #### Vulnerable Scenario 1: Custom Header Reflection
+    A view reflects a user-provided parameter in a custom header.
+    ```python
+    # views/custom_header.py
+    from django.http import HttpResponse
+
+    def reflect_header(request):
+        user_data = request.GET.get('x_info', '')
+        response = HttpResponse("Content Here")
+        # DANGEROUS: User input directly used in header value.
+        # Input: x_info = "value%0d%0aInjected-Header:%20Evil"
+        # Output Header:
+        # X-Custom-Info: value
+        # Injected-Header: Evil
+        response['X-Custom-Info'] = user_data
+        return response
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Redirect URL
+    Constructing a redirect URL using potentially tainted input (less common with Django's built-in redirect, but possible in custom logic).
+    ```python
+    # views/redirector.py
+    from django.http import HttpResponse
+
+    def custom_redirect(request):
+        target = request.GET.get('target', '/')
+        # DANGEROUS: If target contains CRLF, it could split the Location header.
+        # Input: target = "/path%0d%0aContent-Type:%20text/html%0d%0a%0d%0a<script>alert(1)</script>"
+        # (Modern browsers/servers might block this, but illustrates the principle)
+        response = HttpResponse(status=302)
+        response['Location'] = target # Manual setting is risky
+        return response
+    ```
+
+    #### Mitigation and Best Practices
+    Avoid reflecting user input directly into headers. If necessary, **sanitize the input by removing or encoding `\r` and `\n` characters**. Use Django's built-in `HttpResponseRedirect` or `redirect()` shortcut which handles URL validation for the `Location` header.
+
+    #### Secure Code Example
+    ```python
+    # views/custom_header.py (Secure)
+    from django.http import HttpResponse
+
+    def reflect_header_secure(request):
+        user_data = request.GET.get('x_info', '')
+        # SECURE: Remove CR and LF characters.
+        sanitized_data = user_data.replace('\r', '').replace('\n', '')
+        response = HttpResponse("Content Here")
+        # Only set header if data is safe/non-empty after sanitizing
+        if sanitized_data:
+             response['X-Custom-Info'] = sanitized_data
+        return response
+
+    # views/redirector.py (Secure - using Django's redirect)
+    from django.shortcuts import redirect
+    from django.utils.http import url_has_allowed_host_and_scheme # Also prevents Open Redirect
+
+    def custom_redirect_secure(request):
+        target = request.GET.get('target', '/')
+        # SECURE: Use Django's redirect which validates the URL.
+        # Also add Open Redirect protection.
+        allowed_hosts = {request.get_host()}
+        if url_has_allowed_host_and_scheme(target, allowed_hosts):
+             return redirect(target)
+        else:
+             return redirect('/') # Default safe redirect
+    ```
+
+    #### Testing Strategy
+    Identify all instances where user input is incorporated into response headers (`response['Header-Name'] = user_input`). Submit URL-encoded CRLF sequences (`%0d%0a`) followed by test headers (e.g., `Injected-Header: test`) or HTML content (`%0d%0a%0d%0a<script>...`). Use `curl -v` or browser developer tools to inspect the raw response headers and body for unexpected content.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Manually setting headers using `HttpServletResponse.setHeader()` or `addHeader()` with unsanitized user input. Frameworks like Spring often sanitize common headers like `Location` in `RedirectView`, but custom headers remain a risk.
+
+    #### Vulnerable Scenario 1: Reflecting User Agent in Custom Header
+    ```java
+    // filter/TrackingFilter.java
+    import javax.servlet.*;
+    import javax.servlet.http.*;
+    import java.io.IOException;
+
+    public class TrackingFilter implements Filter {
+        @Override
+        public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+                throws IOException, ServletException {
+            HttpServletRequest request = (HttpServletRequest) req;
+            HttpServletResponse response = (HttpServletResponse) res;
+
+            String userAgent = request.getHeader("User-Agent");
+            if (userAgent != null) {
+                // DANGEROUS: User-Agent header can be spoofed to contain CRLF.
+                // Input: User-Agent = "Browser/1.0\r\nInjected-Header: EvilValue"
+                response.addHeader("X-Reflected-UA", userAgent);
+            }
+            chain.doFilter(request, response);
+        }
+        // ... init(), destroy() ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Setting Cookie with Unsanitized Value
+    Setting a cookie where the value comes directly from user input.
+    ```java
+    // controller/PreferenceController.java
+    @PostMapping("/set-preference")
+    public String setPreference(HttpServletResponse response, @RequestParam String theme) {
+        // DANGEROUS: Cookie value not sanitized for CR/LF.
+        // Input: theme = "dark\r\nSet-Cookie: AttackerCookie=Hijacked"
+        // This could inject a second Set-Cookie header.
+        Cookie prefCookie = new Cookie("userTheme", theme);
+        prefCookie.setPath("/");
+        // Note: Modern browsers might block CRLF in cookie values, but relying on this is risky.
+        response.addCookie(prefCookie);
+        return "redirect:/";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Sanitize all input** intended for response headers by removing or encoding CR (`\r`) and LF (`\n`) characters. Use libraries or utility functions designed for HTTP header value validation/encoding if available. Be cautious when setting cookies with user-controlled values.
+
+    #### Secure Code Example
+    ```java
+    // filter/TrackingFilter.java (Secure)
+    public class TrackingFilter implements Filter {
+        @Override
+        public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+                throws IOException, ServletException {
+            HttpServletRequest request = (HttpServletRequest) req;
+            HttpServletResponse response = (HttpServletResponse) res;
+
+            String userAgent = request.getHeader("User-Agent");
+            if (userAgent != null) {
+                // SECURE: Remove CR and LF characters.
+                String sanitizedUA = userAgent.replace("\r", "").replace("\n", "");
+                response.addHeader("X-Reflected-UA", sanitizedUA);
+            }
+            chain.doFilter(request, response);
+        }
+    }
+
+    // controller/PreferenceController.java (Secure)
+    @PostMapping("/set-preference")
+    public String setPreference(HttpServletResponse response, @RequestParam String theme) {
+        // SECURE: Sanitize the value before setting the cookie.
+        String sanitizedTheme = theme.replace("\r", "").replace("\n", "");
+        // Optional: Validate theme against an allow-list for better security.
+        Cookie prefCookie = new Cookie("userTheme", sanitizedTheme);
+        prefCookie.setHttpOnly(true); // Good practice for cookies
+        prefCookie.setSecure(true); // Good practice for cookies (HTTPS)
+        prefCookie.setPath("/");
+        response.addCookie(prefCookie);
+        return "redirect:/";
+    }
+    ```
+
+    #### Testing Strategy
+    Identify calls to `response.setHeader()`, `addHeader()`, `addCookie()`. Trace the origin of the values being set. If they include user input, test by submitting URL-encoded CRLF (`%0d%0a`) followed by test headers or HTML. Use `curl -v` or a proxy (like Burp Suite) to inspect the raw response headers.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Manually adding headers to `HttpResponse.Headers` using unsanitized user input. ASP.NET Core's header handling is generally robust against basic splitting, but complex scenarios or direct manipulation of the response stream could be risky.
+
+    #### Vulnerable Scenario 1: Reflecting Custom Header Data
+    ```csharp
+    // Controllers/ApiController.cs
+    public class ApiController : ControllerBase
+    {
+        [HttpGet("info")]
+        public IActionResult GetInfo([FromHeader(Name = "X-User-Input")] string userInput)
+        {
+            if (!string.IsNullOrEmpty(userInput))
+            {
+                // DANGEROUS: Reflecting header input back into another header.
+                // Modern ASP.NET Core might sanitize this by default, but relying
+                // on implicit behavior is risky. Explicit sanitization is better.
+                // Input: X-User-Input = "value\r\nInjected: Bad"
+                Response.Headers.Add("X-Reflected-Input", userInput);
+            }
+            return Ok("Info processed");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unvalidated Location Header in Custom Redirect
+    Manually setting the `Location` header instead of using `Redirect()`.
+    ```csharp
+    // Controllers/RedirectController.cs
+    public class RedirectController : Controller
+    {
+        public IActionResult Go(string targetUrl)
+        {
+            // DANGEROUS: Manually setting Location without validation/encoding.
+            // Input: targetUrl = "/local/path\r\nContent-Type: text/plain\r\n\r\nInjected Body"
+            // While ASP.NET Core might block this header value, explicit validation is needed.
+            Response.StatusCode = 302;
+            Response.Headers["Location"] = targetUrl;
+            return new EmptyResult(); // Or ContentResult etc.
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Sanitize input by removing CR and LF characters before adding it to any header value, even if the framework might do it implicitly. Use built-in methods like `Redirect()` or `LocalRedirect()` which handle `Location` header validation.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/ApiController.cs (Secure)
+    using Microsoft.Extensions.Primitives; // For StringValues
+
+    public class ApiController : ControllerBase
+    {
+        [HttpGet("info")]
+        public IActionResult GetInfo([FromHeader(Name = "X-User-Input")] string userInput)
+        {
+            if (!string.IsNullOrEmpty(userInput))
+            {
+                // SECURE: Explicitly remove CR and LF.
+                string sanitizedInput = userInput.Replace("\r", "").Replace("\n", "");
+                // Use TryAdd for headers that might exist. Use AddOrUpdate logic if needed.
+                Response.Headers.TryAdd("X-Reflected-Input", new StringValues(sanitizedInput));
+            }
+            return Ok("Info processed");
+        }
+    }
+
+    // Controllers/RedirectController.cs (Secure)
+    public class RedirectController : Controller
+    {
+        public IActionResult GoSecure(string targetUrl)
+        {
+            // SECURE: Use LocalRedirect for internal paths, which validates.
+            // Or use Redirect() for external AFTER validating with Url.IsLocalUrl() or an allow-list.
+            if (!string.IsNullOrEmpty(targetUrl) && Url.IsLocalUrl(targetUrl))
+            {
+                 return LocalRedirect(targetUrl); // Handles Location header safely
+            }
+            return RedirectToAction("Index", "Home"); // Safe default
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Find where `Response.Headers.Add`, `Response.Headers["Header"] =`, or `Response.Cookies.Append` are used with user-controlled data. Send requests with URL-encoded CRLF sequences (`%0d%0a`) in the relevant input (query params, headers, body). Inspect the raw response using `curl -v` or a proxy to check for injected headers or body content.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using the `header()` function directly with unsanitized user input. Frameworks like Laravel abstract header setting, often providing some protection, but direct `header()` calls bypass this.
+
+    #### Vulnerable Scenario 1: Reflecting Referer Header
+    ```php
+    <?php
+    // tracking.php
+    $referer = $_SERVER['HTTP_REFERER'] ?? 'unknown';
+
+    // DANGEROUS: Referer comes from the client and can contain CRLF.
+    // Input (Referer Header): [http://example.com](http://example.com)\r\nInjected: value
+    header("X-Tracked-Referer: " . $referer);
+
+    echo "Tracked.";
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Dynamic `Content-Type`
+    Setting content type based on user input (less common, but possible).
+    ```php
+    <?php
+    $format = $_GET['format'] ?? 'html';
+
+    // DANGEROUS: If $format contains CRLF.
+    // Input: format = "text/plain%0d%0aLocation:%20[http://evil.com](http://evil.com)"
+    header("Content-Type: text/" . $format);
+
+    echo "Data in specified format.";
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    **Sanitize all data** placed into headers using `header()`. Remove CR (`\r`) and LF (`\n`) characters. Validate input against an allow-list where possible (e.g., for content types). Use framework helpers (like Laravel's `response()->header()`) which may offer better protection than raw `header()`.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // tracking.php (Secure)
+    $referer = $_SERVER['HTTP_REFERER'] ?? 'unknown';
+
+    // SECURE: Remove CR and LF characters.
+    $sanitized_referer = str_replace(["\r", "\n"], '', $referer);
+    header("X-Tracked-Referer: " . $sanitized_referer);
+
+    echo "Tracked.";
+
+    // Dynamic Content-Type (Secure)
+    $format = $_GET['format'] ?? 'html';
+    $allowed_formats = ['html', 'plain', 'xml']; // Allow-list
+
+    if (in_array($format, $allowed_formats)) {
+        // SECURE: Input validated against allow-list.
+        header("Content-Type: text/" . $format);
+    } else {
+        header("Content-Type: text/plain"); // Safe default
+    }
+    echo "Data in specified format.";
+    ?>
+    ```
+
+    #### Testing Strategy
+    Identify all uses of the `header()` function where the value includes variables derived from `$_GET`, `$_POST`, `$_COOKIE`, or `$_SERVER`. Submit URL-encoded CRLF sequences (`%0d%0a`) in the relevant input. Use `curl -v` or a proxy to inspect the raw response headers for injection.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using `res.setHeader(name, value)` or `res.writeHead(statusCode, headers)` where header values contain unsanitized user input. Express's built-in header functions generally try to prevent splitting, but edge cases or direct manipulation might exist.
+
+    #### Vulnerable Scenario 1: Setting Custom Tracking Header
+    ```javascript
+    // app.js
+    app.get('/track', (req, res) => {
+        const trackingId = req.query.tid || 'default';
+        // DANGEROUS: If tid contains CRLF, older Node versions or misconfigurations
+        // might allow header splitting. Modern Node/Express usually block this.
+        // Input: tid = "value%0d%0aInjected:%20header"
+        res.setHeader('X-Tracking-ID', trackingId);
+        res.send('Tracked');
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Reflecting URL in a Header
+    ```javascript
+    // app.js
+    app.get('/reflect-url', (req, res) => {
+        const fullUrl = req.protocol + '://' + req.get('host') + req.originalUrl;
+        // DANGEROUS: req.originalUrl can contain CRLF if not properly handled
+        // by the framework or intermediate proxies.
+        // Input: GET /reflect-url?param=foo%0d%0aInjected:%20value HTTP/1.1
+        res.setHeader('X-Original-URL', fullUrl);
+        res.send('URL Reflected');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    While modern Node.js and Express versions have improved header validation, it's safest to **explicitly sanitize input** by removing CR (`\r`) and LF (`\n`) characters before setting headers.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure)
+    app.get('/track-secure', (req, res) => {
+        const trackingId = req.query.tid || 'default';
+        // SECURE: Explicitly remove CR and LF characters.
+        const sanitizedTid = String(trackingId).replace(/[\r\n]/g, '');
+        res.setHeader('X-Tracking-ID', sanitizedTid);
+        res.send('Tracked Securely');
+    });
+
+    app.get('/reflect-url-secure', (req, res) => {
+        // SECURE: Sanitize component before creating header value.
+        // req.originalUrl should generally be safe in modern Express, but explicit
+        // sanitization adds defense in depth.
+        const sanitizedUrl = (req.originalUrl || '').replace(/[\r\n]/g, '');
+        const fullUrl = req.protocol + '://' + req.get('host') + sanitizedUrl;
+        res.setHeader('X-Original-URL', fullUrl);
+        res.send('URL Reflected Securely');
+    });
+    ```
+
+    #### Testing Strategy
+    Identify uses of `res.setHeader()` or `res.writeHead()` where values incorporate `req.query`, `req.params`, `req.headers`, or `req.body`. Submit URL-encoded CRLF sequences (`%0d%0a`) in these inputs. Use `curl -v` or a proxy to inspect the raw response headers for injection. Test different Node.js/Express versions if compatibility is a concern.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Manually setting headers in Rails using `response.headers['Header-Name'] = value` where `value` contains unsanitized user input. Rails' built-in header handling is generally safe against basic splitting, but explicit sanitization is best practice.
+
+    #### Vulnerable Scenario 1: Reflecting User Input in Header
+    ```ruby
+    # app/controllers/meta_controller.rb
+    class MetaController < ApplicationController
+      def show_info
+        user_input = params[:info]
+        if user_input.present?
+          # DANGEROUS: While Rails might sanitize, relying on it implicitly is risky.
+          # Input: info = "SomeValue%0d%0aInjected:%20Bad"
+          response.headers['X-User-Info'] = user_input
+        end
+        render plain: "Info page"
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Setting Cookie with User Input
+    ```ruby
+    # app/controllers/preferences_controller.rb
+    class PreferencesController < ApplicationController
+      def set_preference
+        pref_value = params[:preference_value]
+        # DANGEROUS: If pref_value contains CRLF. Modern Rails might block this in cookies,
+        # but sanitization provides explicit safety.
+        # Input: pref_value = "dark%0d%0aSet-Cookie:%20evil=true"
+        cookies[:user_preference] = {
+          value: pref_value,
+          expires: 1.year.from_now,
+          httponly: true
+          # secure: Rails.env.production? # Recommended
+          # same_site: :strict # Recommended
+        }
+        redirect_to root_path
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Sanitize input by removing CR (`\r`) and LF (`\n`) characters before using it in any response header or cookie value. Use `gsub(/[\r\n]/, '')`.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/meta_controller.rb (Secure)
+    class MetaController < ApplicationController
+      def show_info
+        user_input = params[:info]
+        if user_input.present?
+          # SECURE: Explicitly remove CR and LF.
+          sanitized_input = user_input.gsub(/[\r\n]/, '')
+          response.headers['X-User-Info'] = sanitized_input
+        end
+        render plain: "Info page"
+      end
+    end
+
+    # app/controllers/preferences_controller.rb (Secure)
+    class PreferencesController < ApplicationController
+      def set_preference
+        pref_value = params[:preference_value]
+        # SECURE: Sanitize the value.
+        sanitized_value = pref_value.to_s.gsub(/[\r\n]/, '') # .to_s for safety
+
+        cookies[:user_preference] = {
+          value: sanitized_value,
+          expires: 1.year.from_now,
+          httponly: true,
+          secure: Rails.env.production?,
+          same_site: :strict
+        }
+        redirect_to root_path
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Identify where `response.headers[...] =` or `cookies[...] =` are used with `params` or other user-controlled data. Submit URL-encoded CRLF sequences (`%0d%0a`) in the input. Use `curl -v` or a proxy to inspect the raw HTTP response for injected headers or unexpected body content.
+  </Tab>
+</Tabs>
