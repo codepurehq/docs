@@ -1,0 +1,457 @@
+---
+title: "Sensitive Cookie Without 'HttpOnly' Flag"
+sidebarTitle: "Cookie Not HttpOnly (CWE-1004)"
+description: "Mitigation for sensitive cookies (session IDs, tokens) missing the 'HttpOnly' flag, making them accessible to client-side scripts (XSS)."
+icon: "cookie-bite"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application sets a **sensitive cookie** (especially session identifiers or authentication tokens) **without enabling the `HttpOnly` attribute**. The `HttpOnly` flag instructs the browser **not to allow client-side scripts** (like JavaScript) to access the cookie via `document.cookie`. If this flag is missing, and an attacker successfully executes a Cross-Site Scripting (XSS) payload on the site, they can easily steal the sensitive cookie, leading to session hijacking. 🍪🚫📜➡️👤
+
+---
+
+## Business Impact
+
+Missing the `HttpOnly` flag on sensitive cookies significantly increases the impact of XSS vulnerabilities:
+* **Session Hijacking:** An XSS attack can steal the session cookie, allowing the attacker to completely impersonate the user without needing their password.
+* **Token Theft:** Other sensitive tokens stored in cookies (e.g., anti-CSRF tokens, API access tokens if stored this way) can be stolen and potentially misused.
+
+Setting `HttpOnly` is a crucial defense-in-depth measure against the consequences of XSS.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-1004](https://cwe.mitre.org/data/definitions/1004.html)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** Medium (Increases the impact of XSS)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a **configuration issue** related to how cookies are set. Most modern web frameworks either enable `HttpOnly` by default for their session cookies or provide a clear configuration option to do so. The vulnerability typically arises when:
+1.  The framework default is insecure and not overridden.
+2.  Developers manually set sensitive cookies without including the `HttpOnly` flag.
+
+**Remediation:**
+1.  **Configure Framework Defaults:** Ensure the framework's session cookie configuration explicitly sets `HttpOnly` to true.
+2.  **Set Flag on Custom Cookies:** When creating *any* cookie that contains sensitive data or is used for session management/authentication, *always* include the `HttpOnly` attribute. Cookies needed purely for client-side JavaScript manipulation should *not* contain sensitive data.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Controlled by `SESSION_COOKIE_HTTPONLY` and `CSRF_COOKIE_HTTPONLY` (though CSRF is often read by JS) in Django `settings.py`. Flask requires manual setting.
+
+    #### Vulnerable Scenario 1: Django `SESSION_COOKIE_HTTPONLY = False`
+    ```python
+    # settings.py (Production)
+    # DANGEROUS: Session cookie accessible via document.cookie in JavaScript.
+    # If an XSS vulnerability exists, the session ID can be stolen easily.
+    SESSION_COOKIE_HTTPONLY = False
+    ```
+
+    #### Vulnerable Scenario 2: Flask Custom Cookie without `httponly=True`
+    ```python
+    # app.py (Flask)
+    from flask import make_response
+
+    @app.route('/set-session-like-cookie')
+    def set_session_like_cookie():
+        session_data = generate_sensitive_session_data() # Assume function exists
+        response = make_response("Session Set")
+        # DANGEROUS: httponly flag is missing (defaults to False).
+        # Accessible via document.cookie.
+        response.set_cookie('custom_session', session_data, secure=True, samesite='Strict')
+        return response
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Ensure `SESSION_COOKIE_HTTPONLY = True` (this is the default and should generally not be changed). Consider `CSRF_COOKIE_HTTPONLY = False` (default) if your frontend JavaScript needs to read the CSRF token from the cookie, but ensure your session cookie *is* HttpOnly.
+    * **Flask:** Always add `httponly=True` when calling `response.set_cookie` for any sensitive cookie. Configure session extensions to use HttpOnly.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django Production - Secure Default)
+    # SECURE: HttpOnly is True by default for session cookies.
+    # SESSION_COOKIE_HTTPONLY = True # Explicitly setting is fine too.
+
+    # CSRF token often needs to be readable by JS for AJAX
+    CSRF_COOKIE_HTTPONLY = False # Default and often necessary
+    ```
+    ```python
+    # app.py (Flask - Secure Custom Cookie)
+    from flask import make_response, request
+
+    @app.route('/set-session-like-cookie-secure')
+    def set_session_like_cookie_secure():
+        session_data = generate_sensitive_session_data()
+        response = make_response("Session Set Securely")
+        is_https = request.is_secure or request.headers.get('X-Forwarded-Proto', 'http') == 'https'
+        # SECURE: Added httponly=True.
+        response.set_cookie('custom_session', session_data,
+                           secure=is_https,
+                           httponly=True, # Prevent JS access
+                           samesite='Strict')
+        return response
+    ```
+
+    #### Testing Strategy
+    Access your site over HTTPS and log in. Use browser developer tools (Application/Storage tab) to inspect the session cookie (`sessionid` in Django, connect.sid often in Flask/Node) and any custom authentication cookies. Verify that the "HttpOnly" column/flag is checked/true. Try accessing `document.cookie` in the browser's JavaScript console; sensitive cookies should *not* appear in the list.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Controlled by `server.servlet.session.cookie.http-only` in Spring Boot `application.properties`, or programmatically via `Cookie.setHttpOnly(true)`.
+
+    #### Vulnerable Scenario 1: `cookie.http-only=false` in Properties
+    ```properties
+    # application.properties (Production)
+    # DANGEROUS: JSESSIONID cookie will be accessible via document.cookie.
+    server.servlet.session.cookie.http-only=false
+    ```
+
+    #### Vulnerable Scenario 2: Custom Cookie without `setHttpOnly(true)`
+    ```java
+    // controller/AuthController.java
+    import javax.servlet.http.Cookie;
+    import javax.servlet.http.HttpServletResponse;
+
+    @PostMapping("/issue-auth-cookie")
+    public String issueAuthCookie(HttpServletResponse response) {
+        String token = generateSensitiveToken(); // Generate some token
+        Cookie authCookie = new Cookie("authToken", token);
+        authCookie.setSecure(true); // Secure flag is good
+        authCookie.setPath("/");
+        // DANGEROUS: Missing authCookie.setHttpOnly(true);
+        // Cookie is accessible to JavaScript.
+        response.addCookie(authCookie);
+        return "tokenIssued";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `server.servlet.session.cookie.http-only=true` (this is the default in modern Spring Boot) in production `application.properties`.
+    * When creating custom `Cookie` objects containing sensitive data, always call `cookie.setHttpOnly(true)`.
+
+    #### Secure Code Example
+    ```properties
+    # application-production.properties (Secure - Default)
+    # SECURE: HttpOnly is true by default. Explicitly setting is also fine.
+    server.servlet.session.cookie.http-only=true
+    # Also recommended:
+    server.servlet.session.cookie.secure=true
+    server.servlet.session.cookie.same-site=Strict
+    ```
+    ```java
+    // controller/AuthController.java (Secure Custom Cookie)
+    @PostMapping("/issue-auth-cookie-secure")
+    public String issueAuthCookieSecure(HttpServletResponse response, HttpServletRequest request) {
+        String token = generateSensitiveToken();
+        Cookie authCookie = new Cookie("authToken", token);
+        // SECURE: Added setHttpOnly(true).
+        authCookie.setHttpOnly(true);
+        authCookie.setSecure(request.isSecure()); // Also set Secure flag
+        authCookie.setPath("/");
+        // Consider SameSite=Strict as well
+        // authCookie.setAttribute("SameSite", "Strict"); // Via setHeader or specific servlet API version
+        response.addCookie(authCookie);
+        return "tokenIssued";
+    }
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the `JSESSIONID` cookie and any custom sensitive cookies. Verify the "HttpOnly" flag is set. Try reading `document.cookie` via the browser console; the sensitive cookies should not be listed.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Configured within `Startup.cs` via `CookieOptions` or session/authentication options (`Cookie.HttpOnly`). Defaults are generally `true`.
+
+    #### Vulnerable Scenario 1: Explicitly Setting `HttpOnly = false`
+    A developer incorrectly disables HttpOnly for session or auth cookies.
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.AddSession(options =>
+    {
+        options.Cookie.Name = ".MyApp.Session";
+        // DANGEROUS: Explicitly allowing JavaScript access to session cookie.
+        options.Cookie.HttpOnly = false;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Secure is set, but HttpOnly is not
+    });
+
+    services.ConfigureApplicationCookie(options => // For Identity cookies
+    {
+        // DANGEROUS: Allowing JavaScript access to auth cookie.
+        options.Cookie.HttpOnly = false;
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Manual Cookie Creation without `HttpOnly = true`
+    ```csharp
+    // Controllers/TrackingController.cs
+    public IActionResult SetTrackingId()
+    {
+        string trackingId = Guid.NewGuid().ToString();
+        // DANGEROUS: HttpOnly flag is missing or false.
+        // If trackingId is sensitive or guessable, XSS could reveal it.
+        Response.Cookies.Append("trackingId", trackingId, new CookieOptions {
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddYears(1)
+            // HttpOnly = true, // This is missing
+        });
+        return Ok();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure `Cookie.HttpOnly` is set to `true` (the default) for session and authentication cookies in `Startup.cs`. When manually appending cookies via `Response.Cookies.Append`, set `CookieOptions.HttpOnly = true` for any cookie containing sensitive data or used for security purposes.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (ConfigureServices - Secure Defaults)
+    services.AddSession(options =>
+    {
+        options.Cookie.Name = ".MyApp.Session";
+        // SECURE: HttpOnly is true by default, explicitly setting is also fine.
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+    });
+
+    services.ConfigureApplicationCookie(options => // For Identity cookies
+    {
+        // SECURE: HttpOnly is true by default.
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+    });
+    ```
+    ```csharp
+    // Controllers/TrackingController.cs (Secure)
+    public IActionResult SetTrackingIdSecure()
+    {
+        string trackingId = Guid.NewGuid().ToString(); // Assuming this ID isn't highly sensitive itself
+        Response.Cookies.Append("trackingId", trackingId, new CookieOptions {
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddYears(1),
+            // SECURE: Flag added to prevent JS access.
+            HttpOnly = true
+        });
+        return Ok();
+    }
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect session (`.MyApp.Session`) and authentication (`.AspNetCore.Identity.Application`) cookies. Verify the "HttpOnly" flag is set. Check any custom cookies. Try reading `document.cookie` via the browser console; HttpOnly cookies should not be visible.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Controlled by `session.cookie_httponly` directive in `php.ini` or `ini_set()`, and the `httponly` parameter in `setcookie()` / `session_set_cookie_params()`. Laravel controls this via `config/session.php`.
+
+    #### Vulnerable Scenario 1: `session.cookie_httponly = Off`
+    ```ini
+    ; php.ini (Production Server)
+    session.use_cookies = 1
+    session.use_only_cookies = 1
+    session.cookie_secure = On ; Secure is good
+    ; DANGEROUS: Allows PHPSESSID cookie to be read by JavaScript.
+    session.cookie_httponly = Off
+    session.cookie_samesite = Lax
+    ```
+
+    #### Vulnerable Scenario 2: `setcookie()` without `$httponly` flag
+    ```php
+    <?php
+    // auth.php
+    $session_token = generate_session_token();
+    $expiry = time() + (3600); // 1 hour
+    $is_https = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+    // DANGEROUS: The 7th parameter (httponly) is missing or false.
+    setcookie("app_session", $session_token, $expiry, "/", "yourdomain.com", $is_https, false); // httponly=false
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **php.ini:** Set `session.cookie_httponly = On` in production.
+    * **`setcookie()`:** Always set the `$httponly` parameter (7th parameter) to `true` when setting sensitive cookies.
+    * **Laravel:** Ensure `'http_only' => true` (the default) is set in `config/session.php`.
+
+    #### Secure Code Example
+    ```ini
+    ; php.ini (Production - Secure)
+    session.cookie_secure = On
+    session.cookie_httponly = On ; SECURE
+    session.cookie_samesite = Strict
+    ```
+    ```php
+    <?php
+    // auth.php (Secure)
+    $session_token = generate_session_token();
+    $expiry = time() + (3600);
+    $is_https = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+    // SECURE: The 7th parameter (httponly) is set to true.
+    setcookie("app_session", $session_token, $expiry, "/", "yourdomain.com", $is_https, true); // httponly=true
+    ?>
+    ```
+    ```php
+    // config/session.php (Laravel - Secure Default)
+    'secure' => env('SESSION_SECURE_COOKIE', true),
+    'http_only' => true, // SECURE (Default)
+    'same_site' => 'strict',
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the `PHPSESSID`, `laravel_session`, and any custom sensitive cookies. Verify the "HttpOnly" flag is set. Try reading `document.cookie` via the browser console; HttpOnly cookies should not appear. Use `phpinfo()` (if accessible) to check `session.cookie_httponly`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Controlled by the `cookie.httpOnly` option in `express-session` or the `httpOnly` option in `res.cookie()`. Defaults are generally `true`.
+
+    #### Vulnerable Scenario 1: `express-session` with `cookie.httpOnly: false`
+    A developer explicitly disables HttpOnly for the session cookie.
+    ```javascript
+    // app.js
+    const session = require('express-session');
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    app.use(session({
+        secret: 'my-secret',
+        cookie: {
+            // DANGEROUS: Explicitly allowing JS access to session cookie.
+            httpOnly: false,
+            secure: isProd,
+            sameSite: 'lax'
+        }
+    }));
+    ```
+
+    #### Vulnerable Scenario 2: `res.cookie` without `httpOnly: true`
+    Setting a custom sensitive cookie without the flag.
+    ```javascript
+    // routes/auth.js
+    router.post('/set-custom-token', (req, res) => {
+        const customToken = generateCustomAuthToken();
+        const isProd = (process.env.NODE_ENV === 'production');
+        // DANGEROUS: httpOnly flag is missing (defaults vary by framework/version,
+        // but explicit is required for security). Assume default is false here.
+        res.cookie('userToken', customToken, {
+            secure: isProd,
+            sameSite: 'strict'
+            // httpOnly: true // Missing
+        });
+        res.send('Token set');
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **`express-session`:** Ensure `cookie.httpOnly` is set to `true` (the default) or omitted (to use the default).
+    * **`res.cookie`:** Always add `httpOnly: true` to the options object when setting sensitive cookies.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure express-session - Default)
+    const session = require('express-session');
+    const isProd = (process.env.NODE_ENV === 'production');
+    app.set('trust proxy', 1); // If behind proxy
+
+    app.use(session({
+        secret: 'my-secret', // Load from env vars
+        cookie: {
+            // SECURE: httpOnly is true by default. Explicitly true is also fine.
+            httpOnly: true,
+            secure: isProd,
+            sameSite: 'strict'
+        }
+    }));
+
+    // routes/auth.js (Secure res.cookie)
+    router.post('/set-custom-token-secure', (req, res) => {
+        const customToken = generateCustomAuthToken();
+        const isProd = (process.env.NODE_ENV === 'production');
+        // SECURE: Added httpOnly: true.
+        res.cookie('userToken', customToken, {
+            secure: isProd,
+            sameSite: 'strict',
+            httpOnly: true // SECURE
+        });
+        res.send('Token set securely');
+    });
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Inspect the session cookie (`connect.sid` or custom name) and other sensitive cookies using browser developer tools. Verify the "HttpOnly" flag is set. Attempt to read `document.cookie` in the console; HttpOnly cookies should be absent.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Controlled by the `:httponly` option in `config/initializers/session_store.rb` or when setting cookies manually via the `cookies` helper. Rails defaults generally include `httponly: true` for session cookies.
+
+    #### Vulnerable Scenario 1: `httponly: false` in `session_store.rb`
+    ```ruby
+    # config/initializers/session_store.rb
+    Rails.application.config.session_store :cookie_store, key: '_my_app_session',
+      # DANGEROUS: Explicitly disabling HttpOnly for session cookie.
+      httponly: false,
+      secure: Rails.env.production?,
+      same_site: :lax
+    ```
+
+    #### Vulnerable Scenario 2: Manual Cookie without `:httponly`
+    Setting a potentially sensitive cookie manually without the flag.
+    ```ruby
+    # app/controllers/users_controller.rb
+    class UsersController < ApplicationController
+      def set_preference
+        pref = params[:pref]
+        # DANGEROUS: Setting a cookie without httponly: true.
+        # If 'pref' or the cookie name implies sensitivity, it's vulnerable.
+        cookies[:user_preference] = {
+           value: pref,
+           expires: 1.month.from_now,
+           secure: Rails.env.production?
+           # httponly: true # Missing
+        }
+        render plain: "Preference set"
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Session Store:** Ensure `:httponly` option is set to `true` (or omitted to use the secure default) in `session_store.rb`.
+    * **Manual Cookies:** Always add `httponly: true` to the options hash when setting sensitive cookies via `cookies[:name] = { ... }`.
+
+    #### Secure Code Example
+    ```ruby
+    # config/initializers/session_store.rb (Secure - Default or Explicit)
+    # SECURE: HttpOnly is true by default, explicitly setting is also fine.
+    Rails.application.config.session_store :cookie_store, key: '_my_app_session',
+      httponly: true,
+      secure: Rails.env.production?,
+      same_site: :strict
+    ```
+    ```ruby
+    # app/controllers/users_controller.rb (Secure Manual Cookie)
+    class UsersController < ApplicationController
+      def set_preference_secure
+        pref = params[:pref]
+        cookies[:user_preference] = {
+           value: pref,
+           expires: 1.month.from_now,
+           secure: Rails.env.production?,
+           same_site: :strict,
+           # SECURE: Added httponly flag.
+           httponly: true
+        }
+        render plain: "Preference set securely"
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Access the site over HTTPS. Use browser developer tools to inspect the session cookie (`_my_app_session`) and any custom sensitive cookies. Verify the "HttpOnly" flag is set. Try reading `document.cookie` in the console; HttpOnly cookies should not be visible.
+  </Tab>
+</Tabs>
