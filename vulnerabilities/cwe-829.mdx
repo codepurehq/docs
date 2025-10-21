@@ -1,0 +1,452 @@
+---
+title: "Inclusion of Functionality from Untrusted Control Sphere"
+sidebarTitle: "Untrusted Code Inclusion (CWE-829)"
+description: "Mitigation for risks of including or using code (libraries, dependencies, plugins) from untrusted or unverified sources."
+icon: "box-open"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability, often a core component of **software supply chain attacks**, occurs when an application includes and executes code or functionality from an untrusted or unverified source (an "untrusted control sphere"). This includes:
+* **Dependency Confusion:** An attacker publishes a malicious package to a public repository (like PyPI, npm) with the *same name* as an internal package. The build tool might accidentally download the malicious public version instead of the trusted internal one.
+* **Typosquatting:** An attacker publishes a malicious package with a name very similar to a popular one (e.g., `djanga` instead of `django`).
+* **Compromised Dependencies:** A legitimate package is hijacked by an attacker who publishes a new, malicious version.
+
+When the application builds or runs, it includes and executes this malicious code, leading to compromise. 📦➡️🐍
+
+---
+
+## Business Impact
+
+Including untrusted functionality is one of the most severe risks, as it effectively hands control over to the attacker:
+* **Remote Code Execution (RCE):** The malicious package can run any code on the build server or the production server.
+* **Credential Theft:** The package can steal environment variables, secrets, API keys, and developer credentials during the build or at runtime.
+* **Data Exfiltration:** Malicious code can read and send sensitive application data to the attacker.
+* **Backdoors:** The package can install persistent backdoors for future access.
+* **Ransomware/Malware:** The server can be compromised with ransomware or used to spread malware.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-829](https://cwe.mitre.org/data/definitions/829.html)
+  **Related CWEs:** CWE-494 (Integrity Check), CWE-1104 (Outdated Components)
+  **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
+  **Severity:** Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability is about the **process of acquiring and managing dependencies** for any framework. The defense lies in securing the build and deployment pipeline and verifying the source of all components.
+
+**Key Remediation Principles:**
+1.  **Use Private Repositories:** Host internal packages on a private, authenticated repository (like a private PyPI server, npm registry, Artifactory, Nexus).
+2.  **Explicit Repository Configuration:** Configure package managers (`pip`, `npm`, `maven`) to *only* use your trusted private repository, or to prioritize it. Ensure they don't fall back to public repositories for internal package names.
+3.  **Use Lock Files:** Always commit a fully resolved lock file (`package-lock.json`, `poetry.lock`, `composer.lock`, `Gemfile.lock`, `yarn.lock`) to version control. This ensures builds are repeatable and use the exact, vetted versions of dependencies.
+4.  **Use Integrity Hashes:** Use `requirements.txt` with hashes (`--hash`) or npm's `package-lock.json` / Yarn's `yarn.lock`, which include integrity hashes (Subresource Integrity - SRI).
+5.  **SCA Scanning:** Regularly scan dependencies for known vulnerabilities (see `CWE-1104`) *and* for suspicious packages (e.g., typosquatted names).
+6.  **Namespace/Scope Packages:** Use private namespaces or scopes (e.g., `@mycompany/internal-package` in npm) to prevent name collisions with public packages.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using `pip` with `requirements.txt` or `pyproject.toml` (Poetry/Flit) where internal package names might collide with public PyPI.
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    An internal package is named `my-corp-utils`. An attacker publishes a malicious package named `my-corp-utils` to the public PyPI.
+    ```bash
+    # DANGEROUS: pip's default behavior might search public PyPI
+    # even if a private index is configured, and pull the malicious version
+    # (e.g., if it has a higher version number).
+    pip install -r requirements.txt
+    ```
+    ```
+    # requirements.txt (Vulnerable)
+    # References an internal package name that also exists publicly
+    my-corp-utils==1.0.2
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    A developer manually adds a dependency with a typo.
+    ```bash
+    # DANGEROUS: Developer intended 'django' but typed 'djanga'.
+    # Attacker owns the 'djanga' package on PyPI.
+    pip install djanga
+    ```
+    ```
+    # requirements.txt (Vulnerable)
+    django==4.2.6
+    djanga==1.0.0 # Malicious package
+    ```
+
+    #### Mitigation and Best Practices
+    * Configure `pip.conf` to *only* use your internal repository, or use the `--index-url` and `--extra-index-url` flags carefully, ensuring your private index is the primary one.
+    * Use `pip freeze > requirements.txt` to capture exact versions.
+    * Use **hashes** in your requirements file: `pip hash requirements.txt >> requirements.txt`. This ensures `pip install -r requirements.txt --require-hashes` will fail if the package content changes.
+
+    #### Secure Code Example
+    ```
+    # pip.conf (Secure - Prioritize Internal)
+    # [global]
+    # index-url = [https://private-pypi.mycorp.com/simple](https://private-pypi.mycorp.com/simple)
+    # extra-index-url = [https://pypi.org/simple](https://pypi.org/simple) # Use as fallback only if needed
+    # (Or configure to only use internal)
+
+    # requirements.txt (Secure - with Hashes)
+    # SECURE: Hashes ensure the downloaded package matches exactly.
+    # Prevents both dependency confusion and hijacked updates.
+    django==4.2.6 --hash=sha256:abc...123
+    my-corp-utils==1.0.2 \
+        --hash=sha256:def...456 \
+        --hash=sha256:ghi...789
+    ```
+    *Command (Secure Install):*
+    ```bash
+    pip install -r requirements.txt --require-hashes
+    ```
+
+    #### Testing Strategy
+    Audit `requirements.txt` / `pyproject.toml` for package names. Check if any internal package names are also available for registration on public PyPI. Run SCA tools that check for typosquatting. Enforce `--require-hashes` or use tools like Poetry/Pipenv which use lock files with hashes by default.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using Maven (`pom.xml`) or Gradle (`build.gradle`) configured to pull from multiple repositories (e.g., a private one and Maven Central).
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    An internal library has `groupId: com.mycorp` and `artifactId: shared-utils`. An attacker publishes a malicious package with the same coordinates to Maven Central or another public repository listed in the config.
+    ```xml
+    <repositories>
+        <repository>
+            <id>mycorp-private</id>
+            <url>[https://artifactory.mycorp.com/maven](https://artifactory.mycorp.com/maven)</url>
+        </repository>
+        <repository>
+            <id>central</id>
+            <url>[https://repo.maven.apache.org/maven2](https://repo.maven.apache.org/maven2)</url>
+        </repository>
+    </repositories>
+    <dependency>
+        <groupId>com.mycorp</groupId>
+        <artifactId>shared-utils</artifactId>
+        <version>1.2.3</version>
+    </dependency>
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    A developer adds a dependency with a typo.
+    ```xml
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-stater-web</artifactId> <version>2.7.5</version>
+    </dependency>
+    ```
+
+    #### Mitigation and Best Practices
+    * Configure your `pom.xml` or `settings.xml` (Maven) / `build.gradle` (Gradle) to use your **private repository manager** (Artifactory, Nexus) as a *proxy*. The manager should be the *only* repository referenced. It fetches and caches public dependencies securely, while serving your private internal packages.
+    * Use build file mechanisms to enforce dependency versions and integrity (e.g., Gradle's built-in dependency verification, Maven enforcer plugin).
+    * Use scopes/namespaces if your repository manager supports them.
+
+    #### Secure Code Example
+    ```xml
+    <repositories>
+        <repository>
+            <id>mycorp-mirror</id>
+            <url>[https://artifactory.mycorp.com/maven-proxy-mirror](https://artifactory.mycorp.com/maven-proxy-mirror)</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+    ```
+    ```gradle
+    // build.gradle (Secure - Single Proxy Repository)
+    repositories {
+        // SECURE: Only point to the internal proxy/mirror.
+        maven {
+            url '[https://artifactory.mycorp.com/maven-proxy-mirror](https://artifactory.mycorp.com/maven-proxy-mirror)'
+        }
+        // Do not add mavenCentral() or jcenter() here
+    }
+    // ... dependencies ...
+    ```
+
+    #### Testing Strategy
+    Review `pom.xml` / `build.gradle` repository configurations. Ensure only trusted, internal proxy repositories are listed. Audit internal dependency names (`groupId`/`artifactId`) and check if they exist on public repositories. Use SCA tools (OWASP Dependency-Check, Codepure) to scan for typosquatting and known vulnerabilities.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using NuGet, configured via `NuGet.Config` (global or per-project) to pull from multiple package sources (e.g., private feed and nuget.org).
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    An internal package is named `MyCorp.Internal.Tools`. An attacker publishes a malicious package with the same name to public `nuget.org`.
+    ```xml
+    <configuration>
+      <packageSources>
+        <add key="MyCorp-Private" value="[https://nuget.mycorp.com/v3/index.json](https://nuget.mycorp.com/v3/index.json)" />
+        <add key="nuget.org" value="[https://api.nuget.org/v3/index.json](https://api.nuget.org/v3/index.json)" />
+      </packageSources>
+      </configuration>
+
+    <ItemGroup>
+      <PackageReference Include="MyCorp.Internal.Tools" Version="1.0.0" />
+    </ItemGroup>
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    A developer adds a package with a typo.
+    ```xml
+    <ItemGroup>
+      <PackageReference Include="Newtonsoft.Jsom" Version="13.0.3" /> </ItemGroup>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Package Source Mapping:** Use `NuGet.Config` `packageSourceMapping` (NuGet 6.0+) to explicitly define which package ID patterns (e.g., `MyCorp.*`) belong to which source (e.g., `MyCorp-Private`).
+    * **Private Proxy:** Use a private repository manager (like Azure Artifacts, MyGet, Artifactory) as a proxy for `nuget.org` and host internal packages there. Point `NuGet.Config` *only* to this private manager.
+    * **Lock Files:** Use `packages.lock.json` to lock dependency versions and ensure repeatable builds (`<RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>` in `.csproj`).
+
+    #### Secure Code Example
+    ```xml
+    <configuration>
+      <packageSources>
+        <clear /> <add key="MyCorp-Private" value="[https://nuget.mycorp.com/v3/index.json](https://nuget.mycorp.com/v3/index.json)" />
+        <add key="nuget.org" value="[https://api.nuget.org/v3/index.json](https://api.nuget.org/v3/index.json)" />
+      </packageSources>
+      <packageSourceMapping>
+        <package pattern="MyCorp.*" />
+        <package pattern="*" />
+      </packageSourceMapping>
+      <packageSourceCredentials>
+         </packageSourceCredentials>
+    </configuration>
+
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+      </PropertyGroup>
+      </Project>
+    ```
+
+    #### Testing Strategy
+    Review `NuGet.Config` files (global, user, project) for `packageSources`. Ensure `packageSourceMapping` is used or only a single, trusted proxy is listed. Audit internal package names for conflicts on `nuget.org`. Run SCA tools (Codepure, `dotnet list package --vulnerable`, Dependabot) to check for typosquatting and known vulnerabilities.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `composer.json` with multiple repository definitions.
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    Composer `composer.json` defines both a private repository (e.g., Satis/Packagist) and the public `packagist.org`. An internal package `mycorp/internal-tool` is also published maliciously on `packagist.org`.
+    ```json
+    // composer.json (Vulnerable Configuration)
+    {
+        "repositories": [
+            {
+                "type": "composer",
+                "url": "[https://satis.mycorp.com](https://satis.mycorp.com)"
+            },
+            {
+                "type": "composer",
+                "url": "[https://packagist.org](https://packagist.org)" // Explicitly adding default or another public
+            }
+            // Composer prioritizes repositories in order, but if private repo fails...
+            // Or if public repo has a higher version...
+        ],
+        "require": {
+            "php": "^8.1",
+            // Vulnerable if 'mycorp/internal-tool' exists on packagist.org
+            "mycorp/internal-tool": "^1.2"
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    ```json
+    // composer.json
+    {
+        "require": {
+            // DANGEROUS: Typo in package name
+            "larave1/framework": "^10.0", // Typo: 'larave1'
+            "guzzehttp/guzzle": "^7.5" // Typo: 'guzzehttp'
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Private Repository Proxy:** Use a private repository manager (Satis, private Packagist instance, Artifactory) that proxies `packagist.org`. Configure `composer.json` to *only* use this private repository.
+    * **Lock File:** **Always** commit `composer.lock` to version control. Run `composer install` (not `update`) in CI/CD and production, which installs *only* the exact versions and hashes specified in the lock file.
+    * **Scoped Packages:** Use your vendor name (e.g., `mycorp/`) for all internal packages.
+
+    #### Secure Code Example
+    ```json
+    // composer.json (Secure - Single Proxy Repo)
+    {
+        "repositories": [
+            {
+                "type": "composer",
+                // SECURE: Only point to the internal proxy/mirror.
+                "url": "[https://satis.mycorp.com/mirror](https://satis.mycorp.com/mirror)"
+            }
+        ],
+        "require": {
+            "php": "^8.1",
+            "laravel/framework": "^10.0",
+            "mycorp/internal-tool": "^1.2" // Pulled safely from private repo
+        },
+        "config": {
+             // Optional: Explicitly disable Packagist.org if proxy doesn't
+             // "use-include-path": false,
+             // "packagist": false // Check Composer docs for exact syntax
+        }
+    }
+    ```
+    *Command (Secure Install):*
+    ```bash
+    # Ensure composer.lock is present and committed
+    composer install --no-dev # Run in production/CI
+    ```
+
+    #### Testing Strategy
+    Review `composer.json` repositories section. Ensure only a trusted private/proxy repository is listed. Audit internal package names for conflicts on `packagist.org`. Run `composer audit` and SCA tools (Codepure, `local-php-security-checker`, Dependabot) in CI/CD. Ensure `composer.lock` is committed and `composer install` is used.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using `npm` (`package.json`, `.npmrc`) or `yarn` (`.yarnrc`) to pull packages from multiple registries (e.g., private and public npmjs.org).
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    An internal package is named `@mycorp/internal-ui`. Attacker publishes `@mycorp/internal-ui` to public registry (if scope isn't verified) or just `internal-ui` if not scoped.
+    ```json
+    // package.json (Vulnerable if .npmrc is misconfigured)
+    {
+      "dependencies": {
+        // Vulnerable if 'internal-ui' is not scoped and
+        // exists on public npmjs, and .npmrc falls back.
+        "internal-ui": "1.0.0"
+        // Or if scoped package exists publicly and registry config is weak
+        // "@mycorp/internal-ui": "1.0.0"
+      }
+    }
+    ```
+    ```ini
+    # .npmrc (Vulnerable Configuration)
+    # DANGEROUS: Configures private registry, but doesn't prevent
+    # npm from checking public registry if private fails or for other packages.
+    # Attacker might win if public version is higher.
+    registry=[https://npm.mycorp.com](https://npm.mycorp.com)
+    # Might need extra-index-url equivalent or scope setting
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    ```json
+    // package.json
+    {
+      "dependencies": {
+        // DANGEROUS: Typo 'expresss'
+        "expresss": "^4.18.2",
+        // DANGEROUS: Typo 'cross-env'
+        "cros-env": "^7.0.3"
+      }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use Scopes:** Name all internal packages with a private scope (e.g., `@mycorp/...`). Configure your `.npmrc` to *only* associate that scope with your private registry.
+    * **Lock Files:** **Always** commit `package-lock.json` or `yarn.lock`. Run `npm ci` or `yarn install --frozen-lockfile` in CI/CD and production to install *only* what's in the lock file. Lock files contain integrity hashes.
+    * **Private Proxy:** Use a private registry manager (Verdaccio, Artifactory) as a proxy.
+
+    #### Secure Code Example
+    ```ini
+    # .npmrc (Secure - Using Scopes)
+    # SECURE: Tell npm that *only* packages under @mycorp scope
+    # should be fetched from the private registry.
+    @mycorp:registry=[https://npm.mycorp.com/](https://npm.mycorp.com/)
+    
+    # Optional: Configure the default registry (can be public if scopes are set)
+    # registry=[https://registry.npmjs.org/](https://registry.npmjs.org/)
+    
+    # Or, if proxying:
+    # SECURE: Point all requests to the internal proxy.
+    # registry=[https://artifactory.mycorp.com/npm-proxy/](https://artifactory.mycorp.com/npm-proxy/)
+    ```
+    ```json
+    // package.json (Secure - Using Scopes)
+    {
+      "dependencies": {
+        "express": "^4.18.2", // Pulled from default/proxy
+        // SECURE: Internal package is scoped, pulled from private registry via .npmrc
+        "@mycorp/internal-ui": "1.0.0"
+      }
+    }
+    ```
+    *Command (Secure Install):*
+    ```bash
+    # Ensure package-lock.json is present and committed
+    npm ci --only=production # Run in production/CI
+    ```
+
+    #### Testing Strategy
+    Review `.npmrc` files (project, user, global) for registry configuration. Ensure private scopes are defined and mapped correctly, or that a single trusted proxy is used. Audit internal package names for conflicts/typos. Run `npm audit` and SCA tools (Codepure, Snyk, Dependabot) in CI/CD. Ensure lock files are used for installs.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `Gemfile` with multiple `source` lines, potentially leading to dependency confusion if a private gem name exists on a public source.
+
+    #### Vulnerable Scenario 1: Dependency Confusion
+    ```ruby
+    # Gemfile (Vulnerable Configuration)
+    # DANGEROUS: Multiple sources defined. Bundler might check
+    # rubygems.org for 'mycorp-internal-gem' if it's not found
+    # immediately in the private source, or if versions are ambiguous.
+    source '[https://rubygems.org](https://rubygems.org)'
+    source '[https://gems.mycorp.com](https://gems.mycorp.com)' do
+      gem 'mycorp-internal-gem', '1.0' # Attacker publishes 1.1 to rubygems.org
+    end
+
+    gem 'rails', '~> 7.0' # From rubygems.org
+    ```
+
+    #### Vulnerable Scenario 2: Typosquatting
+    ```ruby
+    # Gemfile
+    source '[https://rubygems.org](https://rubygems.org)'
+    gem 'rails', '~> 7.0'
+    # DANGEROUS: Typo 'devlse' instead of 'devise'
+    gem 'devlse', '~> 4.9'
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use Private Proxy:** Configure Bundler to use a **single, private proxy repository** (like Gemfury, Artifactory) that proxies `rubygems.org` and hosts your private gems.
+    * **Lock File:** **Always** commit `Gemfile.lock` to version control. Run `bundle install --deployment` or `bundle install --frozen` in CI/CD and production to install *only* what's in the lock file. `Gemfile.lock` records the source for each gem.
+    * **Specific Source Blocks:** If not using a proxy, be very specific with `source` blocks (as in the vulnerable example, but be aware of the risks if a gem isn't found in the private source).
+
+    #### Secure Code Example
+    ```ruby
+    # Gemfile (Secure - Single Proxy Source)
+    # SECURE: Only one source: the internal proxy/mirror.
+    source '[https://artifactory.mycorp.com/ruby-proxy](https://artifactory.mycorp.com/ruby-proxy)'
+
+    gem 'rails', '~> 7.0' # Pulled from proxy (cached from rubygems.org)
+    gem 'mycorp-internal-gem', '1.0' # Pulled from proxy (hosted internally)
+    # ... other gems ...
+    ```
+    ```ruby
+    # Gemfile (Alternative - Specify source per gem, less ideal than proxy)
+    source '[https://rubygems.org](https://rubygems.org)' # Default public source
+
+    gem 'rails', '~> 7.0'
+
+    # SECURE: Explicitly state this gem comes *only* from the private source.
+    gem 'mycorp-internal-gem', '1.0', source: '[https://gems.mycorp.com](https://gems.mycorp.com)'
+    ```
+    *Command (Secure Install):*
+    ```bash
+    # Ensure Gemfile.lock is present and committed
+    bundle install --deployment --without development test # Run in production/CI
+    ```
+
+    #### Testing Strategy
+    Review `Gemfile` `source` definitions. Prefer a single, trusted proxy. Audit internal gem names for conflicts on `rubygems.org`. Run `bundle audit` (via `bundler-audit` gem) and SCA tools (Codepure, Snyk, Dependabot) in CI/CD. Ensure `Gemfile.lock` is committed and `bundle install --deployment` is used.
+  </Tab>
+</Tabs>
