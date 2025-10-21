@@ -10,8 +10,6 @@ iconType: "solid"
 
 This vulnerability occurs when an application **downloads or includes code from an external source** (like a CDN, third-party repository, or update server) **without verifying its integrity**. If the external source is compromised, or if an attacker can perform a Man-in-the-Middle (MitM) attack, they can substitute the legitimate code with a malicious version. The application, trusting the source, then executes the malicious code, leading to attacks like Cross-Site Scripting (XSS), data theft, or complete system compromise. 🌐📥➡️😈
 
----
-
 ## Business Impact
 
 Failure to check code integrity can lead to severe supply chain attacks:
@@ -19,16 +17,12 @@ Failure to check code integrity can lead to severe supply chain attacks:
 * **Server-Side Attacks (RCE):** If a server-side auto-update mechanism or remote file include downloads and executes malicious code, the attacker can gain full control of the server.
 * **Loss of Trust:** Users and customers trust that the application's code is legitimate. A breach originating from a compromised dependency erodes this trust.
 
----
-
-<Card title="Reference Details" icon="book-open" iconType:="solid">
+<Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-494](https://cwe.mitre.org/data/definitions/494.html)
-  **Related CWEs:** CWE-829 (Untrusted Control Sphere), CWE-345 (Insufficient Data Verification)
+  **Related CWEs:** CWE-829 (Untrusted Control Sphere), CWE-345 (Data Authenticity)
   **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
   **Severity:** High to Critical
 </Card>
-
----
 
 ## Framework-Specific Analysis and Remediation
 
@@ -40,12 +34,10 @@ This vulnerability manifests in two primary ways:
 * **Client-Side:** Always use the `integrity` attribute (with a SHA hash) in `<script>` and `<link>` tags when loading resources from external CDNs.
 * **Server-Side:** Do not include/execute code from remote URLs. If auto-updates are necessary, download packages over HTTPS, verify their digital signatures (e.g., GPG, RSA) against a trusted public key, and check file hashes against a secure manifest.
 
----
-
 <Tabs>
   <Tab title="Python">
     #### Framework Context
-    This is less common in Python frameworks themselves but can occur in deployment scripts or custom application logic that fetches resources or code dynamically. The primary risk is often client-side (in Django/Flask templates).
+    This is less common in Python frameworks themselves but can occur in deployment scripts or custom application logic that fetches resources. The primary risk is often client-side (in Django/Flask templates).
 
     #### Vulnerable Scenario 1: Missing Subresource Integrity (SRI) in Template
     ```html
@@ -131,7 +123,7 @@ This vulnerability manifests in two primary ways:
 
             # SECURE: 3. Install/process the verified package (do not use exec!)
             # (e.g., unpack to specific directory, update DB)
-            install_package(package_bytes)
+            # install_package(package_bytes) # Assume this exists and is safe
 
         except Exception as e:
             print(f"Secure update failed: {e}")
@@ -142,7 +134,7 @@ This vulnerability manifests in two primary ways:
   </Tab>
   <Tab title="Java">
     #### Framework Context
-    Primarily client-side risk in templates (JSP, Thymeleaf) missing SRI. Server-side risk involves custom auto-update logic or insecure class loading from remote sources (`URLClassLoader`).
+    Client-side risk in templates (JSP, Thymeleaf) missing SRI. Server-side risk involves custom auto-update logic or insecure class loading from remote sources (`URLClassLoader`).
 
     #### Vulnerable Scenario 1: Missing SRI in JSP/Thymeleaf
     ```html
@@ -190,7 +182,7 @@ This vulnerability manifests in two primary ways:
 
     public Object loadPluginFromLocal(String pluginJarName) throws Exception {
         // SECURE: Validate pluginJarName against an allow-list of known plugins.
-        if (!isAllowedPlugin(pluginJarName)) {
+        if (!isAllowedPlugin(pluginJarName)) { // Assume isAllowedPlugin exists
              throw new SecurityException("Plugin not allowed.");
         }
 
@@ -202,11 +194,14 @@ This vulnerability manifests in two primary ways:
         }
 
         URL url = pluginPath.toUri().toURL();
+        // Ensure parent classloader is restricted if needed
         URLClassLoader classLoader = new URLClassLoader(new URL[]{url}, ClassLoader.getSystemClassLoader());
         Class<?> pluginClass = classLoader.loadClass("com.example.plugin.MainPlugin");
-        // ... instantiate and use ...
+        Object pluginInstance = pluginClass.getDeclaredConstructor().newInstance();
+        // ... use pluginInstance ...
         return pluginInstance;
     }
+    // Assume isAllowedPlugin(String) method exists and checks against a list
     ```
 
     #### Testing Strategy
@@ -221,10 +216,7 @@ This vulnerability manifests in two primary ways:
     <html>
     <head>
       <script src="[https://code.jquery.com/ui/1.13.2/jquery-ui.min.js](https://code.jquery.com/ui/1.13.2/jquery-ui.min.js)"></script>
-      <script src="[https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js](https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js)"
-              asp-fallback-src="~/lib/angular/angular.min.js"
-              asp-fallback-test="window.angular">
-      </script> </head>
+    </head>
     </html>
     ```
 
@@ -248,7 +240,7 @@ This vulnerability manifests in two primary ways:
     ```
 
     #### Mitigation and Best Practices
-    * **Client-Side:** Use ASP.NET Core's built-in **Tag Helpers for SRI** (`asp-append-version`, `asp-src-include`, `asp-fallback-href-include` etc. don't add SRI, but `asp-href-include` or `asp-src-include` with a CDN path can be paired). Manually add `integrity="..."` and `crossorigin="anonymous"` attributes.
+    * **Client-Side:** Manually add `integrity="..."` and `crossorigin="anonymous"` attributes to `<script>` and `<link>` tags. ASP.NET Core Tag Helpers for CDN fallback also support SRI via `asp-subresource-integrity`.
     * **Server-Side:** **Strongly name** assemblies and verify signatures before loading. Download updates over HTTPS, check hashes, and verify digital signatures (`Authenticode`) using .NET APIs before using `Assembly.Load()`. Load assemblies only from trusted, access-controlled directories.
 
     #### Secure Code Example
@@ -263,7 +255,7 @@ This vulnerability manifests in two primary ways:
       <script src="[https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js](https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js)"
               asp-fallback-src="~/lib/angular/angular.min.js"
               asp-fallback-test="window.angular"
-              integrity="sha512-7oYXeK0OxTFxndh0erL8FsjGvrl2VMDor6fVqzlLGfwOQQqTbYsGPv4ZZ15QAF3aPCgtNaVZG5zRvoIpVHsCDg=="
+              asp-subresource-integrity="sha512-7oYXeK0OxTFxndh0erL8FsjGvrl2VMDor6fVqzlLGfwOQQqTbYsGPv4ZZ15QAF3aPCgtNaVZG5zRvoIpVHsCDg=="
               crossorigin="anonymous">
       </script>
     </head>
@@ -272,11 +264,12 @@ This vulnerability manifests in two primary ways:
     ```csharp
     // Services/PluginManager.cs (Secure - Concept)
     using System.Reflection;
+    using System.IO; // Added namespace
     using System.Security.Cryptography.X509Certificates; // For signature check
 
     public void LoadPluginSecure(string pluginPath) {
         // 1. SECURE: Validate path is within expected plugin directory
-        var secureBasePath = Path.GetFullPath("/opt/myapp/plugins");
+        var secureBasePath = Path.GetFullPath("/opt/myapp/plugins"); // Example secure path
         var fullPluginPath = Path.GetFullPath(pluginPath);
         if (!fullPluginPath.StartsWith(secureBasePath)) {
              throw new SecurityException("Invalid plugin path.");
@@ -333,7 +326,7 @@ This vulnerability manifests in two primary ways:
 
     #### Mitigation and Best Practices
     * **Client-Side:** Add `integrity` and `crossorigin` attributes to all `<script>` and `<link>` tags loading from CDNs in Blade/Twig templates.
-    * **Server-Side:** **Ensure `allow_url_include = Off`** in your production `php.ini` (this is the default and most critical defense against RFI). Never `include`/`require` paths constructed from user input; use an allow-list of local files (see `CWE-840` example). For auto-updates, download over HTTPS and verify signatures/hashes (`openssl_verify`, `hash_file`) before replacing files.
+    * **Server-Side:** **Ensure `allow_url_include = Off`** in your production `php.ini` (this is the default and most critical defense against RFI). Never `include`/`require` paths constructed from user input; use an allow-list of local files. For auto-updates, download over HTTPS and verify signatures/hashes (`openssl_verify`, `hash_file`) before replacing files.
 
     #### Secure Code Example
     ```html
@@ -369,6 +362,7 @@ This vulnerability manifests in two primary ways:
     While `require()` usually loads from local paths, if an attacker can control the path *and* upload files, this can lead to RCE.
     ```javascript
     // utils/module_loader.js
+    // Assume 'app' is an Express app instance
     app.get('/load-module', (req, res) => {
         const moduleName = req.query.module; // e.g., "moduleA"
         try {
@@ -441,11 +435,11 @@ This vulnerability manifests in two primary ways:
 
       def run_script
         script_name = params[:script_name] # e.g., "reports/daily.rb"
-        script_path = Rails.root.join('lib', 'tasks', script_name)
-        
         # DANGEROUS: If script_name contains path traversal ("../../..."),
         # it could load and execute arbitrary Ruby files from the filesystem.
         # (Requires Path Traversal vulnerability as well)
+        script_path = Rails.root.join('lib', 'tasks', script_name)
+
         if File.exist?(script_path)
           load script_path # Executes the Ruby file
           render plain: "Script executed"
@@ -457,7 +451,7 @@ This vulnerability manifests in two primary ways:
     ```
 
     #### Mitigation and Best Practices
-    * **Client-Side:** Add `integrity: true` (if using `javascript_include_tag` with newer Rails/sprockets) or manually add `integrity` and `crossorigin` attributes (if using plain tags or older Rails).
+    * **Client-Side:** Manually add `integrity` and `crossorigin` attributes. `javascript_include_tag` does not automatically add SRI based on URL; you may need to use plain `<script>` tags for external resources.
     * **Server-Side:** **Never** use `load` or `require` with paths derived directly from user input. Use a strict allow-list of filenames, `File.basename` to strip paths, and ensure files are loaded from a secure, non-writable directory. Verify downloaded code/gems using checksums/signatures.
 
     #### Secure Code Example
@@ -468,14 +462,14 @@ This vulnerability manifests in two primary ways:
         src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"
         integrity="sha384-..." crossorigin="anonymous"
       ></script>
-      </head>
+    </head>
     </html>
     ```
     ```ruby
     # app/controllers/scripts_controller.rb (Secure)
     class ScriptsController < ApplicationController
       before_action :require_admin
-      
+
       # SECURE: Define a strict allow-list of executable scripts
       ALLOWED_SCRIPTS = {
         'daily_report' => 'reports/daily.rb',
@@ -502,6 +496,7 @@ This vulnerability manifests in two primary ways:
           render plain: "Invalid script", status: :bad_request
         end
       end
+      # Assume MySecureScriptRunner is a Sidekiq/background job
     end
     ```
 
