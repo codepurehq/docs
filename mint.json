@@ -127,6 +127,12 @@
       ]
     },
     {
+      "group": "A06:2021 – Vulnerable and Outdated Components",
+      "pages": [
+        "vulnerabilities/cwe-1104"
+      ]
+    },
+    {
       "group": "A08:2021 – Software and Data Integrity Failures",
       "pages": [
         "vulnerabilities/deserialization"

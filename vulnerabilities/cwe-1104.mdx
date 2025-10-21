@@ -1,0 +1,283 @@
+---
+title: "Use of Unmaintained Third Party Components"
+sidebarTitle: "Outdated Components (CWE-1104)"
+description: "Mitigation for using outdated or unmaintained third-party libraries/frameworks with known vulnerabilities (OWASP A06)."
+icon: "cubes"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability involves using **third-party software components** (libraries, frameworks, dependencies) that are **outdated, unsupported, unmaintained, or known to contain security vulnerabilities**. Modern applications heavily rely on open-source and commercial components. If these dependencies have security flaws and are not updated, the entire application becomes vulnerable, even if the custom code is secure. Attackers actively scan for applications using components with known exploits (identified by CVEs - Common Vulnerabilities and Exposures). 📦🐛
+
+---
+
+## Business Impact
+
+Using vulnerable components can lead to a wide range of impacts, depending on the nature of the flaw in the component:
+* **Full System Compromise:** Many critical vulnerabilities (like Remote Code Execution in frameworks like Struts or Log4j) originate in dependencies.
+* **Data Breaches:** Vulnerabilities in ORMs, database drivers, or serialization libraries can lead to data exposure.
+* **Authentication Bypass:** Flaws in authentication or session management libraries can allow unauthorized access.
+* **Denial of Service:** Components with resource exhaustion vulnerabilities can be exploited.
+* **Compliance Failures:** Using components with known vulnerabilities often violates security compliance standards.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-1104](https://cwe.mitre.org/data/definitions/1104.html)
+  **Related CWEs:** CWE-937, CWE-1035 (Older OWASP references)
+  **OWASP Top 10 (2021):** A06:2021 - Vulnerable and Outdated Components
+  **Severity:** High to Critical (depends on the component's vulnerability)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability affects **all frameworks and languages** that use external dependencies. The core issue is **dependency management hygiene**.
+
+**Key Remediation Principles:**
+1.  **Inventory Components:** Maintain an accurate list of all third-party components and their versions used in the application (often managed via files like `requirements.txt`, `pom.xml`, `package.json`, `Gemfile`, `*.csproj`).
+2.  **Scan for Vulnerabilities:** Regularly use **Software Composition Analysis (SCA)** tools (like Codepure's SCA, OWASP Dependency-Check, Snyk, GitHub Dependabot, npm audit, trivy) to scan dependencies against databases of known vulnerabilities (CVEs). Integrate SCA into CI/CD pipelines.
+3.  **Patch Promptly:** Update vulnerable components to secure versions as soon as patches are available. Prioritize critical vulnerabilities.
+4.  **Remove Unused Components:** Uninstall or remove dependencies that are no longer needed to reduce the attack surface.
+5.  **Monitor Maintenance Status:** Avoid using components that are no longer actively maintained or supported by their authors, as new vulnerabilities won't be fixed.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Managed via `requirements.txt` (pip) or `pyproject.toml`/`poetry.lock` (Poetry), `Pipfile.lock` (Pipenv).
+
+    #### Vulnerable Scenario 1: Outdated Django Version
+    ```
+    # requirements.txt
+    Django==2.2.10 # DANGEROUS: Known vulnerabilities exist in older Django 2.x versions.
+    requests==2.20.0 # DANGEROUS: Older versions have known vulns (e.g., CVE-2018-18074)
+    # ... other dependencies ...
+    ```
+
+    #### Vulnerable Scenario 2: Vulnerable Transitive Dependency
+    Your `requirements.txt` might list `some-library==1.0`, but `some-library` itself depends on `vulnerable-crypto-lib==0.5`, which has a critical flaw.
+
+    #### Mitigation and Best Practices
+    Use `pip freeze > requirements.txt` carefully (consider `--user` flag). Use tools like `pip-audit`, `safety`, Dependabot, or Codepure SCA to scan `requirements.txt` or lock files. Update dependencies regularly (`pip install -U -r requirements.txt` after checking for compatibility). Use virtual environments.
+
+    #### Secure Code Example
+    ```
+    # requirements.txt (Example with updated versions)
+    # Run SCA tool to verify versions are secure as of today
+    Django==4.2.6 # Use a recent, supported version
+    requests==2.31.0 # Use a recent, patched version
+    # ... other dependencies ...
+    ```
+    *Command:* `pip-audit -r requirements.txt` or `safety check -r requirements.txt`
+
+    #### Testing Strategy
+    Integrate SCA scanning (Codepure, `pip-audit`, `safety`, Dependabot) into the CI/CD pipeline. Regularly run scans locally during development. Monitor security advisories for used packages. Review scan reports and prioritize updates for high-severity vulnerabilities.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Managed via `pom.xml` (Maven) or `build.gradle` (Gradle).
+
+    #### Vulnerable Scenario 1: Old Log4j Version
+    ```xml
+    <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-core</artifactId>
+        <version>2.14.1</version>
+    </dependency>
+    ```
+
+    #### Vulnerable Scenario 2: Vulnerable Spring Boot Starter
+    ```gradle
+    // build.gradle
+    dependencies {
+        // DANGEROUS: Older Spring Boot versions pull in dependencies with known vulns.
+        implementation 'org.springframework.boot:spring-boot-starter-web:2.1.0.RELEASE'
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use dependency management tools like Maven or Gradle effectively. Regularly run SCA tools (OWASP Dependency-Check plugin for Maven/Gradle, Codepure SCA, Snyk, Dependabot). Use the `dependencyUpdates` task/plugin to check for newer versions. Update `pom.xml`/`build.gradle` with patched versions. Pay attention to transitive dependencies.
+
+    #### Secure Code Example
+    ```xml
+    <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-core</artifactId>
+        <version>2.17.1</version> </dependency>
+    ```
+    *Command (Maven OWASP Check):* `mvn org.owasp:dependency-check-maven:check`
+    *Command (Gradle OWASP Check):* `gradle dependencyCheckAnalyze`
+
+    #### Testing Strategy
+    Integrate OWASP Dependency-Check or other SCA tools (Codepure, Snyk) into the build process (Maven/Gradle). Run scans in CI/CD pipelines. Monitor vulnerability feeds (e.g., NVD) for advisories affecting used libraries. Review scan reports and update dependencies.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Managed via NuGet packages, listed in `.csproj` files or `packages.config`.
+
+    #### Vulnerable Scenario 1: Outdated `Newtonsoft.Json`
+    ```xml
+    <ItemGroup>
+      <PackageReference Include="Newtonsoft.Json" Version="11.0.1" />
+    </ItemGroup>
+    ```
+
+    #### Vulnerable Scenario 2: Using End-of-Life .NET Core Version
+    The entire application targets an unsupported .NET Core version (e.g., .NET Core 2.1, 3.1 after end-of-support date), which no longer receives security patches.
+
+    #### Mitigation and Best Practices
+    Use the NuGet Package Manager in Visual Studio or the `dotnet list package --vulnerable` command to check for known vulnerabilities. Use SCA tools (Codepure, Snyk, OWASP Dependency-Check with .NET support, GitHub Dependabot). Regularly update packages (`dotnet add package <PackageName>` or VS UI). Migrate applications off unsupported .NET framework versions.
+
+    #### Secure Code Example
+    ```xml
+    <ItemGroup>
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.3" /> </ItemGroup>
+    ```
+    *Command:* `dotnet list package --vulnerable`
+
+    #### Testing Strategy
+    Run `dotnet list package --vulnerable` regularly and in CI/CD. Use integrated SCA tools (Codepure, Snyk plugin, Dependabot). Monitor the .NET support lifecycle and plan migrations away from end-of-life frameworks. Review scan reports.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Managed via `composer.json` and `composer.lock` using Composer.
+
+    #### Vulnerable Scenario 1: Old Laravel Version
+    ```json
+    // composer.json
+    {
+        "require": {
+            "php": "^7.3|^8.0",
+            // DANGEROUS: Using an old, potentially unpatched Laravel version.
+            "laravel/framework": "5.8.*",
+            // ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Vulnerable Package Requirement
+    ```json
+    // composer.json
+    {
+        "require": {
+            // DANGEROUS: Specific vulnerable version of guzzlehttp required.
+            "guzzlehttp/guzzle": "6.3.0", // Example, check for actual vulns in versions
+            // ...
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `composer update` regularly (after checking for breaking changes). Commit `composer.lock` to ensure consistent dependency versions. Use tools like `composer audit` (built-in), SensioLabs Security Checker (via `local-php-security-checker`), Codepure SCA, or Dependabot to scan `composer.lock`. Remove unused dependencies with `composer remove`.
+
+    #### Secure Code Example
+    ```json
+    // composer.json (Using recent versions)
+    {
+        "require": {
+            "php": "^8.1", // Use supported PHP version
+            // SECURE: Use a recent, supported Laravel version (check latest stable)
+            "laravel/framework": "^10.0", // Example current LTS or stable
+            // SECURE: Use up-to-date dependencies (check latest secure)
+            "guzzlehttp/guzzle": "^7.5", // Example current version
+            // ...
+        }
+    }
+    ```
+    *Command:* `composer audit`
+
+    #### Testing Strategy
+    Run `composer audit` locally and in CI/CD pipelines. Integrate other SCA tools (Codepure, `local-php-security-checker`, Dependabot). Monitor Packagist security advisories. Review scan reports and update dependencies via `composer update <package>`, then test thoroughly.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Managed via `package.json` and `package-lock.json` (npm) or `yarn.lock` (Yarn).
+
+    #### Vulnerable Scenario 1: Outdated Express Version
+    ```json
+    // package.json
+    {
+      "dependencies": {
+        // DANGEROUS: Older Express versions may have vulnerabilities.
+        "express": "^4.16.0",
+        // ...
+      }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Dependency with Known Vulnerability
+    ```json
+    // package.json
+    {
+      "dependencies": {
+        // DANGEROUS: Lodash versions below 4.17.21 have known prototype pollution vulns.
+        "lodash": "4.17.10",
+        // ...
+      }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use `npm audit` or `yarn audit` regularly. Use SCA tools (Codepure, Snyk, Dependabot). Keep dependencies updated (`npm update`, `yarn upgrade`). Commit the lock file (`package-lock.json` or `yarn.lock`) to ensure consistent installs. Use `npm ls <package>` to inspect transitive dependency versions. Remove unused packages (`npm uninstall`).
+
+    #### Secure Code Example
+    ```json
+    // package.json (Updated versions)
+    {
+      "dependencies": {
+        // SECURE: Use recent versions (check latest secure)
+        "express": "^4.18.2",
+        "lodash": "^4.17.21", // Patched version
+        // ...
+      }
+    }
+    ```
+    *Command:* `npm audit` or `yarn audit`
+
+    #### Testing Strategy
+    Run `npm audit` / `yarn audit` locally and in CI/CD pipelines. Integrate SCA tools (Codepure, Snyk, Dependabot). Monitor npm advisories. Review audit reports and apply patches or updates using `npm audit fix` (with caution/testing) or manual updates. Check `package-lock.json` or `yarn.lock` for actual installed versions.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Managed via `Gemfile` and `Gemfile.lock` using Bundler.
+
+    #### Vulnerable Scenario 1: Old Rails Version
+    ```ruby
+    # Gemfile
+    source '[https://rubygems.org](https://rubygems.org)'
+    # DANGEROUS: Using an old, unsupported Rails version.
+    gem 'rails', '~> 5.2.0'
+    # ...
+    ```
+
+    #### Vulnerable Scenario 2: Gem with Known Vulnerability
+    ```ruby
+    # Gemfile
+    # DANGEROUS: Older Nokogiri versions had XML parsing vulnerabilities (XXE, DoS).
+    gem 'nokogiri', '1.8.0' # Example vulnerable version
+    # ...
+    ```
+
+    #### Mitigation and Best Practices
+    Run `bundle update` regularly (check for breaking changes). Commit `Gemfile.lock`. Use `bundle audit` (via `bundler-audit` gem) or other SCA tools (Codepure, Snyk, Dependabot) to scan `Gemfile.lock`. Remove unused gems.
+
+    #### Secure Code Example
+    ```ruby
+    # Gemfile (Updated versions)
+    source '[https://rubygems.org](https://rubygems.org)'
+    # SECURE: Use a recent, supported Rails version (check latest stable/LTS).
+    gem 'rails', '~> 7.0.7' # Example current version
+    # SECURE: Use an up-to-date Nokogiri version.
+    gem 'nokogiri', '~> 1.15.4' # Example current version
+    # ...
+    ```
+    *Command (requires `gem install bundler-audit`):* `bundle audit check --update`
+
+    #### Testing Strategy
+    Install `bundler-audit` gem. Run `bundle audit check --update` locally and in CI/CD pipelines. Integrate other SCA tools (Codepure, Snyk, Dependabot). Monitor Ruby security advisories. Review scan reports and update gems using `bundle update <gemname>`, then test. Check `Gemfile.lock` for exact installed versions.
+  </Tab>
+</Tabs>
