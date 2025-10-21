@@ -1,0 +1,586 @@
+---
+title: "Improper Verification of Cryptographic Signature"
+sidebarTitle: "Improper Signature Verification (CWE-347)"
+description: "Mitigation for failing to verify signatures, accepting invalid signatures, or allowing algorithm confusion attacks (e.g., JWT 'none' algorithm)."
+icon: "signature"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application fails to properly validate cryptographic signatures or message authentication codes (MACs). This can happen in several ways:
+* **Missing Verification:** The application receives signed data but doesn't check the signature at all.
+* **Weak Algorithm Acceptance:** The application accepts signatures using weak algorithms (like HMAC-SHA1) when stronger ones are expected.
+* **Algorithm Confusion:** The application trusts a parameter (often in the data itself, like a JWT header) that specifies which algorithm to use for verification, allowing an attacker to downgrade to a weak algorithm or even disable signature checks entirely (e.g., the JWT `alg: none` attack). ✍️❌
+
+---
+
+## Business Impact
+
+Failure to verify signatures properly allows attackers to tamper with data or impersonate legitimate senders.
+* **Data Tampering:** Signed messages, configurations, or tokens can be altered without detection.
+* **Authentication Bypass:** If signatures are used for authentication (like in JWTs), attackers can forge tokens to gain unauthorized access.
+* **Impersonation:** Attackers can craft messages that appear to come from a trusted source.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-347](https://cwe.mitre.org/data/definitions/347.html)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is common with JSON Web Tokens (JWTs), SAML assertions, signed URLs, and any system where data integrity and authenticity rely on signatures. The key is to **always verify the signature** using a **predetermined, strong algorithm** configured on the server-side, and **never trust algorithm information** provided within the untrusted data itself.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using libraries like `PyJWT` but failing to verify the signature or accepting the `'none'` algorithm.
+
+    #### Vulnerable Scenario 1: Decoding JWT without Verification
+    ```python
+    # auth/jwt_handler.py
+    import jwt
+
+    def decode_jwt_no_verify(token):
+        try:
+            # DANGEROUS: options={"verify_signature": False} disables signature check.
+            # An attacker can forge any payload.
+            payload = jwt.decode(token, options={"verify_signature": False})
+            return payload
+        except jwt.PyJWTError as e:
+            print(f"JWT Error: {e}")
+            return None
+    ```
+
+    #### Vulnerable Scenario 2: Accepting 'none' Algorithm
+    Older versions of PyJWT might have allowed this, or custom logic might bypass checks if `alg` is `none`.
+    ```python
+    # auth/jwt_handler.py
+    def decode_jwt_accept_none(token, secret_key):
+        try:
+            header = jwt.get_unverified_header(token)
+            alg = header.get('alg')
+
+            if alg is None or alg.lower() == 'none':
+                # DANGEROUS: Trusting the payload without signature if alg is 'none'.
+                payload = jwt.decode(token, options={"verify_signature": False})
+            else:
+                # Verification happens here, but the 'none' path bypasses it.
+                payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+            return payload
+        except jwt.PyJWTError as e:
+            print(f"JWT Error: {e}")
+            return None
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `jwt.decode()` with the `key` and `algorithms` parameters specified. **Never** set `options={"verify_signature": False}`. Explicitly list the *only* acceptable strong algorithms (e.g., `["HS256", "RS256"]`) in the `algorithms` parameter to prevent downgrade attacks.
+
+    #### Secure Code Example
+    ```python
+    # auth/jwt_handler.py (Secure)
+    import jwt
+    import os
+
+    # SECURE: Load the secret key from a secure source (e.g., environment variable)
+    SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+    # SECURE: Define the ONLY acceptable algorithms
+    ALLOWED_ALGORITHMS = ["HS256"]
+
+    def decode_jwt_secure(token):
+        if not SECRET_KEY:
+            raise ValueError("JWT Secret Key not configured")
+        try:
+            # SECURE: Verification is mandatory.
+            # SECURE: Only allows algorithms listed in ALLOWED_ALGORITHMS.
+            payload = jwt.decode(
+                token,
+                SECRET_KEY,
+                algorithms=ALLOWED_ALGORITHMS
+            )
+            return payload
+        except jwt.ExpiredSignatureError:
+            print("JWT Expired")
+            return None
+        except jwt.InvalidAlgorithmError:
+            print("JWT Invalid Algorithm")
+            return None
+        except jwt.PyJWTError as e:
+            print(f"JWT Invalid Token: {e}")
+            return None
+    ```
+
+    #### Testing Strategy
+    Write unit tests for your JWT decoding function.
+    * Pass a token signed with the wrong key; assert decoding fails.
+    * Pass a token with `alg: none` in the header; assert decoding fails.
+    * Pass a token signed with an algorithm *not* in your `ALLOWED_ALGORITHMS`; assert decoding fails (`InvalidAlgorithmError`).
+    * Pass a valid token; assert decoding succeeds.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using JWT libraries like `jjwt` but calling methods that bypass verification or not specifying allowed algorithms.
+
+    #### Vulnerable Scenario 1: Parsing JWT without Verifying
+    ```java
+    // service/JwtService.java
+    import io.jsonwebtoken.Jwts;
+    import io.jsonwebtoken.Claims;
+
+    public Claims parseJwtUnverified(String token) {
+        try {
+            // DANGEROUS: This splits the token but doesn't verify the signature.
+            // DO NOT use getBody() on the result of parserBuilder().build().parseClaimsJwt()
+            // without first calling setSigningKey().
+            String[] splitToken = token.split("\\.");
+            String unsignedToken = splitToken[0] + "." + splitToken[1] + ".";
+            return Jwts.parserBuilder().build()
+                       .parseClaimsJwt(unsignedToken).getBody();
+        } catch (Exception e) {
+            // Handle error
+            return null;
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Not Specifying Algorithms
+    While `jjwt` requires a key by default, not explicitly listing allowed algorithms might open vectors in complex setups or future library versions. Allowing `none` requires explicitly bypassing checks.
+    ```java
+    // service/JwtService.java (Conceptual - Modern jjwt generally prevents 'none' by default)
+    public Claims parseJwtAllowAnyAlg(String token, String secret) {
+       try {
+            // POTENTIALLY DANGEROUS: If the library allowed 'none' or weak algorithms,
+            // and we didn't restrict them, it could be a problem.
+            // Modern jjwt usually requires specifying algorithms if not HS256 etc.
+            return Jwts.parserBuilder()
+                       .setSigningKey(secret) // Assumes symmetric key
+                       .build()
+                       .parseClaimsJws(token).getBody();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always use the `JwtParserBuilder` with `.setSigningKey()` (or `.setVerifyKey()` for asymmetric) and ensure verification happens. Explicitly specify allowed algorithms if necessary. **Never** manually parse the token and skip signature verification.
+
+    #### Secure Code Example
+    ```java
+    // service/JwtService.java (Secure)
+    import io.jsonwebtoken.Jwts;
+    import io.jsonwebtoken.Claims;
+    import io.jsonwebtoken.security.Keys;
+    import javax.crypto.SecretKey;
+    import org.springframework.beans.factory.annotation.Value;
+    import org.springframework.stereotype.Service;
+    import java.nio.charset.StandardCharsets;
+
+    @Service
+    public class JwtService {
+
+        private final SecretKey jwtSecretKey;
+
+        // SECURE: Inject secret key from secure configuration
+        public JwtService(@Value("${jwt.secret}") String secret) {
+            if (secret == null || secret.length() < 32) { // HS256 needs >= 256 bits
+                throw new IllegalArgumentException("JWT secret is missing or too short");
+            }
+            this.jwtSecretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        }
+
+        public Claims parseJwtSecure(String token) {
+            try {
+                // SECURE: .setSigningKey ensures verification happens.
+                // By default, jjwt uses secure algorithms based on the key type.
+                // You could add .requireAudience("myApp") etc. for more checks.
+                return Jwts.parserBuilder()
+                           .setSigningKey(jwtSecretKey)
+                           .build()
+                           .parseClaimsJws(token).getBody();
+            } catch (io.jsonwebtoken.JwtException e) {
+                System.err.println("JWT validation error: " + e.getMessage());
+                return null;
+            }
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write unit tests:
+    * Pass a token with an invalid signature; assert parsing fails.
+    * Pass a token with `alg: none`; assert parsing fails.
+    * Pass a token signed with a different key; assert parsing fails.
+    * Pass a valid token; assert parsing succeeds and claims are correct.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `System.IdentityModel.Tokens.Jwt` but configuring `TokenValidationParameters` to disable signature validation.
+
+    #### Vulnerable Scenario 1: Disabling Signature Requirement
+    ```csharp
+    // Startup.cs (ConfigureServices)
+    services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                // DANGEROUS: This completely disables signature validation.
+                RequireSignedTokens = false,
+                // Or: ValidateIssuerSigningKey = false,
+                ValidIssuer = Configuration["Jwt:Issuer"],
+                ValidAudience = Configuration["Jwt:Issuer"],
+                // IssuerSigningKey = ... (might still be set but ignored)
+            };
+        });
+    ```
+
+    #### Vulnerable Scenario 2: Accepting 'none' Algorithm (Conceptual)
+    While the default handlers prevent this, custom validation logic could potentially bypass checks if `alg` is `none`.
+    ```csharp
+    // Custom Token Validator (Illustrative)
+    public class CustomJwtValidator : ISecurityTokenValidator
+    {
+        public bool CanValidateToken => true;
+        // ... other methods ...
+
+        public ClaimsPrincipal ValidateToken(string securityToken,
+            TokenValidationParameters validationParameters,
+            out SecurityToken validatedToken)
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(securityToken);
+
+            if (jwt.Header.Alg.Equals("none", StringComparison.OrdinalIgnoreCase))
+            {
+                // DANGEROUS: Trusting token without signature.
+                validatedToken = jwt;
+                return new ClaimsPrincipal(new ClaimsIdentity(jwt.Claims));
+            }
+            else
+            {
+                // Proceed with normal validation (which should be done here)
+                return handler.ValidateToken(securityToken, validationParameters, out validatedToken);
+            }
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure `TokenValidationParameters` has `ValidateIssuerSigningKey = true` (default) and `RequireSignedTokens = true` (default). Provide a valid `IssuerSigningKey`. **Never** accept the `none` algorithm.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs or Program.cs (Secure)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        var jwtKey = Configuration["Jwt:Key"]; // Load securely!
+        if (string.IsNullOrEmpty(jwtKey)) { throw new InvalidOperationException("JWT Key missing"); }
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    // SECURE: These are typically true by default, but explicitly setting them is good.
+                    ValidateIssuerSigningKey = true,
+                    RequireSignedTokens = true, // Ensure this isn't false
+                    ValidIssuer = Configuration["Jwt:Issuer"],
+                    ValidAudience = Configuration["Jwt:Audience"], // Use separate Audience if needed
+                    IssuerSigningKey = securityKey,
+                    // SECURE: Explicitly disallow 'none' algorithm
+                    ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 } // Or other strong algs
+                };
+            });
+    }
+    ```
+
+    #### Testing Strategy
+    Write integration tests:
+    * Send a request with a JWT signed with the wrong key; assert 401 Unauthorized.
+    * Send a request with a JWT where the header is `{"alg":"none","typ":"JWT"}` and the signature part is empty; assert 401 Unauthorized.
+    * Send a valid JWT; assert 200 OK.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using JWT libraries like `firebase/php-jwt` but calling decode without specifying the key, or adding logic to bypass verification for `alg: none`.
+
+    #### Vulnerable Scenario 1: Decoding without Key/Verification
+    ```php
+    // app/Http/Middleware/AuthMiddleware.php
+    use Firebase\JWT\JWT;
+    use Firebase\JWT\Key; // Use Firebase\JWT\Key in v6+
+
+    public function handle($request, Closure $next)
+    {
+        $token = $request->bearerToken();
+        try {
+            // DANGEROUS: This overload might exist in older versions or custom forks
+            // and might decode without verification if key is omitted or verification flag is false.
+            // Modern versions require the key. Assume $key is missing/null:
+            // $payload = JWT::decode($token, null, false); // Hypothetical dangerous call
+
+            // More realistically, failing to catch exceptions properly
+            // or having logic that trusts payload even if verification fails.
+            $payload = JWT::decode($token, new Key($publicKey, 'RS256')); // Assuming RS256 always
+            // ... but what if an attacker sends HS256 signed with the PUBLIC key? (Alg confusion)
+
+        } catch (\Exception $e) {
+            // DANGEROUS: If logic proceeds or assumes defaults on error.
+        }
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Explicitly Allowing 'none' Algorithm
+    ```php
+    // app/Utils/JwtHelper.php
+    use Firebase\JWT\JWT;
+    use Firebase\JWT\Key;
+
+    public static function decodeToken($token, $key)
+    {
+        // Decode header first (BAD PRACTICE)
+        list($header_b64) = explode('.', $token);
+        $header = json_decode(JWT::urlsafeB64Decode($header_b64));
+
+        if (isset($header->alg) && strtolower($header->alg) === 'none') {
+            // DANGEROUS: Trusting the payload without signature verification.
+            list(, $payload_b64) = explode('.', $token);
+            return json_decode(JWT::urlsafeB64Decode($payload_b64));
+        } else {
+            // Proceed with normal verification
+            return JWT::decode($token, new Key($key, 'HS256')); // Only allows HS256
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `JWT::decode($token, new Key($key, $algorithm))` specifying the **expected key** and **allowed algorithm(s)**. Never trust the `alg` header from the token itself to determine validation method.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Middleware/AuthMiddleware.php (Secure)
+    use Firebase\JWT\JWT;
+    use Firebase\JWT\Key;
+
+    public function handle($request, Closure $next)
+    {
+        $token = $request->bearerToken();
+        $secretKey = env('JWT_SECRET'); // Load securely!
+        if (!$token || !$secretKey) {
+            return response('Unauthorized.', 401);
+        }
+
+        try {
+            // SECURE: Provide the key and explicitly allow only HS256.
+            // Replace 'HS256' with your expected algorithm (e.g., 'RS256' for public key).
+            $payload = JWT::decode($token, new Key($secretKey, 'HS256'));
+
+            $request->attributes->add(['jwt_payload' => $payload]); // Add payload for controller
+            return $next($request);
+
+        } catch (\Firebase\JWT\ExpiredException $e) {
+            return response('Token expired.', 401);
+        } catch (\Firebase\JWT\SignatureInvalidException $e) {
+            return response('Invalid signature.', 401);
+        } catch (\Exception $e) {
+            // Log other errors, but treat as unauthorized
+            \Log::error('JWT Decode Error: ' . $e->getMessage());
+            return response('Unauthorized.', 401);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write unit tests for your JWT decoding logic:
+    * Pass a token signed with the wrong key; assert failure/exception.
+    * Pass a token with header `{"alg":"none"}` and no signature; assert failure/exception.
+    * Pass a token signed with HS256 if you expect RS256; assert failure/exception.
+    * Pass a valid token; assert success.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using libraries like `jsonwebtoken` but calling `decode()` (which doesn't verify) or not providing the correct options to `verify()`.
+
+    #### Vulnerable Scenario 1: Using `jwt.decode()`
+    ```javascript
+    // middleware/auth.js
+    const jwt = require('jsonwebtoken');
+
+    function authenticate(req, res, next) {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.sendStatus(401);
+
+        try {
+            // DANGEROUS: jwt.decode() only parses the token, it does NOT verify the signature.
+            const payload = jwt.decode(token);
+            if (!payload) throw new Error('Invalid token');
+            req.user = payload; // Attacker controls this fully!
+            next();
+        } catch (err) {
+            return res.sendStatus(401);
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Not Specifying Allowed Algorithms
+    If the `verify` function is used but the `algorithms` option isn't specified, an attacker could potentially force a downgrade if the library has flaws or defaults change. Explicit is better.
+    ```javascript
+    // middleware/auth.js
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET; // Loaded securely
+
+    function authenticateWeakAlgCheck(req, res, next) {
+        const token = req.headers.authorization?.split(' ')[1];
+        // ... token check ...
+        try {
+            // POTENTIALLY DANGEROUS: Only checks against the secret. Doesn't prevent
+            // an attacker sending a token with alg: HS256 signed with an RS256 public key,
+            // or other algorithm confusion if library allows it.
+            const payload = jwt.verify(token, JWT_SECRET);
+            req.user = payload;
+            next();
+        } catch (err) { // Catches invalid signature, expiration, etc.
+            return res.sendStatus(401);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Always use `jwt.verify(token, secretOrPublicKey, options)`**. Provide the correct secret or public key. Crucially, use the `algorithms` option in `options` to specify an array containing **only** the algorithm(s) you expect (e.g., `['HS256']` or `['RS256']`).
+
+    #### Secure Code Example
+    ```javascript
+    // middleware/auth.js (Secure)
+    const jwt = require('jsonwebtoken');
+    const JWT_SECRET = process.env.JWT_SECRET; // Load securely
+    if (!JWT_SECRET) { throw new Error("JWT Secret missing"); }
+
+    // SECURE: Define the ONLY algorithm(s) you will accept
+    const ALLOWED_ALGORITHMS = ['HS256'];
+
+    function authenticateSecure(req, res, next) {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) return res.sendStatus(401);
+
+        try {
+            // SECURE: Use verify() with the secret and allowed algorithms.
+            const payload = jwt.verify(token, JWT_SECRET, {
+                algorithms: ALLOWED_ALGORITHMS
+            });
+            req.user = payload;
+            next();
+        } catch (err) { // Catches invalid signature, expiration, alg mismatch etc.
+            console.error("JWT Verification failed:", err.message);
+            return res.sendStatus(401);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Write unit tests for your authentication middleware:
+    * Pass a token signed with the wrong secret; assert 401.
+    * Pass a token with header `{"alg":"none"}` and no signature; assert 401.
+    * Pass a token signed with RS256 if you only allow HS256; assert 401.
+    * Pass a valid token; assert `next()` is called and `req.user` is populated.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using the `jwt` gem but calling `JWT.decode` without the `verify` parameter set to true, or without specifying the expected algorithm.
+
+    #### Vulnerable Scenario 1: Decoding without Verification
+    ```ruby
+    # lib/json_web_token.rb
+    require 'jwt'
+
+    class JsonWebToken
+      def self.decode_unsafe(token)
+        # DANGEROUS: The third argument `false` disables signature verification.
+        body = JWT.decode(token, nil, false)[0]
+        HashWithIndifferentAccess.new body
+      rescue JWT::DecodeError => e
+        nil
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Not Specifying Algorithm
+    Relying on the default algorithm check without being explicit.
+    ```ruby
+    # lib/json_web_token.rb
+    require 'jwt'
+
+    class JsonWebToken
+      SECRET_KEY = Rails.application.credentials.secret_key_base
+
+      def self.decode_implicit_alg(token)
+        # POTENTIALLY DANGEROUS: If SECRET_KEY is accidentally an RSA public key,
+        # an attacker could send a token signed with HS256 using that public key.
+        # Explicitly setting algorithms is safer.
+        body = JWT.decode(token, SECRET_KEY, true)[0] # Just verifies with key
+        HashWithIndifferentAccess.new body
+      rescue JWT::DecodeError => e
+        nil
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Always call `JWT.decode(token, key, true, options)` where `options` includes the `:algorithms` key specifying an array of acceptable algorithms (e.g., `algorithms: ['HS256']`).
+
+    #### Secure Code Example
+    ```ruby
+    # lib/json_web_token.rb (Secure)
+    require 'jwt'
+
+    class JsonWebToken
+      # SECURE: Load secret key securely (e.g., from Rails credentials)
+      SECRET_KEY = Rails.application.credentials.secret_key_base.to_s
+      # SECURE: Define the ONLY acceptable algorithm
+      ALGORITHM = 'HS256'.freeze
+
+      def self.decode(token)
+        raise "JWT Secret Key not set!" if SECRET_KEY.blank?
+        # SECURE: Verification is true (default can be omitted but explicit is good),
+        # and the expected algorithm is specified.
+        body = JWT.decode(token, SECRET_KEY, true, { algorithm: ALGORITHM })[0]
+        HashWithIndifferentAccess.new body
+      rescue JWT::ExpiredSignature => e
+        Rails.logger.warn "JWT Decode Error: Expired Signature - #{e.message}"
+        nil
+      rescue JWT::VerificationError => e
+        Rails.logger.warn "JWT Decode Error: Verification Error - #{e.message}"
+        nil
+      rescue JWT::IncorrectAlgorithm => e
+        Rails.logger.warn "JWT Decode Error: Incorrect Algorithm - #{e.message}"
+        nil
+      rescue JWT::DecodeError => e
+        Rails.logger.warn "JWT Decode Error: #{e.message}"
+        nil
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Write RSpec tests for your `decode` method:
+    * Pass a token signed with the wrong key; assert `nil` or exception.
+    * Pass a token with `alg: none`; assert `JWT::IncorrectAlgorithm` error or `nil`.
+    * Pass a token signed with RS256 if you expect HS256; assert `JWT::IncorrectAlgorithm` error or `nil`.
+    * Pass a valid token; assert the correct payload is returned.
+  </Tab>
+</Tabs>
