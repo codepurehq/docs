@@ -8,7 +8,7 @@ iconType: "solid"
 
 ## Overview
 
-Business Logic Errors are flaws in the design and implementation of an application's workflow related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit legitimate application processes in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states.
+Business Logic Errors are flaws in the **design and implementation of an application's workflow** related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit **legitimate application processes** in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states. ⚙️➡️❓➡️💸
 
 ## Business Impact
 
@@ -26,7 +26,7 @@ Exploiting business logic flaws can lead to significant consequences tailored to
 
 ## Framework-Specific Analysis and Remediation
 
-Business logic flaws are highly application-specific and cannot be prevented solely by framework features. They require careful design, threat modeling, and robust implementation of the application's rules.
+Business logic flaws are **highly application-specific** and **cannot be prevented solely by framework features**. They require careful design, threat modeling, and robust implementation of the application's rules.
 
 **Key Remediation Principles:**
 1.  **Threat Modeling:** Identify potential abuses of workflows during the design phase. Think like an attacker: "How can I misuse this feature?"
@@ -890,7 +890,7 @@ Business logic flaws are highly application-specific and cannot be prevented sol
         if @invoice.update(invoice_params)
            redirect_to @invoice, notice: 'Invoice updated.'
         else
-           render :edit
+           render :edit, status: :unprocessable_entity
         end
       end
 
