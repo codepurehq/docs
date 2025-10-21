@@ -1,0 +1,539 @@
+---
+title: "Expression Language (EL) Injection"
+sidebarTitle: "EL Injection (CWE-917)"
+description: "Mitigation for Expression Language (EL) Injection vulnerabilities in frameworks like Java EE (JSF, JSP), Spring (SPeL), and others."
+icon: "language"
+iconType: "solid"
+---
+
+## Overview
+
+Expression Language (EL) Injection occurs when an application incorporates untrusted user input into strings that are later interpreted by an Expression Language engine. ELs are often used in Java EE frameworks (like JSF, JSP), Spring Expression Language (SPeL), and some templating systems to provide dynamic functionality. If user input containing EL syntax (e.g., `${...}`, `#{...}`, `*{...}`) is evaluated, attackers can execute arbitrary code, access sensitive objects, or manipulate application behavior. ⚙️💉
+
+---
+
+## Business Impact
+
+Successful EL Injection can lead to:
+* **Remote Code Execution (RCE):** Attackers can often access underlying platform objects and methods, potentially executing arbitrary commands on the server.
+* **Information Disclosure:** Accessing sensitive application objects, configuration settings, or environment variables.
+* **Logic Manipulation:** Altering application flow or data by triggering unexpected method calls.
+* **Denial of Service:** Executing expressions that consume excessive resources.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-917](https://cwe.mitre.org/data/definitions/917.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Critical (often leads to RCE)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability is highly dependent on the specific framework and how it parses and evaluates expressions. Key defenses include:
+1.  **Avoiding Evaluation of User Input:** The safest approach is never to include untrusted data in strings that will be evaluated by an EL engine.
+2.  **Using Safe EL Subsets/Contexts:** Some frameworks allow configuring restricted EL contexts that limit access to dangerous objects or methods.
+3.  **Input Sanitization/Escaping:** Escaping EL control characters (`$`, `#`, `{`, `}`) in user input *before* it's processed by the EL engine. This is less reliable than avoiding evaluation.
+4.  **Keeping Frameworks Updated:** Patches often fix EL injection vulnerabilities discovered in framework components.
+
+---
+
+<Tabs>
+  <Tab title="Java">
+    #### Framework Context
+    Common in Java EE (JSF, JSP using `${}` or `#{}`) and Spring applications using Spring Expression Language (SPeL - `#{}`, `*{}`). User input might end up in dynamically generated error messages, custom components, or unsafe template processing.
+
+    #### Vulnerable Scenario 1: JSF/JSP Error Message
+    An error message reflects user input without sanitization, and the page renders EL.
+    ```java
+    // Backing Bean (JSF)
+    FacesContext context = FacesContext.getCurrentInstance();
+    String userInput = request.getParameter("searchTerm");
+    // DANGEROUS: User input included directly in a message shown on a page that evaluates EL.
+    // Input: searchTerm = ${7*7} -> Message becomes: Search failed for 49
+    // Input: searchTerm = ${customer.resetPassword('newPass')} -> Calls method
+    // Input: searchTerm = ${request.getParameter('cmd')} -> Might echo command
+    // Input: searchTerm = #{request.getSession().invalidate()} -> Logs out user
+    // Input: searchTerm = ${facesContext.getExternalContext().getResponse().setHeader('X-Evil','Injected')}
+    context.addMessage(null, new FacesMessage(FacesMessage.SEVERITY_ERROR,
+        "Search failed for " + userInput, null));
+    ```
+    ```jsp
+    <h:messages errorClass="errorMessage" />
+    ```
+
+    #### Vulnerable Scenario 2: Spring Expression Language (SPeL) in Custom Annotation/Logic
+    A developer uses `SpelExpressionParser` to evaluate an expression partly constructed from user input.
+    ```java
+    // service/DynamicRuleService.java
+    import org.springframework.expression.Expression;
+    import org.springframework.expression.ExpressionParser;
+    import org.springframework.expression.spel.standard.SpelExpressionParser;
+    import org.springframework.stereotype.Service;
+
+    @Service
+    public class DynamicRuleService {
+        public boolean evaluateRule(String userInput, Object context) {
+            ExpressionParser parser = new SpelExpressionParser();
+            // DANGEROUS: User input concatenated into the expression string.
+            // Input: userInput = "') OR T(java.lang.Runtime).getRuntime().exec('calc.exe').toString().contains('". Pad if needed.
+            // Expression becomes: "#root.value > 10 AND ('') OR T(java.lang.Runtime)..."
+            String expressionString = "#root.value > 10 AND ('" + userInput + "' != '')";
+            try {
+                Expression exp = parser.parseExpression(expressionString);
+                return exp.getValue(context, Boolean.class);
+            } catch (Exception e) {
+                 System.err.println("SPeL Error: " + e.getMessage());
+                 return false;
+            }
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **JSF/JSP:** Avoid including raw user input in messages or components rendered on pages where EL is evaluated. If necessary, sanitize the input to remove or escape `${`, `#{`, `{`, `}` characters. Use standard JSF components which often handle escaping.
+    * **SPeL:** Do **not** construct SPeL expressions by concatenating user input. Use safe contexts (`SimpleEvaluationContext`) instead of `StandardEvaluationContext` if possible, as `SimpleEvaluationContext` restricts access to dangerous features like `T()` operator (type references) and bean references. If you must use user input, treat it strictly as data, not part of the expression logic (e.g., pass it as a variable to the context).
+
+    #### Secure Code Example
+    ```java
+    // JSF Backing Bean (Secure - Sanitized Output)
+    String userInput = request.getParameter("searchTerm");
+    // SECURE: Escape EL characters (simplistic example, needs robustness)
+    String safeInput = userInput.replace("$", "").replace("#", "").replace("{", "").replace("}", "");
+    context.addMessage(null, new FacesMessage(FacesMessage.SEVERITY_ERROR,
+        "Search failed for " + safeInput, null)); // Use sanitized input
+
+    // service/DynamicRuleService.java (Secure SPeL - Using Context Variable)
+    import org.springframework.expression.spel.support.StandardEvaluationContext;
+    // ... other imports ...
+    public boolean evaluateRuleSecure(String userInput, Object contextObject) {
+        ExpressionParser parser = new SpelExpressionParser();
+        // SECURE: Expression uses a variable '#inputVar'
+        String expressionString = "#root.value > 10 AND (#inputVar != '')";
+        try {
+            Expression exp = parser.parseExpression(expressionString);
+            // SECURE: User input is passed safely as a variable in the context.
+            StandardEvaluationContext context = new StandardEvaluationContext(contextObject);
+            context.setVariable("inputVar", userInput);
+            return exp.getValue(context, Boolean.class);
+        } catch (Exception e) {
+             System.err.println("SPeL Error: " + e.getMessage());
+             return false;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify all points where user input might be reflected in JSF/JSP pages or used in `SpelExpressionParser.parseExpression()`. Submit payloads designed to trigger EL evaluation:
+    * Simple math: `${7*7}`, `#{7*7}`
+    * Java method calls (JSF/SPeL): `${customer.getName()}`, `#{T(java.lang.System).getenv()}`
+    * OS commands (SPeL): `#{T(java.lang.Runtime).getRuntime().exec('id')}`
+    Check if the expressions are evaluated or if errors related to parsing/execution occur.
+  </Tab>
+  <Tab title="Python">
+    #### Framework Context
+    Less common than in Java, but can occur in templating engines like Jinja2 or Mako if user input is rendered unsafely within template structures or if unsafe methods like `string.Formatter.format` are used with format strings partially controlled by users.
+
+    #### Vulnerable Scenario 1: Jinja2 Server-Side Template Injection (SSTI)
+    Rendering a template where user input is directly included in the template string itself (not just as a variable).
+    ```python
+    # views/render_template.py
+    from jinja2 import Environment
+
+    def render_custom_template(request):
+        user_input = request.GET.get('template_format', 'Hello {{ name }}')
+        name = request.GET.get('name', 'Guest')
+        env = Environment()
+        try:
+            # DANGEROUS: The template *string itself* contains user input.
+            # Input: template_format = {{ self._TemplateReference__context.config.__class__.__init__.__globals__['os'].system('id') }}
+            template = env.from_string(user_input)
+            return HttpResponse(template.render(name=name))
+        except Exception as e:
+            return HttpResponse(f"Template Error: {e}", status=400)
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe `string.format`
+    Using `str.format()` where the format string itself contains placeholders derived from user input.
+    ```python
+    # utils/formatter.py
+    class UserData:
+        def __init__(self, name):
+            self.name = name
+            # DANGEROUS: Attacker might control other attributes or methods
+            # accessed via the format string.
+
+    def format_greeting(request):
+        # Assume format_string comes from a less trusted source, e.g., customizable theme
+        format_string = request.GET.get('format', "Hello {user.name}")
+        user = UserData(request.GET.get('name', 'Guest'))
+        try:
+            # DANGEROUS: If format_string is "{user.__init__.__globals__[os].system('id')}"
+            # this could lead to code execution. Requires specific object structure.
+            return format_string.format(user=user)
+        except Exception as e:
+            return f"Format Error: {e}"
+
+    ```
+
+    #### Mitigation and Best Practices
+    * **Templates:** Never render template *strings* derived directly from user input. Always use secure methods like `render_template('template.html', var=user_input)` where user input is passed as a *variable* to a fixed template file. Ensure auto-escaping is enabled in the template engine.
+    * **String Formatting:** Avoid using `str.format()` or f-strings where the format string itself contains untrusted input. Use simpler concatenation or pass user input as data arguments, not part of the format structure.
+
+    #### Secure Code Example
+    ```python
+    # views/render_template.py (Secure Jinja2 Usage)
+    from django.shortcuts import render # Use Django's secure rendering
+
+    def render_secure_template(request):
+        name = request.GET.get('name', 'Guest')
+        # SECURE: User input is passed as context data to a fixed template file.
+        # Jinja2 will escape 'name' by default within {{ name }}.
+        return render(request, 'greeting_template.html', {'name': name})
+
+    # templates/greeting_template.html
+    // <h1>Hello {{ name }}</h1> // Auto-escaped by default in Django/Jinja2
+
+    # utils/formatter.py (Secure Formatting)
+    def format_greeting_secure(request):
+        name = request.GET.get('name', 'Guest')
+        # SECURE: Simple, safe string concatenation or f-string.
+        # User input is treated purely as data.
+        return f"Hello {name}"
+    ```
+
+    #### Testing Strategy
+    Identify where user input might influence template file content or format strings. Test by injecting template syntax relevant to the engine (e.g., `{{ 7*7 }}`, `{{ config }}`, `{{ self }}` for Jinja2; `{user.__class__}` for `str.format`). Look for evaluated expressions, exposed objects, or errors revealing internal state.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Less common native EL, but vulnerabilities can arise from custom implementations, unsafe use of templating engines (like NVelocity, Fluid), or misuse of libraries that parse expression-like strings. Unsafe deserialization (`BinaryFormatter`) can also be a vector if it processes malicious objects designed to execute code during deserialization, sometimes triggered via expression evaluation within properties.
+
+    #### Vulnerable Scenario 1: Custom Expression Evaluator
+    A hypothetical custom parser that mimics EL behavior unsafely.
+    ```csharp
+    // Services/CustomEvaluator.cs
+    // NOTE: This is a highly simplified and contrived example.
+    // Real-world scenarios often involve complex reflection or scripting engines.
+    public object Evaluate(string expression, object context)
+    {
+        // DANGEROUS: Highly simplified example of evaluating simple property access.
+        // A real attack might use reflection combined with expression parsing.
+        // If expression = "context.GetType().Assembly.Load('System.Diagnostics').GetType('System.Diagnostics.Process').Start('calc.exe')"
+        // this logic (if extended with reflection) could be vulnerable.
+        if (expression.StartsWith("context."))
+        {
+            var propertyName = expression.Substring(8);
+            var property = context.GetType().GetProperty(propertyName);
+            if (property != null) return property.GetValue(context);
+        }
+        return null; // Basic example
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe Template Engine Usage
+    Using a template engine like Fluid unsafely, allowing access to dangerous objects.
+    ```csharp
+    // Services/TemplateService.cs
+    using Fluid; // Example using Fluid library
+
+    public string RenderTemplate(string templateString, object model)
+    {
+        // DANGEROUS: If templateString comes from user input and allows
+        // access to .NET objects or methods unsafely. Fluid has security measures,
+        // but misconfiguration or older versions could be vulnerable.
+        // Input: templateString = "{{ System.Diagnostics.Process.Start('calc.exe') }}"
+        // (This specific syntax might be blocked by default, but illustrates the risk)
+        var parser = new FluidParser();
+        if (parser.TryParse(templateString, out var template, out var error))
+        {
+            var context = new TemplateContext(model);
+            // Add options to restrict member access if needed:
+            // context.MemberAccessStrategy.Register<MyModel>(); // Allow only specific types
+            // context.Options.AllowClr = false; // Disallow direct CLR access (Important!)
+            return template.Render(context);
+        }
+        return $"Template Error: {error}";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Avoid custom expression evaluators that use reflection on untrusted input.
+    * When using template engines, understand their security model. Disable access to arbitrary .NET types/methods (`AllowClr = false` in Fluid). Register only safe types/members for access within templates. Always keep the library updated.
+    * Never use insecure deserializers like `BinaryFormatter`.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/TemplateService.cs (Secure Fluid Usage)
+    using Fluid;
+
+    public string RenderTemplateSecure(string templateString, object model)
+    {
+        var parser = new FluidParser();
+        if (parser.TryParse(templateString, out var template, out var error))
+        {
+            var context = new TemplateContext(model);
+            // SECURE: Disallow direct CLR access.
+            context.Options.AllowClr = false;
+            // SECURE: Only allow access to members of registered safe types (if needed).
+            // context.MemberAccessStrategy.Register<MyViewModel>();
+            // context.MemberAccessStrategy.Register<SomeSafeType>();
+
+            return template.Render(context);
+        }
+        return $"Template Error: {error}";
+    }
+    ```
+
+    #### Testing Strategy
+    Identify where strings containing expression-like syntax are evaluated. If using templating libraries, check their documentation for security configuration (disabling CLR access, member access strategies). Test by providing payloads relevant to the engine, aiming to access system classes (`System.Diagnostics.Process`), read files, or execute commands.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Primarily occurs with Server-Side Template Injection (SSTI) in engines like Twig or Smarty if templates include user input in unsafe ways, or potentially via `eval()` if used within template logic (which is rare and highly discouraged).
+
+    #### Vulnerable Scenario 1: Twig SSTI via Unsafe Rendering
+    Rendering a template string directly provided by the user.
+    ```php
+    // controller/TemplateController.php
+    use Twig\Environment;
+    use Twig\Loader\ArrayLoader;
+
+    function render_custom_template(Request $request) {
+        $templateContent = $request->get('template', 'Hello {{ name }}');
+        $name = $request->get('name', 'Guest');
+
+        $loader = new ArrayLoader(['custom' => $templateContent]);
+        $twig = new Environment($loader);
+
+        try {
+            // DANGEROUS: The template string itself comes from user input.
+            // Input: template = {{ _self.env.registerUndefinedFilterCallback("exec") }}{{ "id"|filter(null) }}
+            // Input: template = {{ ['id']|map('system')|join }}
+            return $twig->render('custom', ['name' => $name]);
+        } catch (\Twig\Error\Error $e) {
+            return "Template Error: " . $e->getMessage();
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Smarty SSTI (Older versions/Misconfiguration)
+    Older Smarty versions or insecure configurations might allow PHP code execution.
+    ```php
+    // Example using Smarty
+    require 'Smarty.class.php';
+    $smarty = new Smarty();
+
+    // DANGEROUS: If security is disabled or bypassed
+    // $smarty->disableSecurity(); // Explicitly disabling security
+
+    $userInput = $_GET['name'] ?? 'Guest';
+    // Input: name = {php}phpinfo();{/php} (Requires {php} tags enabled)
+    // Input: name = {$smarty.version} (Information disclosure)
+    // Input: name = {system('id')} (If exec is allowed via security policy)
+
+    // Assigning potentially malicious input
+    $smarty->assign('name', $userInput);
+
+    try {
+        // Rendering a template that uses the unsafe variable
+        // template.tpl: Hello {$name}
+        $smarty->display('template.tpl');
+    } catch (Exception $e) {
+        // Handle error
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Twig:** Never create templates directly from user input using `Environment::createTemplate()` or `ArrayLoader` with user strings. Use `FilesystemLoader` to load fixed template files. Ensure auto-escaping is enabled. Use the Twig sandbox extension if rendering potentially untrusted template *logic*.
+    * **Smarty:** Enable security settings (`$smarty->enableSecurity()`). Do not disable default protections. Avoid using `{php}` tags. Ensure user input is properly escaped (`{$variable|escape}`).
+
+    #### Secure Code Example
+    ```php
+    // controller/TemplateController.php (Secure Twig Usage)
+    use Twig\Environment;
+    use Twig\Loader\FilesystemLoader;
+
+    function render_secure_template(Request $request) {
+        $name = $request->get('name', 'Guest');
+
+        // SECURE: Load templates from a trusted directory.
+        $loader = new FilesystemLoader(__DIR__.'/templates');
+        // Ensure autoescape is on (default is html)
+        $twig = new Environment($loader, ['autoescape' => 'html']);
+
+        try {
+            // SECURE: User input is passed as data to a fixed template.
+            return $twig->render('greeting.html.twig', ['name' => $name]);
+        } catch (\Twig\Error\Error $e) {
+             return "Template Error: " . $e->getMessage();
+        }
+    }
+
+    // templates/greeting.html.twig
+    // <h1>Hello {{ name }}</h1> {# Auto-escaped by default #}
+    ```
+
+    #### Testing Strategy
+    Identify where user input is used within template rendering logic. Submit template engine syntax aiming for code execution or object inspection:
+    * Twig: `{{ 7*7 }}`, `{{ _self }}`, `{{ _self.env... }}`, `{{ ["cmd"]|map("system") }}`
+    * Smarty: `{$smarty.version}`, `{7*7}`, `{php}phpinfo();{/php}`, `{system('id')}`
+    Look for evaluated output, error messages revealing paths or objects, or successful command execution.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Server-Side Template Injection (SSTI) in engines like EJS, Handlebars, Pug, Nunjucks if user input is included in the template structure or rendered without proper escaping.
+
+    #### Vulnerable Scenario 1: EJS Unescaped Output
+    Using `<%- ... %>` with user input, allowing HTML/JavaScript injection (XSS) and potentially template evaluation.
+    ```javascript
+    // server.js
+    const ejs = require('ejs');
+    const express = require('express');
+    const app = express();
+
+    app.set('view engine', 'ejs');
+
+    app.get('/unsafe-greet', (req, res) => {
+        const userInput = req.query.name || '';
+        // DANGEROUS: '<%-' allows raw HTML/JS. If userInput contains EJS tags,
+        // they might be evaluated server-side depending on context/version.
+        // Input: name = "<%= 7*7 %>" -> Output: "<h1>Hello 49</h1>" (SSTI)
+        // Input: name = "<script>alert('xss')</script>" -> Output: XSS
+        const templateString = `<h1>Hello <%- name %></h1>`;
+        try {
+            const html = ejs.render(templateString, { name: userInput });
+            res.send(html);
+        } catch(e) { res.status(500).send("Render error"); }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Handlebars Unescaped Output (`{{{ ... }}}`)
+    ```javascript
+    // server.js
+    const expressHandlebars = require('express-handlebars');
+    // ... setup app ...
+    app.engine('handlebars', expressHandlebars());
+    app.set('view engine', 'handlebars');
+
+    app.get('/unsafe-profile', (req, res) => {
+        const bio = req.query.bio || '';
+        // DANGEROUS: Using triple-stash `{{{ }}}` bypasses HTML escaping.
+        // If 'bio' contains Handlebars expressions and the engine is configured
+        // insecurely (e.g., prototype access enabled), it could lead to RCE.
+        // Input: bio = "{{this.constructor.constructor('return process')().mainModule.require('child_process').execSync('id').toString()}}" (Prototype Pollution style)
+        // Input: bio = "<script>alert('xss')</script>"
+        res.render('profile', { userBio: bio }); // Assumes profile.handlebars uses {{{ userBio }}}
+    });
+
+    // views/profile.handlebars
+    // <div>{{{ userBio }}}</div> // DANGEROUS
+    ```
+
+    #### Mitigation and Best Practices
+    * **Always use the default escaped output tags:** `<%= ... %>` in EJS, `{{ ... }}` in Handlebars.
+    * **Never** use unescaped output tags (`<%- ... %>`, `{{{ ... }}}`) directly with user-controlled data unless you have explicitly sanitized it for that specific context (very rare).
+    * Keep template engine libraries updated.
+    * Configure template engines securely (e.g., disable prototype access in Handlebars if possible).
+    * Avoid rendering template strings provided by users.
+
+    #### Secure Code Example
+    ```javascript
+    // server.js (Secure EJS)
+    app.get('/safe-greet', (req, res) => {
+        const userInput = req.query.name || '';
+        // SECURE: Uses '<%= %>' for default HTML escaping.
+        const templateString = `<h1>Hello <%= name %></h1>`;
+        try {
+            const html = ejs.render(templateString, { name: userInput });
+            res.send(html);
+        } catch(e) { res.status(500).send("Render error"); }
+    });
+
+    // server.js (Secure Handlebars)
+    app.get('/safe-profile', (req, res) => {
+        const bio = req.query.bio || '';
+        // SECURE: Render template that uses {{ userBio }}
+        res.render('safe_profile', { userBio: bio });
+    });
+
+    // views/safe_profile.handlebars
+    // SECURE: Double-stash escapes HTML by default. Prevents XSS & template injection.
+    // <div>{{ userBio }}</div>
+    ```
+
+    #### Testing Strategy
+    Identify all template rendering points where user input is displayed. Check if escaped (`<%=`, `{{`) or unescaped (`<%-`, `{{{`) tags are used. Submit payloads with the template engine's syntax (`<%= 7*7 %>`, `{{ 7*7 }}`, `{{this ...}}`) into input fields reflected with unescaped tags. Look for evaluated expressions, exposed objects (like `process`), errors, or successful command execution.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Server-Side Template Injection (SSTI) in ERB, Slim, Haml if user input is evaluated within code execution delimiters (`<% ... %>`) or used to construct template paths/content dynamically. Unsafe use of methods like `render inline:` can also be a vector.
+
+    #### Vulnerable Scenario 1: User Input Inside ERB Code Tags
+    A developer mistakenly includes user input within `<% ... %>` instead of `<%= ... %>`.
+    ```erb
+    <%
+      # DANGEROUS: params[:sort_order] is executed as Ruby code.
+      # Input: ?sort_order = "; Kernel.system('id'); #" (Closing existing command, executing new one)
+      items = @items.order("price #{params[:sort_order]}")
+    %>
+    ```
+    ```ruby
+    # Simplified controller (May not be directly vulnerable this way often,
+    # but illustrates code execution if input lands in <% %>)
+    # This scenario is more likely if the *template file itself* is built dynamically.
+    ```
+
+    #### Vulnerable Scenario 2: `render inline:` with User Input
+    Using `render :inline` where the template string contains user input.
+    ```ruby
+    # app/controllers/preview_controller.rb
+    class PreviewController < ApplicationController
+      def show
+        # Assume layout_content comes from user, e.g., customizing a page section
+        layout_content = params[:layout] || "<h1>Preview</h1>"
+        item_name = "Example Item"
+
+        # DANGEROUS: ':inline' evaluates the string as ERB.
+        # Input: layout = "<% Kernel.system('id') %>"
+        render inline: layout_content, locals: { item: item_name }
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Never** place unescaped or unsanitized user input inside `<% ... %>` tags in ERB (or equivalent code execution blocks in Slim/Haml).
+    * Use `<%= ... %>` (or `= ` in Slim/Haml) for outputting user data, relying on Rails' auto-escaping. Use `<%=h ... %>` explicitly if needed.
+    * **Avoid `render :inline`** with any user-controlled string. Render fixed template files from the filesystem.
+    * Strictly validate any user input used to determine template file paths.
+
+    #### Secure Code Example
+    ```erb
+    <%
+      # SECURE: Validate the sort order parameter against an allow-list.
+      valid_orders = ['asc', 'desc']
+      sort_order = params[:sort_order].presence_in(valid_orders) || 'asc'
+      # SECURE: Use the validated variable.
+      items = @items.order("price #{sort_order}")
+    %>
+    <p>You searched for: <%=h params[:q] %></p>
+    ```
+    ```ruby
+    # app/controllers/preview_controller.rb (Secure)
+    class PreviewController < ApplicationController
+      def show
+        # SECURE: Do not use render :inline with dynamic strings.
+        # Instead, load a fixed template and pass data.
+        @item_name = "Example Item"
+        # Maybe load specific partial based on a *validated* param[:type]
+        render :show # Renders app/views/preview/show.html.erb
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Review ERB/Slim/Haml templates. Look for any instances where `params[]`, `@variable_from_params`, or other user input is used inside code execution blocks (`<% ... %>`, `- ` in Slim/Haml). Test endpoints using `render :inline` by injecting template code (`<%= 7*7 %>`, `<% Kernel.system('id') %>`) into parameters used to build the inline template string.
+  </Tab>
+</Tabs>
