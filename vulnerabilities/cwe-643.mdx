@@ -1,0 +1,643 @@
+---
+title: "XPath Injection"
+sidebarTitle: "XPath Injection (CWE-643)"
+description: "Mitigation for XPath Injection vulnerabilities where user input manipulates XPath queries against XML data."
+icon: "file-code"
+iconType: "solid"
+---
+
+## Overview
+
+XPath Injection is an attack technique targeting applications that use user-supplied input to construct XPath (XML Path Language) queries for searching or accessing XML documents. If the input is not properly sanitized, attackers can inject special characters (like `'`, `"` , `=`, `|`, ` `) to alter the XPath expression. This can allow them to bypass access controls, extract sensitive information from the XML document, or cause denial of service by crafting complex queries. 📜💉
+
+---
+
+## Business Impact
+
+XPath Injection can lead to:
+* **Information Disclosure:** Attackers can retrieve parts of the XML document they shouldn't have access to, potentially exposing sensitive configuration data, user details, or business information.
+* **Authentication/Authorization Bypass:** If XPath queries are used to check credentials or permissions stored in XML, injection can bypass these checks.
+* **Data Structure Discovery:** Attackers can infer the structure of the underlying XML document.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-643](https://cwe.mitre.org/data/definitions/643.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** High (depending on the data stored in XML)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability is not tied to a specific web framework but rather to the **XML parsing and XPath query libraries** used. The core issue is **string concatenation** to build queries with untrusted input. Defenses include:
+1.  **Strict Input Validation:** Validate user input against an expected format (e.g., allow only alphanumeric characters if searching for a username).
+2.  **Escaping/Quoting:** Carefully escape quotes within user input before embedding it in string literals within the XPath query. Single quotes (`'`) are often replaced with `',"'"`, and double quotes (`"`) with `,""`, within the appropriate string literal. However, this is complex and error-prone.
+3.  **Parameterized Queries (If Supported):** Some libraries might support parameterized XPath queries or variable bindings, which is the most robust solution. This separates the query structure from the user data.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using libraries like `lxml` or Python's built-in `xml.etree.ElementTree` and constructing XPath query strings manually.
+
+    #### Vulnerable Scenario 1: User Search
+    Searching an XML user database based on a username from a GET request.
+    ```python
+    # views/xml_search.py
+    from lxml import etree
+    from django.http import HttpResponse
+
+    # Assume tree is loaded from an XML file:
+    # <users>
+    #   <user><name>alice</name><role>user</role></user>
+    #   <user><name>admin</name><role>admin</role></user>
+    # </users>
+    tree = etree.parse('users.xml')
+
+    def search_user(request):
+        username = request.GET.get('user')
+        if not username:
+            return HttpResponse("Username required", status=400)
+
+        # DANGEROUS: username is directly inserted into the XPath string literal.
+        # Input: user = "' or '1'='1"
+        # XPath becomes: /users/user[name='' or '1'='1']/role
+        # This selects ALL user roles.
+        xpath_query = f"/users/user[name='{username}']/role"
+        try:
+            results = tree.xpath(xpath_query)
+            roles = [role.text for role in results]
+            return HttpResponse(f"Roles: {', '.join(roles)}")
+        except Exception as e:
+            return HttpResponse(f"Error: {e}", status=500)
+    ```
+
+    #### Vulnerable Scenario 2: Product Lookup
+    Looking up a product by ID, where the ID might contain quotes.
+    ```python
+    # views/product_lookup.py
+    # Assume product_tree is loaded:
+    # <products>
+    #   <product id="A'123"><name>Widget</name><price>10</price></product>
+    #   <product id="B456"><name>Gadget</name><price>20</price></product>
+    # </products>
+    product_tree = etree.parse('products.xml')
+
+    def get_product_price(request):
+        product_id = request.GET.get('id')
+        # DANGEROUS: If product_id contains a quote, it breaks the query.
+        # Input: id = "A'123" -> /products/product[@id='A'123']/price (Syntax Error)
+        # Input: id = "' or @id='"
+        # XPath: /products/product[@id='' or @id='']/price (Might return multiple/wrong results)
+        xpath_query = f"/products/product[@id='{product_id}']/price"
+        try:
+            results = product_tree.xpath(xpath_query)
+            prices = [price.text for price in results]
+            return HttpResponse(f"Prices: {', '.join(prices)}")
+        except Exception as e:
+            return HttpResponse(f"Error: {e}", status=500)
+
+    ```
+
+    #### Mitigation and Best Practices
+    Avoid constructing XPath queries via string formatting if possible. If you must, **strictly validate** the input format first. For embedding in string literals, **carefully escape quotes**. The safest approach for `lxml` is often to use **parameterized XPath queries** if the structure allows, or find elements by tag and filter in Python code.
+
+    #### Secure Code Example
+    ```python
+    # views/xml_search.py (Secure - Parameterized or Escaping)
+    from lxml import etree
+    from django.http import HttpResponse
+    import re # For validation
+
+    tree = etree.parse('users.xml')
+
+    # Option 1: Strict Validation (if username format is known)
+    def search_user_validated(request):
+        username = request.GET.get('user')
+        # SECURE: Validate input strictly. Only allow alphanumeric.
+        if not username or not re.fullmatch(r'[a-zA-Z0-9]+', username):
+             return HttpResponse("Invalid username format", status=400)
+
+        xpath_query = f"/users/user[name='{username}']/role" # Now safe due to validation
+        results = tree.xpath(xpath_query)
+        # ...
+
+    # Option 2: Escaping (complex and potentially fragile)
+    def escape_xpath_literal(text):
+        if "'" in text and '"' in text:
+            # Contains both, escape using concat() trick
+            parts = text.split("'")
+            return "concat('" + "', \"'\" , '".join(parts) + "')"
+        elif "'" in text:
+            return f'"{text}"' # Use double quotes if only single quotes are present
+        else:
+            return f"'{text}'" # Default to single quotes
+
+    def search_user_escaped(request):
+        username = request.GET.get('user')
+        if not username: return HttpResponse("Username required", status=400)
+
+        # SECURE: Escape the username for use within an XPath literal.
+        safe_username_literal = escape_xpath_literal(username)
+        xpath_query = f"/users/user[name={safe_username_literal}]/role"
+        results = tree.xpath(xpath_query)
+        # ...
+
+    # Option 3: Parameterized XPath (using lxml extensions - may require specific setup)
+    # This is often the most robust method if available/applicable.
+    # Requires defining variables and passing them separately. Example structure:
+    # results = tree.xpath("/users/user[name=$uname]/role", uname=username)
+    ```
+
+    #### Testing Strategy
+    Identify all inputs used in XPath queries. Submit values containing single quotes (`'`), double quotes (`"`), pipe (`|`), equals (`=`), spaces, and XPath expressions like `' or '1'='1` or `'] | /* | /foo[bar='`. Observe if the query logic changes, unexpected data is returned, or errors occur.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `javax.xml.xpath.XPath` and constructing query strings manually.
+
+    #### Vulnerable Scenario 1: Login Check
+    Checking username and password against an XML file.
+    ```java
+    // service/XmlAuthService.java
+    import javax.xml.parsers.*;
+    import javax.xml.xpath.*;
+    import org.w3c.dom.Document;
+    import org.xml.sax.InputSource;
+    import java.io.StringReader; // For XML loading example
+
+    public boolean authenticate(String xmlDoc, String username, String password) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        // Assume xmlDoc is loaded securely
+        Document doc = builder.parse(new InputSource(new StringReader(xmlDoc))); // Example load
+
+        XPathFactory xPathfactory = XPathFactory.newInstance();
+        XPath xpath = xPathfactory.newXPath();
+
+        // DANGEROUS: username and password directly concatenated.
+        // Input: username = "' or '1'='1", password="' or '1'='1"
+        // XPath: /users/user[username='' or '1'='1' and password='' or '1'='1']/@id
+        // This query selects all users.
+        String expression = "/users/user[username='" + username + "' and password='" + password + "']/@id";
+
+        XPathExpression expr = xpath.compile(expression);
+        String userId = (String) expr.evaluate(doc, XPathConstants.STRING);
+
+        return userId != null && !userId.isEmpty();
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Document Retrieval
+    Retrieving a document based on an ID provided by the user.
+    ```java
+    // service/DocumentService.java
+    public String getDocument(Document doc, String docId) throws Exception {
+        XPath xpath = XPathFactory.newInstance().newXPath();
+        // DANGEROUS: docId concatenated.
+        // Input: docId = "' or 'a'='a"
+        // XPath: /documents/doc[@id='' or 'a'='a']/content
+        String expression = "/documents/doc[@id='" + docId + "']/content";
+        XPathExpression expr = xpath.compile(expression);
+        return (String) expr.evaluate(doc, XPathConstants.STRING);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use **parameterized XPath queries** via `XPath` variables. Define variables using `XPathVariableResolver` and reference them in the XPath expression (e.g., `$varName`). This is the most secure method. Alternatively, strictly validate input or manually escape quotes (complex).
+
+    #### Secure Code Example
+    ```java
+    // service/XmlAuthService.java (Secure - Using Variables)
+    import javax.xml.namespace.QName;
+    import javax.xml.xpath.*;
+    import java.util.HashMap;
+    import java.util.Map;
+    // ... other imports ...
+
+    public boolean authenticateSecure(Document doc, String username, String password) throws Exception {
+        XPath xpath = XPathFactory.newInstance().newXPath();
+
+        // 1. Create a variable resolver
+        final Map<QName, Object> vars = new HashMap<>();
+        vars.put(new QName("uname"), username);
+        vars.put(new QName("pwd"), password);
+
+        xpath.setXPathVariableResolver(new XPathVariableResolver() {
+            @Override
+            public Object resolveVariable(QName variableName) {
+                return vars.get(variableName);
+            }
+        });
+
+        // 2. Use variables in the XPath expression
+        // SECURE: Input is treated as data, not part of the query structure.
+        String expression = "/users/user[username=$uname and password=$pwd]/@id";
+        XPathExpression expr = xpath.compile(expression);
+
+        // 3. Evaluate using the variables
+        String userId = (String) expr.evaluate(doc, XPathConstants.STRING);
+
+        return userId != null && !userId.isEmpty();
+    }
+
+    // Manual escaping (less preferred, more complex to get right)
+    public static String escapeXPathLiteral(String input) {
+        if (input == null) return "''"; // Handle null
+        if (!input.contains("'")) {
+            return "'" + input + "'"; // Simple case, use single quotes
+        } else if (!input.contains("\"")) {
+            return "\"" + input + "\""; // Use double quotes if no double quotes present
+        } else {
+            // Contains both, use concat()
+            return "concat('" + input.replace("'", "',\"'\",'") + "')";
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify inputs used in `xpath.compile()` or `xpath.evaluate()`. Submit XPath metacharacters (`'`, `"`, `=`, `|`, ` `) and expressions (`' or '1'='1`, `'] | /* | /foo[bar='`). Check if `XPathVariableResolver` is used or if manual escaping is performed correctly. Look for unexpected data or errors.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `System.Xml.XPath.XPathNavigator` or `System.Xml.Linq.XElement` with `XPathSelectElement(s)` and constructing query strings manually.
+
+    #### Vulnerable Scenario 1: Searching XML Data
+    ```csharp
+    // Services/XmlSearchService.cs
+    using System.Xml.XPath;
+    using System.Xml; // For XmlDocument if used
+
+    public string FindUserRole(IXPathNavigable xmlDoc, string username)
+    {
+        XPathNavigator nav = xmlDoc.CreateNavigator();
+        // DANGEROUS: username concatenated directly into the query string literal.
+        // Input: username = "' or '1'='1"
+        // XPath: /users/user[username='' or '1'='1']/role
+        string xpathExpr = $"/users/user[username='{username}']/role";
+        try {
+            XPathNodeIterator iterator = nav.Select(xpathExpr);
+            if (iterator.MoveNext())
+            {
+                return iterator.Current.Value;
+            }
+        } catch (XPathException ex) { /* Handle error */ }
+        return null;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Attribute-Based Lookup
+    ```csharp
+    // Services/ConfigService.cs
+    public string GetSetting(XDocument configDoc, string settingKey)
+    {
+        // DANGEROUS: settingKey concatenated into attribute selector.
+        // Input: key = "' or @name='"
+        // XPath: /appSettings/add[@key='' or @name='']/@value
+        string xpathExpr = $"/appSettings/add[@key='{settingKey}']/@value";
+        try
+        {
+            var element = configDoc.XPathSelectElement(xpathExpr); // Using System.Xml.XPath extensions
+            return element?.Value; // Value might not be what's expected if injection works
+        } catch (XPathException ex) { /* Handle error */ }
+        return null;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Use **parameterized XPath queries** if the library supports them (e.g., via `XsltContext` or custom variable resolvers, though less straightforward than in Java). Otherwise, **strictly validate** input format or **manually escape** quotes within literals (complex and error-prone). Often, it's safer to select broader nodes and filter in C# code.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/XmlSearchService.cs (Secure - Manual Escaping)
+    public string FindUserRoleSecure(IXPathNavigable xmlDoc, string username)
+    {
+        XPathNavigator nav = xmlDoc.CreateNavigator();
+        // SECURE: Escape quotes for the literal.
+        string safeUsername = EscapeXPathLiteral(username);
+        string xpathExpr = $"/users/user[username={safeUsername}]/role";
+        try
+        {
+            XPathNodeIterator iterator = nav.Select(xpathExpr);
+            // ... process results ...
+        } catch (XPathException ex) { /* Handle error */ }
+        return null;
+    }
+
+    // Helper for manual escaping (use with caution, complex cases exist)
+    public static string EscapeXPathLiteral(string value)
+    {
+        if (value == null) return "''";
+        if (!value.Contains('\'')) return $"'{value}'"; // Use single quotes
+        if (!value.Contains('"')) return $"\"{value}\""; // Use double quotes
+        // Contains both, use concat()
+        return "concat('" + value.Replace("'", "',\"'\",'") + "')";
+    }
+
+    // Alternative: Select users and filter in C# (Often safer)
+    public string FindUserRoleFiltered(IXPathNavigable xmlDoc, string username)
+    {
+        XPathNavigator nav = xmlDoc.CreateNavigator();
+        // Select all user nodes first
+        XPathNodeIterator userIterator = nav.Select("/users/user");
+        foreach (XPathNavigator userNav in userIterator)
+        {
+            // SECURE: Compare username in C# code, not XPath query construction
+            string currentName = userNav.SelectSingleNode("name")?.Value;
+            if (currentName == username)
+            {
+                return userNav.SelectSingleNode("role")?.Value;
+            }
+        }
+        return null;
+    }
+    ```
+
+    #### Testing Strategy
+    Identify inputs used in `XPathNavigator.Select`, `XNode.XPathSelectElement(s)`. Submit XPath metacharacters (`'`, `"`, `=`, `|`, ` `) and expressions (`' or '1'='1`, `'] | /* | /foo[bar='`). Check if manual escaping is correctly implemented or if filtering occurs in C# code. Look for unexpected data or errors.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `DOMXPath` or `SimpleXMLElement::xpath` and building query strings with user input.
+
+    #### Vulnerable Scenario 1: Searching User Data
+    ```php
+    <?php
+    // Assume $xmlString contains user data
+    // <users><user><id>1</id><name>alice</name></user><user><id>2</id><name>admin</name></user></users>
+    $dom = new DOMDocument();
+    $dom->loadXML($xmlString);
+    $xpath = new DOMXPath($dom);
+
+    $username = $_GET['user'] ?? '';
+
+    // DANGEROUS: $username directly inserted into the query.
+    // Input: user = "' or '1'='1"
+    // Query: //user[name='' or '1'='1']/id
+    $query = "//user[name='" . $username . "']/id";
+
+    $results = $xpath->query($query);
+    foreach ($results as $node) {
+        echo "Found User ID: " . $node->nodeValue . "<br>";
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Selecting Node by Attribute
+    ```php
+    <?php
+    // Assume $sxml is a SimpleXMLElement object
+    // <items><item code="A'1"><value>10</value></item><item code="B2"><value>20</value></item></items>
+    $itemCode = $_GET['code'] ?? '';
+
+    // DANGEROUS: $itemCode concatenated into attribute selector.
+    // Input: code = "' or @code='"
+    // Query: //item[@code='' or @code='']/@value
+    $query = "//item[@code='" . $itemCode . "']/value";
+
+    $results = $sxml->xpath($query);
+    if ($results) {
+        foreach ($results as $valueNode) {
+            echo "Value: " . $valueNode . "<br>";
+        }
+    }
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    PHP's DOM/SimpleXML libraries lack built-in parameterized queries for XPath. **Strict input validation** is crucial. If validation isn't feasible, **manual escaping** of quotes is necessary but complex and error-prone. Consider selecting broader nodes and filtering results within PHP code where possible.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // Option 1: Strict Validation
+    $username = $_GET['user'] ?? '';
+    // SECURE: Only allow alphanumeric usernames
+    if (!preg_match('/^[a-zA-Z0-9]+$/', $username)) {
+        die("Invalid username format.");
+    }
+    // Query is now safe because input is restricted
+    $query = "//user[name='" . $username . "']/id";
+    // ... execute query ...
+
+    // Option 2: Manual Escaping (Complex)
+    function escapeXPathLiteral($value) {
+        if (strpos($value, "'") !== false && strpos($value, '"') !== false) {
+             // Contains both, use concat()
+             $parts = explode("'", $value);
+             return "concat('" . implode("', \"'\" , '", $parts) . "')";
+        } elseif (strpos($value, "'") !== false) {
+             return '"' . $value . '"'; // Use double quotes
+        } else {
+             return "'" . $value . "'"; // Default to single quotes
+        }
+    }
+
+    $itemCode = $_GET['code'] ?? '';
+    // SECURE: Escape the input for use in the literal
+    $safeItemCodeLiteral = escapeXPathLiteral($itemCode);
+    $query = "//item[@code=" . $safeItemCodeLiteral . "]/value";
+    // ... execute query with SimpleXML or DOMXPath ...
+    ?>
+    ```
+
+    #### Testing Strategy
+    Identify inputs used in `DOMXPath::query` or `SimpleXMLElement::xpath`. Submit XPath metacharacters (`'`, `"`, `=`, `|`, ` `) and expressions (`' or '1'='1`, `'] | /* | /foo[bar='`). Check if strict validation or manual escaping is implemented correctly. Look for unexpected data or errors.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using libraries like `xpath` or `xmldom` with manual string construction for queries.
+
+    #### Vulnerable Scenario 1: User Authentication
+    ```javascript
+    // auth/xmlAuth.js
+    const xpath = require('xpath');
+    const dom = require('xmldom').DOMParser;
+    const fs = require('fs');
+
+    function checkCredentials(username, password) {
+        const xml = fs.readFileSync('users.xml', 'utf8');
+        const doc = new dom().parseFromString(xml);
+
+        // DANGEROUS: username and password directly concatenated.
+        // Input: username = "' or '1'='1"
+        // Query: //user[username='' or '1'='1' and password='...']
+        const query = `//user[username='${username}' and password='${password}']`;
+
+        try {
+            const nodes = xpath.select(query, doc);
+            return nodes.length > 0; // Vulnerable: Might match incorrect user
+        } catch (e) {
+            console.error("XPath error:", e);
+            return false;
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Data Lookup
+    ```javascript
+    // services/dataLookup.js
+    function findData(doc, itemId) {
+        // DANGEROUS: itemId concatenated.
+        // Input: itemId = "' or @id='"
+        // Query: //item[@id='' or @id='']
+        const query = `//item[@id='${itemId}']`;
+        try {
+            const nodes = xpath.select(query, doc);
+            // ... process nodes ...
+        } catch (e) { /* ... */ }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    The `xpath` library (and others) generally lacks built-in parameterization. **Strict input validation** is the primary defense. If complex input is needed, **manual escaping** must be implemented carefully (see Python/PHP examples for logic). Avoid building XPath queries from user input if possible; filter results in JavaScript after selecting broader nodes.
+
+    #### Secure Code Example
+    ```javascript
+    // auth/xmlAuth.js (Secure - Validation)
+    function checkCredentialsSecure(username, password) {
+        // SECURE: Strict validation (example: alphanumeric only)
+        const userRegex = /^[a-zA-Z0-9]+$/;
+        if (!userRegex.test(username)) {
+            console.error("Invalid username format");
+            return false;
+        }
+        // Password might need different validation/handling - DO NOT query by password directly!
+        // Proper auth: Find user by validated username, then compare password hash securely.
+
+        const xml = fs.readFileSync('users.xml', 'utf8');
+        const doc = new dom().parseFromString(xml);
+        // Query is safe due to username validation
+        const query = `//user[username='${username}']`;
+        try {
+            const nodes = xpath.select(query, doc);
+            if (nodes.length === 1) {
+                // Get stored hash and compare securely (e.g., using bcrypt.compare)
+                const storedHash = xpath.select1('passwordHash/text()', nodes[0]).nodeValue;
+                // return bcrypt.compareSync(password, storedHash); // Requires bcrypt library
+                return checkPasswordAgainstHash(password, storedHash); // Placeholder
+            }
+        } catch (e) { /* ... */ }
+        return false;
+    }
+
+    // Manual escaping helper (use with caution)
+    function escapeXPathLiteral(value) {
+        if (value === null || typeof value === 'undefined') return "''";
+        value = String(value); // Ensure string
+        if (value.includes("'") && value.includes('"')) {
+            // Contains both: concat('part1', "'", 'part2', "'", ...)
+            return "concat('" + value.replace(/'/g, "',\"'\",'") + "')";
+        } else if (value.includes("'")) {
+            return `"${value}"`; // Use double quotes
+        } else {
+            return `'${value}'`; // Use single quotes
+        }
+    }
+
+    // services/dataLookup.js (Secure - Escaping)
+    function findDataSecure(doc, itemId) {
+        // SECURE: Escape the input value
+        const safeItemIdLiteral = escapeXPathLiteral(itemId);
+        const query = `//item[@id=${safeItemIdLiteral}]`;
+        try {
+            const nodes = xpath.select(query, doc);
+            // ... process nodes ...
+        } catch (e) { /* ... */ }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify inputs used in `xpath.select` or similar functions. Submit XPath metacharacters (`'`, `"`, `=`, `|`, ` `) and expressions (`' or '1'='1`, `'] | /* | /foo[bar='`). Check if strict validation or manual escaping is implemented. Look for unexpected data or errors.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using libraries like `Nokogiri` with `xpath()` or `css()` (if CSS selectors are built from input) and constructing queries via string interpolation.
+
+    #### Vulnerable Scenario 1: Searching XML Content
+    ```ruby
+    # app/controllers/search_controller.rb
+    require 'nokogiri'
+
+    def search_xml
+      # Assume @doc is a Nokogiri::XML::Document loaded earlier
+      query_term = params[:q]
+
+      # DANGEROUS: query_term interpolated directly into the query.
+      # Input: q = "' or '1'='1"
+      # XPath: //book[title='' or '1'='1']/author
+      xpath_query = "//book[title='#{query_term}']/author"
+
+      begin
+        @results = @doc.xpath(xpath_query)
+        # ... render results ...
+      rescue Nokogiri::XML::XPath::SyntaxError => e
+        # ... handle error ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Finding Element by Attribute
+    ```ruby
+    # app/services/xml_parser.rb
+    def find_element_by_id(doc, element_id)
+      # DANGEROUS: element_id interpolated into attribute selector.
+      # Input: id = "' or @id='"
+      # XPath: //*[@id='' or @id='']
+      xpath_query = "//*[@id='#{element_id}']"
+      begin
+        nodes = doc.xpath(xpath_query)
+        return nodes.first
+      rescue Nokogiri::XML::XPath::SyntaxError => e
+        nil
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Nokogiri supports **parameterized XPath queries (variable binding)**, which is the most secure approach. Avoid string interpolation.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/search_controller.rb (Secure - Parameterized Query)
+    require 'nokogiri'
+
+    def search_xml_secure
+      # Assume @doc is a Nokogiri::XML::Document
+      query_term = params[:q]
+      return unless query_term # Basic check
+
+      # SECURE: Use variable binding. '$term' is a placeholder.
+      xpath_query = "//book[title=$term]/author"
+
+      begin
+        # Pass the variable value in the second argument. Nokogiri handles escaping.
+        @results = @doc.xpath(xpath_query, nil, term: query_term)
+        # ... render results ...
+      rescue Nokogiri::XML::XPath::SyntaxError => e
+        # ... handle error ...
+      end
+    end
+
+    # app/services/xml_parser.rb (Secure - Parameterized Query)
+    def find_element_by_id_secure(doc, element_id)
+      return if element_id.blank?
+      # SECURE: Use variable binding for the attribute value.
+      xpath_query = "//*[@id=$id]"
+      begin
+        # Pass the variable in the hash.
+        nodes = doc.xpath(xpath_query, nil, id: element_id)
+        return nodes.first
+      rescue Nokogiri::XML::XPath::SyntaxError => e
+        nil
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Identify inputs used in `nokogiri_doc.xpath()`. If string interpolation (`"#{}"`) is used, test with XPath metacharacters (`'`, `"`, `=`, `|`, ` `) and expressions (`' or '1'='1`, `'] | /* | /foo[bar='`). Verify that parameterized queries (passing a hash as the third argument to `.xpath`) are used for untrusted input.
+  </Tab>
+</Tabs>

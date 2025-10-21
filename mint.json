@@ -94,7 +94,8 @@
         "vulnerabilities/xss",
         "vulnerabilities/command-injection",
         "vulnerabilities/cwe-94",
-        "vulnerabilities/ldap-injection"
+        "vulnerabilities/ldap-injection",
+        "vulnerabilities/cwe-643"
       ]
     },
     {
