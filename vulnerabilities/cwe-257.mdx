@@ -1,0 +1,509 @@
+---
+title: "Storing Passwords in a Recoverable Format"
+sidebarTitle: "Recoverable Password Storage (CWE-257)"
+description: "Mitigation for storing passwords using reversible encryption or plaintext instead of secure, one-way hashing."
+icon: "recycle"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability involves storing user passwords in a format that allows the original password to be retrieved by the application or an attacker who gains access to the storage. This includes storing passwords in **plaintext** (see `CWE-312`) or using **reversible encryption** (like AES, DES, two-way encryption) instead of a strong, salted, one-way hash function (like bcrypt, Argon2, PBKDF2, scrypt). 🔑🔄
+
+---
+
+## Business Impact
+
+Storing passwords recoverably is extremely dangerous. If the storage or the encryption key is compromised:
+* **Complete Password Exposure:** Attackers gain access to the users' actual passwords, not just hashes.
+* **Credential Stuffing:** Since users often reuse passwords, attackers can use the exposed passwords to compromise accounts on other unrelated websites.
+* **Compliance Violations:** Storing passwords reversibly violates numerous security standards and regulations (e.g., PCI-DSS explicitly forbids it).
+* **Irreversible Reputational Damage:** A breach involving plaintext or easily decrypted passwords causes a massive loss of user trust.
+
+**Passwords should *never* need to be decrypted by the application.** Authentication works by hashing the user's login attempt and comparing it to the stored hash.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-257](https://cwe.mitre.org/data/definitions/257.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design (Failure to use secure password storage) & A02:2021 - Cryptographic Failures
+  **Severity:** Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a critical design flaw. The only secure way to store passwords is using a **strong, adaptive, salted, one-way hash function**. Frameworks provide tools for this (often by default), but developers might mistakenly choose encryption due to misunderstanding or implementing features like "email my password" (which is inherently insecure).
+
+**Remediation:**
+1.  **Use Hashing ONLY:** Replace any encryption logic for passwords with a standard password hashing library (bcrypt, Argon2, PBKDF2, scrypt).
+2.  **Migrate Existing Passwords:** If passwords are currently stored recoverably, implement a migration strategy:
+    * Add a new database column for the secure hash.
+    * When a user next logs in successfully (using the old, recoverable password), hash the provided password using the new secure method and store it in the new column.
+    * Clear the old recoverable password.
+    * Eventually, remove the column containing the recoverable passwords.
+3.  **Eliminate "Recover Password" Features:** Replace "email my password" features with secure password reset links that use temporary, single-use, unpredictable tokens.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using `cryptography`'s Fernet or AES functions to encrypt passwords instead of Django's password hashers.
+
+    #### Vulnerable Scenario 1: Encrypting Password with Fernet
+    ```python
+    # models.py (Custom User)
+    from cryptography.fernet import Fernet
+    import os
+    # Assume Fernet key is loaded securely, but the *concept* is flawed
+    # key = os.environ.get('PASSWORD_ENCRYPTION_KEY')
+    # f = Fernet(key.encode())
+
+    class EncryptedPasswordUser(models.Model):
+        username = models.CharField(max_length=150, unique=True)
+        # DANGEROUS: Storing encrypted password, recoverable if key leaks.
+        encrypted_password = models.BinaryField()
+
+        def set_password(self, raw_password):
+            # Encrypting instead of hashing
+            self.encrypted_password = f.encrypt(raw_password.encode())
+
+        def check_password(self, raw_password):
+            try:
+                # Decrypting stored password to compare (INSECURE PATTERN)
+                decrypted = f.decrypt(self.encrypted_password).decode()
+                return decrypted == raw_password
+            except Exception:
+                return False
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext (Covered by CWE-312, but relevant)
+    ```python
+    # models.py (Custom User)
+    class PlaintextPasswordUser(models.Model):
+        username = models.CharField(max_length=150, unique=True)
+        # DANGEROUS: Password stored directly.
+        password_cleartext = models.CharField(max_length=128)
+        # No hashing occurs
+    ```
+
+    #### Mitigation and Best Practices
+    Use Django's built-in `User` model or `AbstractUser` and rely on `user.set_password()` and `user.check_password()`, which use configured secure hashers (bcrypt, Argon2, PBKDF2).
+
+    #### Secure Code Example
+    ```python
+    # models.py (Secure - using AbstractUser)
+    from django.contrib.auth.models import AbstractUser
+
+    class SecureUser(AbstractUser):
+        # SECURE: Inherits secure password handling (hashing) from Django.
+        # Uses the `password` field managed by Django.
+        pass
+
+    # Usage:
+    # user = SecureUser(...)
+    # user.set_password('raw_password_here') # Hashes the password
+    # user.save()
+    # user.check_password('attempted_password') # Compares hash
+    ```
+
+    #### Testing Strategy
+    Inspect the database schema and data. Look for columns explicitly storing passwords (`password`, `pwd`, `secret`, etc.). Determine if the stored data is a hash (long, random-looking string, often with prefixes like `bcrypt$`, `argon2$`) or encrypted/plaintext (might be Base64, hex, or directly readable). Review code responsible for setting and checking passwords; ensure it uses hashing functions (`set_password`, `check_password`, `hashers.make_password`, `hashers.check_password`), not encryption/decryption.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `javax.crypto.Cipher` to encrypt passwords instead of Spring Security's `PasswordEncoder` (like `BCryptPasswordEncoder`).
+
+    #### Vulnerable Scenario 1: Encrypting Password with AES
+    ```java
+    // service/UserService.java
+    // Assume EncryptionService provides AES encrypt/decrypt methods
+    // and the key is managed (even if securely, the pattern is wrong)
+    @Autowired private EncryptionService encryptionService;
+
+    public User registerUserEncrypt(String username, String rawPassword) {
+        User user = new User();
+        user.setUsername(username);
+        // DANGEROUS: Encrypting the password.
+        String encryptedPassword = encryptionService.encrypt(rawPassword);
+        user.setEncryptedPassword(encryptedPassword); // Assume field exists
+        return userRepository.save(user);
+    }
+
+    public boolean checkPasswordEncrypt(String username, String rawPasswordToCheck) {
+        User user = userRepository.findByUsername(username);
+        // DANGEROUS: Decrypting stored password for comparison.
+        String storedEncryptedPassword = user.getEncryptedPassword();
+        String storedDecryptedPassword = encryptionService.decrypt(storedEncryptedPassword);
+        return rawPasswordToCheck.equals(storedDecryptedPassword);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext
+    ```java
+    // model/User.java
+    @Entity
+    public class User {
+        // ...
+        // DANGEROUS: Stores password directly.
+        private String plainPassword;
+        // ...
+    }
+    // Assume service saves plainPassword without hashing.
+    ```
+
+    #### Mitigation and Best Practices
+    Use Spring Security's `PasswordEncoder` interface with a strong implementation (`BCryptPasswordEncoder`, `Argon2PasswordEncoder`). Store the resulting hash. Never encrypt passwords.
+
+    #### Secure Code Example
+    ```java
+    // service/UserService.java (Secure Hashing)
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.stereotype.Service;
+    // Assume UserRepository and User model (with passwordHash field) exist
+
+    @Service
+    public class UserService {
+        @Autowired private PasswordEncoder passwordEncoder;
+        @Autowired private UserRepository userRepository;
+
+        public User registerUserHash(String username, String rawPassword) {
+            User user = new User();
+            user.setUsername(username);
+            // SECURE: Hash password before saving using configured encoder.
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            return userRepository.save(user);
+        }
+
+        public boolean checkPasswordHash(String username, String rawPasswordToCheck) {
+            User user = userRepository.findByUsername(username);
+            if (user == null) return false;
+            // SECURE: Use encoder's matches() method for comparison.
+            return passwordEncoder.matches(rawPasswordToCheck, user.getPasswordHash());
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the database column storing passwords. It should contain long, salted hash strings (e.g., starting `$2a$`, `$argon2id$`). Review the registration and login code. Ensure `PasswordEncoder.encode()` is used for saving and `PasswordEncoder.matches()` is used for verifying. Verify no encryption/decryption methods are called for password handling.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `System.Security.Cryptography` (like `Aes`) to encrypt passwords instead of ASP.NET Core Identity's `PasswordHasher`.
+
+    #### Vulnerable Scenario 1: Encrypting Password with AES
+    ```csharp
+    // Services/AuthService.cs
+    // Assume EncryptionService exists and manages key securely, but pattern is wrong
+    public class AuthService
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly EncryptionService _encryptionService; // Assume injected
+
+        public async Task RegisterUserEncrypt(string email, string password)
+        {
+            var user = new ApplicationUser { Email = email, UserName = email };
+            // DANGEROUS: Encrypting the password.
+            user.EncryptedPassword = _encryptionService.Encrypt(password); // Assume property exists
+            await _context.Users.AddAsync(user);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<bool> CheckPasswordEncrypt(string email, string passwordToCheck)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            if (user == null || string.IsNullOrEmpty(user.EncryptedPassword)) return false;
+            // DANGEROUS: Decrypting stored password to compare.
+            string decryptedPassword = _encryptionService.Decrypt(user.EncryptedPassword);
+            return passwordToCheck == decryptedPassword;
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext
+    ```csharp
+    // Models/ApplicationUser.cs
+    public class ApplicationUser : IdentityUser // Or custom base
+    {
+        // DANGEROUS: Property for plaintext password.
+        public string? PlaintextPassword { get; set; }
+    }
+    // Assume registration logic saves to PlaintextPassword.
+    ```
+
+    #### Mitigation and Best Practices
+    Use ASP.NET Core Identity's `UserManager<TUser>` and `SignInManager<TUser>`. `UserManager.CreateAsync(user, password)` automatically hashes the password using the configured `IPasswordHasher`. `SignInManager.CheckPasswordSignInAsync` handles the hash comparison securely.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/AccountService.cs (Secure - using Identity UserManager)
+    using Microsoft.AspNetCore.Identity; // Added namespace
+    using System.Threading.Tasks; // Added namespace
+
+    public class AccountService
+    {
+        private readonly UserManager<IdentityUser> _userManager; // Use your actual user type
+        private readonly SignInManager<IdentityUser> _signInManager;
+
+        public AccountService(UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager)
+        {
+            _userManager = userManager;
+            _signInManager = signInManager;
+        }
+
+        public async Task<IdentityResult> RegisterUserHash(string email, string password)
+        {
+            var user = new IdentityUser { UserName = email, Email = email };
+            // SECURE: CreateAsync hashes the password automatically.
+            // Stores hash in the PasswordHash property of IdentityUser.
+            var result = await _userManager.CreateAsync(user, password);
+            return result;
+        }
+
+        public async Task<SignInResult> CheckPasswordHash(string email, string passwordToCheck)
+        {
+            // SECURE: CheckPasswordSignInAsync compares the provided password
+            // against the stored hash securely.
+            // The last arg `lockoutOnFailure` enables lockout policies.
+            var result = await _signInManager.CheckPasswordSignInAsync(
+                await _userManager.FindByEmailAsync(email), // Find user first
+                passwordToCheck,
+                lockoutOnFailure: true
+            );
+            return result;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the `AspNetUsers` table (or your user table). Verify the `PasswordHash` column contains hashes, not plaintext or encrypted blobs. Ensure any `Password` or `PasswordCleartext` columns are null or non-existent. Review registration and login code to confirm usage of `UserManager.CreateAsync` and `SignInManager.CheckPasswordSignInAsync` (or `UserManager.CheckPasswordAsync`).
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `openssl_encrypt`/`decrypt` or Laravel's `Crypt::encryptString`/`decryptString` for passwords instead of `Hash::make`/`check`.
+
+    #### Vulnerable Scenario 1: Encrypting Password with `Crypt`
+    ```php
+    // app/Http/Controllers/RegisterController.php
+    use Illuminate\Support\Facades\Crypt; // For encryption
+
+    protected function createEncrypt(array $data)
+    {
+        return User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            // DANGEROUS: Using reversible encryption for password.
+            'encrypted_password' => Crypt::encryptString($data['password']), // Assume column exists
+        ]);
+    }
+
+    // Login logic (Vulnerable)
+    public function checkLoginEncrypt(Request $request) {
+        $user = User::where('email', $request->email)->first();
+        if ($user) {
+            try {
+                // DANGEROUS: Decrypting stored password to compare.
+                $decryptedPassword = Crypt::decryptString($user->encrypted_password);
+                if ($request->password === $decryptedPassword) {
+                    Auth::login($user);
+                    return redirect('/dashboard');
+                }
+            } catch (\Exception $e) { /* Handle decrypt error */ }
+        }
+        return back()->withErrors(['email' => 'Invalid credentials']);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext
+    ```php
+    // database/migrations/..._create_users_table.php
+    // DANGEROUS: Has a 'password_cleartext' column
+    // ... Assume User::create saves directly to this column ...
+    ```
+
+    #### Mitigation and Best Practices
+    Always use `Hash::make()` (bcrypt/Argon2) to generate password hashes before saving. Use `Hash::check()` to verify passwords during login.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/RegisterController.php (Secure Hashing)
+    use Illuminate\Support\Facades\Hash; // Use Hash facade
+    use App\Models\User; // Assuming User model
+
+    protected function createHash(array $data)
+    {
+        return User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            // SECURE: Use Hash::make() for one-way hashing.
+            'password' => Hash::make($data['password']), // Saves to standard 'password' column
+        ]);
+    }
+
+    // Login logic (Secure Hashing Check)
+    use Illuminate\Support\Facades\Auth; // Use Auth facade
+
+    public function checkLoginHash(Request $request) {
+        $credentials = $request->only('email', 'password');
+
+        // SECURE: Auth::attempt uses Hash::check() internally.
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate(); // Good practice after login
+            return redirect()->intended('dashboard'); // Redirect to intended or dashboard
+        }
+
+        return back()->withErrors([
+            'email' => 'The provided credentials do not match our records.',
+        ])->onlyInput('email'); // Return only email input
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the `users` table. The `password` column should contain bcrypt (`$2y$`) or Argon2 (`$argon2id$`) hashes. Review registration/login code for usage of `Hash::make` and `Hash::check` (or `Auth::attempt`). Ensure `Crypt::encryptString` or `openssl_encrypt` are not used for passwords.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using Node's `crypto` module (`createCipheriv`/`createDecipheriv`) to encrypt/decrypt passwords instead of `bcrypt`.
+
+    #### Vulnerable Scenario 1: Encrypting Password with AES
+    ```javascript
+    // services/authService.js
+    const crypto = require('crypto');
+    // Assume key and encryption functions (encrypt, decrypt) are defined elsewhere
+    // Assume user model has 'encryptedPassword' field
+
+    async function registerUserEncrypt(username, password) {
+        // DANGEROUS: Encrypting password.
+        const encryptedPassword = encrypt(password); // Assume encrypt uses AES
+        const user = new User({ username, encryptedPassword });
+        await user.save();
+        return user;
+    }
+
+    async function checkPasswordEncrypt(username, passwordToCheck) {
+        const user = await User.findOne({ username });
+        if (!user) return false;
+        // DANGEROUS: Decrypting stored password to compare.
+        const decryptedPassword = decrypt(user.encryptedPassword); // Assume decrypt uses AES
+        return passwordToCheck === decryptedPassword;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext
+    ```javascript
+    // models/User.js
+    const userSchema = new mongoose.Schema({
+        username: String,
+        // DANGEROUS: Storing password directly.
+        plaintextPassword: { type: String, required: true }
+    });
+    // Assume route handler saves plaintextPassword directly.
+    ```
+
+    #### Mitigation and Best Practices
+    Use the `bcrypt` library (`bcrypt.hash`/`bcrypt.compare`) for password hashing. Store only the generated hash.
+
+    #### Secure Code Example
+    ```javascript
+    // services/authService.js (Secure Hashing with bcrypt)
+    const bcrypt = require('bcrypt');
+    const saltRounds = 12;
+    const User = require('../models/User'); // Assume User model uses 'passwordHash' field
+
+    async function registerUserHash(username, password) {
+        // SECURE: Hash password using bcrypt.
+        const passwordHash = await bcrypt.hash(password, saltRounds);
+        const user = new User({ username, passwordHash }); // Store the hash
+        await user.save();
+        return user;
+    }
+
+    async function checkPasswordHash(username, passwordToCheck) {
+        const user = await User.findOne({ username });
+        if (!user || !user.passwordHash) return false;
+        // SECURE: Compare using bcrypt.compare.
+        return await bcrypt.compare(passwordToCheck, user.passwordHash);
+    }
+    ```
+    ```javascript
+    // models/User.js (Secure Schema)
+    const mongoose = require('mongoose');
+    const userSchema = new mongoose.Schema({
+        username: { type: String, required: true, unique: true },
+        // SECURE: Field to store the hash.
+        passwordHash: { type: String, required: true }
+    });
+    // Add comparePassword method as shown in CWE-312 example if desired
+    module.exports = mongoose.model('User', userSchema);
+    ```
+
+    #### Testing Strategy
+    Inspect user documents/rows in the database. Ensure password fields contain bcrypt hashes (`$2b$..`). Review registration and login code to verify `bcrypt.hash` and `bcrypt.compare` are used. Check that no encryption/decryption functions (`crypto.createCipheriv`, etc.) are used for password storage or comparison.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `OpenSSL::Cipher` or `ActiveSupport::MessageEncryptor` to encrypt passwords instead of `has_secure_password` (bcrypt).
+
+    #### Vulnerable Scenario 1: Encrypting Password with `MessageEncryptor`
+    ```ruby
+    # app/models/user.rb
+    # Assume key is loaded securely, but pattern is wrong
+    # KEY = Rails.application.credentials.password_encryption_key
+
+    class User < ApplicationRecord
+      # Using ActiveSupport::MessageEncryptor for password 'storage'
+      # encryptor = ActiveSupport::MessageEncryptor.new(KEY[0..31]) # Requires 32-byte key for AES-256-GCM
+
+      # DANGEROUS: Storing recoverable password (assume encrypted_password column)
+      def password=(new_password)
+        encryptor = ActiveSupport::MessageEncryptor.new(KEY[0..31]) # Recreate for safety or manage instance
+        self.encrypted_password = encryptor.encrypt_and_sign(new_password)
+      end
+
+      def authenticate(password_to_check)
+        encryptor = ActiveSupport::MessageEncryptor.new(KEY[0..31])
+        begin
+          # DANGEROUS: Decrypting stored password for comparison
+          decrypted_password = encryptor.decrypt_and_verify(self.encrypted_password)
+          return ActiveSupport::SecurityUtils.secure_compare(decrypted_password, password_to_check)
+        rescue ActiveSupport::MessageVerifier::InvalidSignature
+          return false
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Storing Plaintext
+    ```ruby
+    # app/models/user.rb
+    class User < ApplicationRecord
+      # DANGEROUS: Assume 'cleartext_password' column exists and is used directly
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    Use `has_secure_password` provided by Active Model. This uses the `bcrypt` gem by default to securely hash and verify passwords.
+
+    #### Secure Code Example
+    ```ruby
+    # app/models/user.rb (Secure Hashing)
+    class User < ApplicationRecord
+      # SECURE: Includes bcrypt hashing, salting, and comparison via authenticate method.
+      # Requires a 'password_digest' column in the users table.
+      # Requires `gem 'bcrypt'` in Gemfile.
+      has_secure_password
+
+      # Now you can use:
+      # user = User.new(password: 'secret', password_confirmation: 'secret')
+      # user.save
+      # user.authenticate('secret') # => user or false
+    end
+    ```
+
+    #### Testing Strategy
+    Inspect the `users` table. Ensure there is a `password_digest` column containing bcrypt hashes (`$2a$..`) and no columns storing plaintext or encrypted passwords. Review the `User` model for `has_secure_password`. Check authentication logic uses the `user.authenticate(password)` method.
+  </Tab>
+</Tabs>
