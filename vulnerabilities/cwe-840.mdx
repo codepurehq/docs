@@ -1,724 +1,1350 @@
 ---
 title: "Business Logic Errors"
 sidebarTitle: "Business Logic Errors (CWE-840)"
-description: "Mitigation for flaws in the application's workflow or business rules that allow unintended actions or data access."
-icon: "puzzle-piece"
+description: "Mitigation for flaws in the design and implementation of business rules that can be exploited to bypass intended application behavior."
+icon: "diagram-project"
 iconType: "solid"
 ---
 
 ## Overview
 
-Business Logic Errors are flaws in the **design and implementation of an application's workflow** related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit **legitimate application processes** in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states.
+This vulnerability occurs when an application's **business logic** contains flaws that allow attackers to manipulate the intended flow of operations. Unlike technical vulnerabilities, these are design-level issues where the application works as coded but the logic itself is flawed. Common examples include bypassing payment processes, manipulating shopping cart prices, circumventing rate limits, exploiting race conditions in financial transactions, or abusing workflow sequences to gain unauthorized privileges. 🎯💼
+
+---
 
 ## Business Impact
 
-Exploiting business logic flaws can lead to significant consequences tailored to the application's purpose:
-* **Financial Fraud:** Bypassing payment steps, applying excessive discounts, transferring funds improperly.
-* **Unauthorized Access/Action:** Gaining access to features or performing actions reserved for users in a different state (e.g., accessing premium content without paying, approving a request that shouldn't be approvable).
-* **Data Manipulation:** Altering application state in unintended ways (e.g., getting negative account balances, submitting orders for unavailable items).
-* **Denial of Service:** Exploiting logic that consumes excessive resources under specific conditions.
+Business logic flaws can have severe financial and operational consequences.
+* **Financial Loss:** Direct monetary losses through price manipulation, bypassed payment flows, or fraudulent transactions.
+* **Inventory Manipulation:** Purchasing items at incorrect prices, claiming excessive discounts, or manipulating stock levels.
+* **Privilege Escalation:** Bypassing approval workflows or role-based restrictions to gain unauthorized access or capabilities.
+* **Data Integrity Issues:** Creating inconsistent states in the database through race conditions or improper state transitions.
+
+---
 
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-840](https://cwe.mitre.org/data/definitions/840.html)
   **OWASP Top 10 (2021):** A04:2021 - Insecure Design
-  **Severity:** High to Critical (highly context-dependent)
+  **Severity:** Medium to Critical (depending on the business impact)
 </Card>
+
+---
 
 ## Framework-Specific Analysis and Remediation
 
-Business logic flaws are **highly application-specific** and **cannot be prevented solely by framework features**. They require careful design, threat modeling, and robust implementation of the application's rules.
+Business logic vulnerabilities are primarily **design and implementation** issues rather than configuration problems. They require careful analysis of application workflows, state management, and transaction processing.
 
-**Key Remediation Principles:**
-1.  **Threat Modeling:** Identify potential abuses of workflows during the design phase. Think like an attacker: "How can I misuse this feature?"
-2.  **State Management:** Ensure application state transitions are correctly enforced server-side (e.g., an order must be 'pending' before it can be 'shipped').
-3.  **Complete Validation:** Validate not just data types, but also business rules (e.g., quantity must be <= available stock, user must be eligible for discount).
-4.  **Idempotency:** Ensure that critical actions (like payments) cannot be accidentally or maliciously executed multiple times if a request is replayed.
-5.  **Assume Untrusted Input:** Treat all user input, even seemingly benign choices in a workflow, as potentially manipulative. Re-verify critical data server-side at each step.
+The fix involves:
+1. **State Validation:** Verify the application is in the correct state before allowing operations.
+2. **Atomic Operations:** Use database transactions and locks to prevent race conditions.
+3. **Server-Side Validation:** Never trust client-side data for critical business decisions.
+4. **Workflow Enforcement:** Ensure operations can only occur in the intended sequence.
+
+---
 
 <Tabs>
   <Tab title="Python">
     #### Framework Context
-    Flaws in Django views or Flask routes that incorrectly handle application state or workflow steps.
+    Common in Django and Flask applications handling e-commerce, financial transactions, or multi-step workflows. Issues often arise in views handling cart operations, payment processing, or user role transitions.
 
-    #### Vulnerable Scenario 1: Discount Abuse
-    A discount code is applied, but the server doesn't verify if the code is still valid *at the time of checkout*.
+    #### Vulnerable Scenario 1: Price Manipulation in Shopping Cart
     ```python
-    # views/cart.py
-    from django.shortcuts import redirect, HttpResponse
-    from django.contrib.auth.decorators import login_required
-    from decimal import Decimal
+    # views.py (Django E-commerce - VULNERABLE)
+    from django.views import View
+    from django.http import JsonResponse
+    import json
 
-    # Assume get_discount, calculate_cart_total, charge_user exist
-
-    @login_required
-    def apply_discount(request):
-        code = request.POST.get('discount_code')
-        discount_amount = get_discount(code) # Assume this checks validity *now*
-        if discount_amount > 0:
-            request.session['discount_code'] = code # Store code
-        return redirect('view_cart') # Assume 'view_cart' is a valid URL name
-
-    # views/checkout.py
-    @login_required
-    def process_checkout(request):
-        discount_code = request.session.get('discount_code')
-        cart_total = calculate_cart_total(request.user)
-        discount = get_discount(discount_code) # Re-fetch, but check validity?
-
-        # DANGEROUS: The discount code's validity (e.g., expiry, usage limit)
-        # is NOT re-checked here, or is checked using stale data.
-        final_total = cart_total - discount
-        charge_user(request.user, final_total)
-        return HttpResponse("Checked out!")
+    class AddToCartView(View):
+        def post(self, request):
+            data = json.loads(request.body)
+            product_id = data.get('product_id')
+            quantity = data.get('quantity')
+            # DANGEROUS: Accepting price from client
+            price = data.get('price')  # Client can manipulate this!
+            
+            # Add to cart with client-provided price
+            cart_item = CartItem.objects.create(
+                user=request.user,
+                product_id=product_id,
+                quantity=quantity,
+                price=price  # Using client-provided price
+            )
+            return JsonResponse({'status': 'success'})
     ```
 
-    #### Vulnerable Scenario 2: Skipping Payment Step
-    A multi-step order process allows users to jump directly to the "confirmation" URL without completing the "payment" step.
+    #### Vulnerable Scenario 2: Race Condition in Balance Transfer
     ```python
-    # views/order.py
-    from django.shortcuts import render, redirect
-    from django.http import Http404
-    from .models import Order # Assuming Order model exists
-
+    # views.py (Flask Banking App - VULNERABLE)
+    @app.route('/transfer', methods=['POST'])
     @login_required
-    def payment_step(request, order_id):
-        try:
-            order = Order.objects.get(pk=order_id, user=request.user)
-        except Order.DoesNotExist:
-            raise Http404
-        # ... process payment form ...
-        payment_successful = True # Placeholder
-        if payment_successful:
-            order.status = 'paid'
-            order.save()
-            return redirect('order_confirmation', order_id=order.id)
-        return render(request, 'payment_form.html', {'order': order})
-
-
-    @login_required
-    def confirmation_step(request, order_id):
-        # DANGEROUS: Only checks if the user owns the order,
-        # not if the order status is actually 'paid'.
-        try:
-             order = Order.objects.get(pk=order_id, user=request.user)
-             # MISSING CHECK: if order.status != 'paid': return redirect('payment_step', order_id=order.id)
-             return render(request, 'confirmation.html', {'order': order})
-        except Order.DoesNotExist:
-             raise Http404
+    def transfer_funds():
+        amount = float(request.form['amount'])
+        recipient_id = request.form['recipient_id']
+        
+        sender = User.query.get(current_user.id)
+        recipient = User.query.get(recipient_id)
+        
+        # DANGEROUS: Non-atomic check and update
+        if sender.balance >= amount:  # Check
+            time.sleep(0.1)  # Simulating processing delay
+            sender.balance -= amount  # Update (race condition window)
+            recipient.balance += amount
+            db.session.commit()
+            return jsonify({'status': 'success'})
+        return jsonify({'error': 'Insufficient funds'}), 400
     ```
 
     #### Mitigation and Best Practices
-    * Re-validate all conditions, prices, discounts, and eligibility server-side *at the point of final action* (e.g., checkout, order placement).
-    * Enforce strict state transitions (e.g., use a state machine pattern). Check the object's current state before allowing the next step in a workflow.
+    * **Server-Side Price Validation:** Always fetch prices from the database based on product ID.
+    * **Database Transactions:** Use atomic operations with proper locking mechanisms.
+    * **State Machines:** Implement proper state transitions for multi-step processes.
+    * **Idempotency:** Ensure operations can't be repeated to cause unintended effects.
 
     #### Secure Code Example
     ```python
-    # views/checkout.py (Secure Discount)
-    from django.contrib import messages
+    # views.py (Django E-commerce - SECURE)
+    from django.db import transaction
+    from django.views import View
+    from decimal import Decimal
 
+    class AddToCartView(View):
+        def post(self, request):
+            data = json.loads(request.body)
+            product_id = data.get('product_id')
+            quantity = int(data.get('quantity', 1))
+            
+            # SECURE: Fetch price from database, not client
+            try:
+                product = Product.objects.select_for_update().get(id=product_id)
+            except Product.DoesNotExist:
+                return JsonResponse({'error': 'Product not found'}, status=404)
+            
+            # SECURE: Validate business rules
+            if quantity <= 0 or quantity > product.max_per_order:
+                return JsonResponse({'error': 'Invalid quantity'}, status=400)
+            
+            if product.stock < quantity:
+                return JsonResponse({'error': 'Insufficient stock'}, status=400)
+            
+            # SECURE: Use server-side price
+            cart_item = CartItem.objects.create(
+                user=request.user,
+                product=product,
+                quantity=quantity,
+                price=product.current_price  # Server-controlled price
+            )
+            return JsonResponse({'status': 'success'})
+
+    # views.py (Flask Banking - SECURE)
+    @app.route('/transfer', methods=['POST'])
     @login_required
-    def process_checkout_secure(request):
-        discount_code = request.session.get('discount_code')
-        cart_total = calculate_cart_total(request.user)
-        final_total = cart_total
-
-        if discount_code:
-            # SECURE: Re-validate discount code validity *at checkout time*.
-            is_valid, discount_amount = check_and_use_discount(discount_code, request.user, cart_total)
-            if is_valid:
-                final_total -= discount_amount
-            else:
-                 messages.warning(request, "Discount code is no longer valid.")
-                 del request.session['discount_code']
-
-        charge_user(request.user, final_total)
-        if 'discount_code' in request.session: del request.session['discount_code']
-        return HttpResponse("Checked out!")
-
-    # views/order.py (Secure Confirmation Step)
-    @login_required
-    def confirmation_step_secure(request, order_id):
-        try:
-             order = Order.objects.get(pk=order_id, user=request.user)
-             # SECURE: Check the authoritative state from the database.
-             if order.status != 'paid':
-                  messages.error(request, "Order payment not completed.")
-                  return redirect('order_payment', order_id=order.id)
-             return render(request, 'confirmation.html', {'order': order})
-        except Order.DoesNotExist:
-             raise Http404
+    def transfer_funds():
+        amount = Decimal(request.form['amount'])
+        recipient_id = request.form['recipient_id']
+        
+        # SECURE: Validate amount
+        if amount <= 0 or amount > Decimal('10000'):
+            return jsonify({'error': 'Invalid amount'}), 400
+        
+        # SECURE: Use database transaction with row locking
+        with db.session.begin():
+            sender = User.query.with_for_update().get(current_user.id)
+            recipient = User.query.with_for_update().get(recipient_id)
+            
+            if not recipient:
+                return jsonify({'error': 'Recipient not found'}), 404
+            
+            if sender.balance < amount:
+                return jsonify({'error': 'Insufficient funds'}), 400
+            
+            # SECURE: Atomic update within transaction
+            sender.balance -= amount
+            recipient.balance += amount
+            
+            # Log transaction for audit
+            Transaction.create(
+                sender_id=sender.id,
+                recipient_id=recipient.id,
+                amount=amount,
+                timestamp=datetime.utcnow()
+            )
+        
+        return jsonify({'status': 'success'})
     ```
 
     #### Testing Strategy
-    Thoroughly map out application workflows. For each step, identify the required state and data. Attempt to:
-    * Skip steps (e.g., browse directly to later URLs).
-    * Replay requests for actions that should only happen once (e.g., submitting payment multiple times).
-    * Manipulate parameters to trigger edge cases (e.g., negative quantities, future dates).
-    * Perform actions out of sequence or when prerequisites aren't met (e.g., apply expired discount).
+    Test with concurrent requests to identify race conditions. Attempt to manipulate client-side values (prices, quantities, IDs). Verify state transitions follow the intended workflow. Use tools like Locust or Apache JMeter for load testing concurrent operations.
   </Tab>
   <Tab title="Java">
     #### Framework Context
-    Flaws in Controllers or Services that don't correctly manage state transitions or re-validate business rules.
+    Common in Spring Boot applications handling financial transactions, order processing, or approval workflows. Issues often arise in REST controllers and service layers.
 
-    #### Vulnerable Scenario 1: Price Check Only on Add-to-Cart
-    The price of an item is checked when added to the cart, but not re-checked at checkout.
+    #### Vulnerable Scenario 1: Discount Code Abuse
     ```java
-    // service/CartService.java
-    public void addToCart(String userId, String productId, int quantity) {
-        Product p = productRepo.findById(productId).orElseThrow();
-        // Price is correct when added
-        cartRepo.addItem(userId, productId, quantity, p.getPrice());
-    }
-
-    // controller/CheckoutController.java
-    @PostMapping("/checkout")
-    public String checkout(Principal principal) {
-        String userId = principal.getName();
-        Cart cart = cartRepo.findByUserId(userId);
-        BigDecimal total = BigDecimal.ZERO;
-        // DANGEROUS: Calculates total based on prices stored in the cart
-        // *when items were added*. Prices might have changed since then.
-        for (CartItem item : cart.getItems()) {
-            total = total.add(item.getPriceAtAddition().multiply(BigDecimal.valueOf(item.getQuantity())));
+    // OrderController.java (VULNERABLE)
+    @RestController
+    @RequestMapping("/api/orders")
+    public class OrderController {
+        
+        @PostMapping("/apply-discount")
+        public ResponseEntity<?> applyDiscount(@RequestBody DiscountRequest request) {
+            Order order = orderRepository.findById(request.getOrderId()).orElseThrow();
+            DiscountCode discount = discountRepository.findByCode(request.getCode()).orElseThrow();
+            
+            // DANGEROUS: No check if discount was already applied
+            double discountAmount = order.getTotal() * discount.getPercentage();
+            order.setTotal(order.getTotal() - discountAmount);
+            
+            // DANGEROUS: No check for discount validity or usage limits
+            orderRepository.save(order);
+            
+            return ResponseEntity.ok(order);
         }
-        paymentService.charge(userId, total); // Charges potentially outdated total
-        return "confirmation";
     }
     ```
 
-    #### Vulnerable Scenario 2: Workflow Bypass via Parameter Manipulation
-    An approval workflow requires manager approval, but the "approve" endpoint accepts an `isManagerApproved=true` parameter that the server trusts.
+    #### Vulnerable Scenario 2: Workflow State Bypass
     ```java
-    // controller/WorkflowController.java
-    import org.springframework.security.access.prepost.PreAuthorize;
-    import org.springframework.web.bind.annotation.*;
-    import java.security.Principal;
-
-    @PostMapping("/submit-request")
-    public String submitRequest(@ModelAttribute RequestData data, Principal principal) {
-        workflowService.createRequest(data, principal.getName());
-        return "redirect:/requests";
-    }
-
-    @PostMapping("/approve-request/{id}")
-    @PreAuthorize("hasRole('MANAGER')")
-    public String approveRequest(@PathVariable long id, @RequestParam(required=false, defaultValue="false") boolean forceApprove) {
-        // DANGEROUS: A manager calls this, but if 'forceApprove=true' is submitted
-        // it bypasses normal checks. The logic flaw is trusting this flag.
-        WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
-        if (forceApprove || workflowService.checkApprovalConditions(req)) {
-            req.setStatus("APPROVED");
-            workflowRepo.save(req);
+    // DocumentService.java (VULNERABLE)
+    @Service
+    public class DocumentService {
+        
+        public void approveDocument(Long documentId, Long userId) {
+            Document doc = documentRepository.findById(documentId).orElseThrow();
+            User user = userRepository.findById(userId).orElseThrow();
+            
+            // DANGEROUS: Not checking current state or user permissions
+            doc.setStatus("APPROVED");
+            doc.setApprovedBy(user);
+            documentRepository.save(doc);
+            
+            // User could approve their own document or skip review stages
         }
-        return "redirect:/requests";
     }
     ```
 
     #### Mitigation and Best Practices
-    * **Data Freshness:** Always retrieve authoritative data (prices, stock levels, user roles) from the database immediately before performing critical actions.
-    * **Server Authority:** Do not trust parameters submitted by the client to indicate state or bypass checks (`forceApprove`). Re-evaluate all conditions server-side.
-    * **State Enforcement:** Explicitly check the current state of an object before allowing state transitions.
+    * **State Validation:** Always verify the current state before transitions.
+    * **Pessimistic Locking:** Use `@Lock(LockModeType.PESSIMISTIC_WRITE)` for critical operations.
+    * **Business Rule Engine:** Consider using a rules engine for complex business logic.
+    * **Audit Logging:** Track all state changes and critical operations.
 
     #### Secure Code Example
     ```java
-    // controller/CheckoutController.java (Secure Price Check)
-    @PostMapping("/checkout-secure")
-    public String checkoutSecure(Principal principal) {
-        String userId = principal.getName();
-        Cart cart = cartRepo.findByUserId(userId);
-        BigDecimal authoritativeTotal = BigDecimal.ZERO;
-
-        // SECURE: Iterate cart items but fetch CURRENT price from product DB.
-        for (CartItem item : cart.getItems()) {
-            Product currentProduct = productRepo.findById(item.getProductId()).orElseThrow();
-            authoritativeTotal = authoritativeTotal.add(
-                currentProduct.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
-            );
+    // OrderController.java (SECURE)
+    @RestController
+    @RequestMapping("/api/orders")
+    public class OrderController {
+        
+        @PostMapping("/apply-discount")
+        @Transactional
+        public ResponseEntity<?> applyDiscount(@RequestBody DiscountRequest request,
+                                              Authentication auth) {
+            // SECURE: Lock order to prevent concurrent modifications
+            Order order = orderRepository.findByIdWithLock(request.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+            
+            // SECURE: Verify order belongs to user
+            if (!order.getUserId().equals(auth.getName())) {
+                throw new AccessDeniedException("Order access denied");
+            }
+            
+            // SECURE: Check order state
+            if (!order.getStatus().equals("PENDING")) {
+                throw new BusinessLogicException("Cannot apply discount to processed order");
+            }
+            
+            DiscountCode discount = discountRepository.findByCode(request.getCode())
+                .orElseThrow(() -> new ResourceNotFoundException("Invalid discount code"));
+            
+            // SECURE: Validate discount constraints
+            if (discount.getExpiryDate().isBefore(LocalDate.now())) {
+                throw new BusinessLogicException("Discount code expired");
+            }
+            
+            // SECURE: Check if already applied
+            if (order.getAppliedDiscounts().contains(discount.getCode())) {
+                throw new BusinessLogicException("Discount already applied");
+            }
+            
+            // SECURE: Check usage limits
+            long usageCount = orderRepository.countByAppliedDiscountsContaining(discount.getCode());
+            if (usageCount >= discount.getMaxUsage()) {
+                throw new BusinessLogicException("Discount usage limit reached");
+            }
+            
+            // SECURE: Apply discount with validation
+            BigDecimal discountAmount = order.getTotal()
+                .multiply(BigDecimal.valueOf(discount.getPercentage()))
+                .setScale(2, RoundingMode.HALF_UP);
+            
+            if (discountAmount.compareTo(discount.getMaxDiscountAmount()) > 0) {
+                discountAmount = discount.getMaxDiscountAmount();
+            }
+            
+            order.setTotal(order.getTotal().subtract(discountAmount));
+            order.getAppliedDiscounts().add(discount.getCode());
+            order.setLastModified(Instant.now());
+            
+            // Audit log
+            auditService.log("DISCOUNT_APPLIED", order.getId(), auth.getName());
+            
+            return ResponseEntity.ok(orderRepository.save(order));
         }
-        paymentService.charge(userId, authoritativeTotal); // Charges correct, current total
-        return "confirmation";
     }
 
-    // controller/WorkflowController.java (Secure Approval)
-    @PostMapping("/approve-request-secure/{id}")
-    @PreAuthorize("hasRole('MANAGER')")
-    public String approveRequestSecure(@PathVariable long id) { // forceApprove param removed
-        WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
+    // DocumentService.java (SECURE)
+    @Service
+    @Transactional
+    public class DocumentService {
         
-        // SECURE: Always re-validate conditions on the server.
-        if (workflowService.checkApprovalConditions(req)) {
-            req.setStatus("APPROVED");
-            workflowRepo.save(req);
-        } else {
-             return "redirect:/requests?error=conditions_not_met";
+        public void approveDocument(Long documentId, Authentication auth) {
+            // SECURE: Lock document for update
+            Document doc = documentRepository.findByIdForUpdate(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found"));
+            
+            User approver = userRepository.findByUsername(auth.getName())
+                .orElseThrow();
+            
+            // SECURE: Validate current state
+            if (!doc.getStatus().equals("PENDING_APPROVAL")) {
+                throw new BusinessLogicException("Document not in approvable state");
+            }
+            
+            // SECURE: Check permissions
+            if (!approver.hasRole("APPROVER")) {
+                throw new AccessDeniedException("User lacks approval permission");
+            }
+            
+            // SECURE: Prevent self-approval
+            if (doc.getCreatedBy().equals(approver.getId())) {
+                throw new BusinessLogicException("Cannot approve own document");
+            }
+            
+            // SECURE: State transition with validation
+            doc.setStatus("APPROVED");
+            doc.setApprovedBy(approver);
+            doc.setApprovalDate(Instant.now());
+            
+            documentRepository.save(doc);
+            
+            // Audit trail
+            auditService.log("DOCUMENT_APPROVED", doc.getId(), approver.getUsername());
         }
-        return "redirect:/requests";
     }
     ```
 
     #### Testing Strategy
-    Map application workflows. Identify key data and state checks.
-    * **Stale Data:** Add an item to cart, wait (simulate price change), checkout. Does it use the old or new price?
-    * **State Bypass:** Try accessing step 3 URL before completing step 2.
-    * **Parameter Tampering:** Modify hidden fields or parameters related to workflow state or conditions (`isApproved`, `status`, `forceApprove`) and see if the server accepts them.
-    * **Race Conditions:** Submit duplicate requests rapidly for actions that should only occur once.
+    Create test cases for edge conditions: negative quantities, extreme values, concurrent operations. Test state transitions with invalid starting states. Verify that operations respect business constraints. Use `@DirtiesContext` in Spring tests to ensure clean state between tests.
   </Tab>
   <Tab title=".NET(C#)">
     #### Framework Context
-    Flaws in Controller Actions or PageModel Handlers not correctly validating state or business rules before executing actions.
+    Common in ASP.NET Core applications handling e-commerce, banking, or multi-step wizards. Issues often arise in controllers and service layers handling transactions.
 
-    #### Vulnerable Scenario 1: Re-using a One-Time Token
-    A password reset link uses a token, but the token isn't invalidated after the first successful use.
+    #### Vulnerable Scenario 1: Reward Points Manipulation
     ```csharp
-    // Controllers/AccountController.cs
-    [HttpPost("reset-password")]
-    public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+    // RewardsController.cs (VULNERABLE)
+    [ApiController]
+    [Route("api/[controller]")]
+    public class RewardsController : ControllerBase
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.Token);
-        if (user != null && user.PasswordResetTokenExpiry > DateTime.UtcNow)
+        [HttpPost("redeem")]
+        public async Task<IActionResult> RedeemPoints([FromBody] RedeemRequest request)
         {
-            // DANGEROUS: Token is checked, but not invalidated after use.
-            // Attacker can reuse the token until it expires.
-            await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            var user = await _userService.GetUserAsync(User.Identity.Name);
             
-            // FORGOTTEN STEP:
-            // user.PasswordResetToken = null;
-            // user.PasswordResetTokenExpiry = null;
-            // await _context.SaveChangesAsync();
-
-            return RedirectToAction("ResetSuccess");
+            // DANGEROUS: No validation of points value from client
+            var pointsToRedeem = request.Points;
+            
+            // DANGEROUS: Simple subtraction without checks
+            user.RewardPoints -= pointsToRedeem;
+            var creditAmount = pointsToRedeem * 0.01m; // $0.01 per point
+            user.AccountCredit += creditAmount;
+            
+            await _userService.UpdateUserAsync(user);
+            
+            return Ok(new { Credit = creditAmount });
         }
-        return View(model);
     }
     ```
 
-    #### Vulnerable Scenario 2: Modifying Quantity Below Minimum Order
-    Business rule requires minimum order quantity of 5, enforced client-side only.
+    #### Vulnerable Scenario 2: Concurrent Booking Race Condition
     ```csharp
-    // Pages/ProductPage.cshtml.cs
-    public class ProductPageModel : PageModel
+    // BookingService.cs (VULNERABLE)
+    public class BookingService
     {
-        [BindProperty]
-        public int InputQuantity { get; set;}
-        [BindProperty]
-        public int ProductId { get; set;}
-        // ...
-        public async Task<IActionResult> OnPostAsync()
+        public async Task<BookingResult> BookSeat(int seatId, string userId)
         {
-            // DANGEROUS: Server trusts the submitted quantity.
-            // Attacker uses dev tools to change quantity to 1 before submitting.
-            // Business rule (min 5) is bypassed because it's only checked client-side.
-            if (InputQuantity <= 0) return BadRequest(); // Basic check, not business rule
-
-            var product = await _context.Products.FindAsync(ProductId);
-            _cartService.AddItem(product, InputQuantity); // Adds only 1 item
-            return RedirectToPage("/Cart");
+            var seat = await _context.Seats.FindAsync(seatId);
+            
+            // DANGEROUS: Check-then-act pattern vulnerable to race conditions
+            if (seat.IsAvailable)
+            {
+                await Task.Delay(100); // Simulating processing
+                
+                seat.IsAvailable = false;
+                seat.BookedBy = userId;
+                seat.BookingTime = DateTime.UtcNow;
+                
+                await _context.SaveChangesAsync();
+                return new BookingResult { Success = true };
+            }
+            
+            return new BookingResult { Success = false };
         }
     }
     ```
 
     #### Mitigation and Best Practices
-    * **State Management:** Ensure state transitions are atomic. Invalidate tokens immediately after use (Identity's default `ResetPasswordAsync` does this).
-    * **Server-Side Validation:** Re-validate all business rules (minimum quantities, etc.) on the server using data annotations (`[Range]`) or explicit checks in the action.
+    * **Optimistic/Pessimistic Concurrency:** Use EF Core's concurrency tokens or row versioning.
+    * **Domain-Driven Design:** Encapsulate business rules in domain models.
+    * **Saga Pattern:** For distributed transactions across multiple services.
+    * **Input Validation:** Always validate and sanitize user inputs server-side.
 
     #### Secure Code Example
     ```csharp
-    // Controllers/AccountController.cs (Secure Token Invalidation)
-    [HttpPost("reset-password")]
-    public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+    // RewardsController.cs (SECURE)
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class RewardsController : ControllerBase
     {
-        var user = await _userManager.FindByEmailAsync(model.Email); // Find user by email
-        if (user != null)
+        private readonly IDbContextFactory<AppDbContext> _contextFactory;
+        private readonly ILogger<RewardsController> _logger;
+        
+        [HttpPost("redeem")]
+        public async Task<IActionResult> RedeemPoints([FromBody] RedeemRequest request)
         {
-            // SECURE: ResetPasswordAsync validates AND invalidates the token.
-            var result = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
-            if (result.Succeeded)
+            // SECURE: Validate input
+            if (request.Points <= 0 || request.Points > 10000)
             {
-                // No need to manually nullify token; provider handles it.
-                return RedirectToAction("ResetSuccess");
+                return BadRequest("Invalid points value");
             }
-            // ... handle errors ...
+            
+            using var context = _contextFactory.CreateDbContext();
+            using var transaction = await context.Database.BeginTransactionAsync();
+            
+            try
+            {
+                // SECURE: Use row locking
+                var user = await context.Users
+                    .FromSqlRaw("SELECT * FROM Users WITH (UPDLOCK) WHERE Id = {0}", User.Identity.Name)
+                    .FirstOrDefaultAsync();
+                
+                if (user == null)
+                {
+                    return NotFound("User not found");
+                }
+                
+                // SECURE: Validate business rules
+                if (user.RewardPoints < request.Points)
+                {
+                    return BadRequest("Insufficient reward points");
+                }
+                
+                // SECURE: Check daily redemption limit
+                var todayRedemptions = await context.RewardRedemptions
+                    .Where(r => r.UserId == user.Id && r.Date == DateTime.Today)
+                    .SumAsync(r => r.Points);
+                
+                if (todayRedemptions + request.Points > 5000)
+                {
+                    return BadRequest("Daily redemption limit exceeded");
+                }
+                
+                // SECURE: Atomic operation with audit trail
+                user.RewardPoints -= request.Points;
+                var creditAmount = request.Points * 0.01m;
+                user.AccountCredit += creditAmount;
+                
+                var redemption = new RewardRedemption
+                {
+                    UserId = user.Id,
+                    Points = request.Points,
+                    CreditAmount = creditAmount,
+                    Date = DateTime.Today,
+                    Timestamp = DateTime.UtcNow
+                };
+                
+                context.RewardRedemptions.Add(redemption);
+                await context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                
+                _logger.LogInformation("User {UserId} redeemed {Points} points for ${Credit}", 
+                    user.Id, request.Points, creditAmount);
+                
+                return Ok(new { Credit = creditAmount, RemainingPoints = user.RewardPoints });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error redeeming points for user {UserId}", User.Identity.Name);
+                return StatusCode(500, "An error occurred");
+            }
         }
-        // ... handle user not found (generic message) ...
-        return View(model);
     }
 
-    // Pages/ProductPage.cshtml.cs (Secure Quantity Check)
-    public class ProductPageModelSecure : PageModel
+    // BookingService.cs (SECURE)
+    public class BookingService
     {
-        [BindProperty]
-        public int ProductId { get; set;}
+        private readonly AppDbContext _context;
+        private readonly ILogger<BookingService> _logger;
         
-        // SECURE: Apply Range validation attribute server-side.
-        [BindProperty]
-        [Range(5, 100, ErrorMessage = "Quantity must be between 5 and 100.")]
-        public int InputQuantity { get; set;}
-        // ...
-        public async Task<IActionResult> OnPostAsync()
+        public async Task<BookingResult> BookSeat(int seatId, string userId)
         {
-            // SECURE: ModelState.IsValid checks the [Range] attribute.
-            if (!ModelState.IsValid)
+            // SECURE: Use transaction with appropriate isolation level
+            using var transaction = await _context.Database
+                .BeginTransactionAsync(IsolationLevel.Serializable);
+            
+            try
             {
-                // Reload product info for the page model if needed for display
-                // Product = await _context.Products.FindAsync(ProductId);
-                return Page(); // Return page with validation errors
+                // SECURE: Lock the row for update
+                var seat = await _context.Seats
+                    .FromSqlRaw("SELECT * FROM Seats WITH (UPDLOCK) WHERE Id = {0}", seatId)
+                    .FirstOrDefaultAsync();
+                
+                if (seat == null)
+                {
+                    return new BookingResult { Success = false, Message = "Seat not found" };
+                }
+                
+                // SECURE: Validate state within transaction
+                if (!seat.IsAvailable)
+                {
+                    return new BookingResult { Success = false, Message = "Seat already booked" };
+                }
+                
+                // SECURE: Additional business rule validation
+                if (seat.EventDate < DateTime.UtcNow.AddHours(1))
+                {
+                    return new BookingResult { Success = false, Message = "Booking closed" };
+                }
+                
+                // SECURE: Check user's concurrent bookings
+                var userBookingsCount = await _context.Seats
+                    .CountAsync(s => s.BookedBy == userId && s.EventId == seat.EventId);
+                
+                if (userBookingsCount >= 4)
+                {
+                    return new BookingResult { Success = false, Message = "Maximum seats per user exceeded" };
+                }
+                
+                // SECURE: Update with concurrency token
+                seat.IsAvailable = false;
+                seat.BookedBy = userId;
+                seat.BookingTime = DateTime.UtcNow;
+                seat.BookingReference = Guid.NewGuid().ToString();
+                
+                // Use optimistic concurrency with RowVersion
+                _context.Entry(seat).Property("RowVersion").OriginalValue = seat.RowVersion;
+                
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                
+                _logger.LogInformation("Seat {SeatId} booked by {UserId}", seatId, userId);
+                
+                return new BookingResult 
+                { 
+                    Success = true, 
+                    BookingReference = seat.BookingReference 
+                };
             }
-
-            var product = await _context.Products.FindAsync(ProductId);
-            _cartService.AddItem(product, InputQuantity); // Adds valid quantity
-            return RedirectToPage("/Cart");
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync();
+                return new BookingResult { Success = false, Message = "Seat no longer available" };
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Booking failed for seat {SeatId}", seatId);
+                throw;
+            }
         }
     }
     ```
 
     #### Testing Strategy
-    Map workflows.
-    * **Token Reuse:** Try using a password reset or email verification link multiple times.
-    * **State Bypass:** Try accessing URLs or submitting forms for later steps before completing earlier ones.
-    * **Business Rule Bypass:** Modify client-side values (quantities, amounts) to violate known business rules (minimums, maximums) and submit. Verify the server catches the violation (check `ModelState.IsValid`).
+    Use xUnit with concurrent test execution to identify race conditions. Create integration tests that simulate multiple users performing the same operation simultaneously. Test boundary conditions and negative scenarios. Use `TransactionScope` in tests to ensure database rollback.
   </Tab>
   <Tab title="PHP">
     #### Framework Context
-    Flaws in Controller logic or Services that fail to validate state transitions or business rules.
+    Common in Laravel applications handling e-commerce, subscription services, or content management. Issues often arise in controllers handling payments, user upgrades, or content access.
 
-    #### Vulnerable Scenario 1: Applying Coupon Multiple Times
-    A coupon can be applied, reducing the cart total, but there's no check to prevent applying it repeatedly.
+    #### Vulnerable Scenario 1: Subscription Upgrade Bypass
     ```php
-    // app/Http/Controllers/CartController.php
-    use Illuminate\Http\Request;
-    use App\Models\Coupon;
-    use Illuminate\Support\Facades\Redirect;
-
-    public function applyCoupon(Request $request) {
-        $couponCode = $request->input('coupon_code');
-        $coupon = Coupon::where('code', $couponCode)->first();
-
-        if ($coupon && $coupon->isValid()) {
-            $cart = $request->session()->get('cart');
-            if ($cart) {
-                 $cart->applyDiscount($coupon->discount_amount);
-                 // DANGEROUS: Doesn't prevent applying the same (or different) coupon again.
-                 $request->session()->put('cart', $cart);
-                 session()->flash('message', 'Coupon applied!');
-            } else {
-                 session()->flash('error', 'Cart not found.');
-            }
-        } else {
-            session()->flash('error', 'Invalid coupon code.');
+    // SubscriptionController.php (Laravel - VULNERABLE)
+    class SubscriptionController extends Controller
+    {
+        public function upgrade(Request $request)
+        {
+            $user = Auth::user();
+            $planId = $request->input('plan_id');
+            
+            // DANGEROUS: No verification of payment
+            $user->subscription_plan_id = $planId;
+            $user->subscription_expires = now()->addMonth();
+            $user->save();
+            
+            return response()->json(['message' => 'Subscription upgraded']);
         }
-        return Redirect::route('cart.show');
     }
     ```
 
-    #### Vulnerable Scenario 2: Bypassing Survey Completion for Reward
-    Users get a reward after completing a survey, but the reward endpoint only checks if the survey *exists*, not if it's *completed*.
+    #### Vulnerable Scenario 2: Voucher Generation Abuse
     ```php
-    // app/Http/Controllers/SurveyController.php
-    use App\Models\Survey;
-    use Illuminate\Http\Request;
-    use Illuminate\Support\Facades\Redirect;
-
-    public function claimReward(Request $request, Survey $survey) {
-        $user = auth()->user();
-
-        // DANGEROUS: Only checks if user owns the survey record.
-        // Doesn't check survey->is_completed flag or similar status.
-        if ($survey->user_id !== $user->id) { abort(403); }
-
-        // Give reward without checking completion status
-        $user->addRewardPoints(100); // Assumes this method exists
-        $survey->reward_claimed = true;
-        $survey->save();
-
-        return Redirect::route('rewards.index');
+    // VoucherController.php (VULNERABLE)
+    class VoucherController extends Controller
+    {
+        public function generateVoucher(Request $request)
+        {
+            $amount = $request->input('amount');
+            $quantity = $request->input('quantity');
+            
+            // DANGEROUS: No validation or rate limiting
+            for ($i = 0; $i < $quantity; $i++) {
+                Voucher::create([
+                    'code' => Str::random(10),
+                    'amount' => $amount,
+                    'created_by' => Auth::id(),
+                    'expires_at' => now()->addYear()
+                ]);
+            }
+            
+            return response()->json(['message' => "$quantity vouchers created"]);
+        }
     }
     ```
 
     #### Mitigation and Best Practices
-    * **State Tracking:** Add flags or status fields to models (e.g., `coupon_applied_to_cart_id`, `survey_completed_at`, `reward_claimed_at`) and check these flags before allowing actions.
-    * **Re-validation at Critical Points:** Re-verify coupon validity, eligibility, and single-use constraints during the final checkout process. Check survey completion status before granting rewards.
+    * **Payment Verification:** Always verify payment status before granting access.
+    * **Database Transactions:** Use Laravel's DB transactions for atomic operations.
+    * **Rate Limiting:** Implement throttling for sensitive operations.
+    * **Authorization Gates:** Use Laravel's authorization features for access control.
 
     #### Secure Code Example
     ```php
-    // app/Http/Controllers/CartController.php (Secure Coupon Application)
-    public function applyCoupon(Request $request) {
-        $couponCode = $request->input('coupon_code');
-        $coupon = Coupon::where('code', $couponCode)->first();
-        $cart = $request->session()->get('cart');
-
-        if (!$cart) {
-             session()->flash('error', 'Cart not found.');
-             return Redirect::route('cart.show');
+    // SubscriptionController.php (Laravel - SECURE)
+    class SubscriptionController extends Controller
+    {
+        public function upgrade(Request $request)
+        {
+            $validated = $request->validate([
+                'plan_id' => 'required|exists:subscription_plans,id',
+                'payment_token' => 'required|string'
+            ]);
+            
+            $user = Auth::user();
+            $plan = SubscriptionPlan::findOrFail($validated['plan_id']);
+            
+            // SECURE: Start database transaction
+            return DB::transaction(function () use ($user, $plan, $validated) {
+                // SECURE: Lock user record
+                $user = User::where('id', $user->id)->lockForUpdate()->first();
+                
+                // SECURE: Validate current subscription state
+                if ($user->subscription_plan_id >= $plan->id) {
+                    throw new BusinessLogicException('Cannot downgrade subscription');
+                }
+                
+                // SECURE: Calculate prorated amount
+                $amount = $this->calculateProratedAmount($user, $plan);
+                
+                // SECURE: Process payment first
+                try {
+                    $payment = PaymentGateway::charge([
+                        'token' => $validated['payment_token'],
+                        'amount' => $amount,
+                        'description' => "Upgrade to {$plan->name}"
+                    ]);
+                } catch (PaymentException $e) {
+                    Log::error('Payment failed', ['user' => $user->id, 'error' => $e->getMessage()]);
+                    throw new BusinessLogicException('Payment processing failed');
+                }
+                
+                // SECURE: Only upgrade after successful payment
+                $previousPlan = $user->subscription_plan_id;
+                $user->subscription_plan_id = $plan->id;
+                $user->subscription_expires = $user->subscription_expires 
+                    ? $user->subscription_expires->addMonth() 
+                    : now()->addMonth();
+                $user->save();
+                
+                // SECURE: Create audit record
+                SubscriptionHistory::create([
+                    'user_id' => $user->id,
+                    'from_plan_id' => $previousPlan,
+                    'to_plan_id' => $plan->id,
+                    'payment_id' => $payment->id,
+                    'amount' => $amount,
+                    'upgraded_at' => now()
+                ]);
+                
+                return response()->json([
+                    'message' => 'Subscription upgraded successfully',
+                    'expires_at' => $user->subscription_expires
+                ]);
+            });
         }
-
-        // SECURE: Check if a coupon is already applied to this cart.
-        if ($cart->coupon_applied_id !== null) {
-            session()->flash('error', 'Only one coupon per order.');
-            return Redirect::route('cart.show');
+        
+        private function calculateProratedAmount($user, $newPlan)
+        {
+            // SECURE: Complex business logic for proration
+            if (!$user->subscription_expires || $user->subscription_expires->isPast()) {
+                return $newPlan->price;
+            }
+            
+            $daysRemaining = now()->diffInDays($user->subscription_expires);
+            $currentPlan = SubscriptionPlan::find($user->subscription_plan_id);
+            $dailyCredit = $currentPlan ? ($currentPlan->price / 30) * $daysRemaining : 0;
+            
+            return max(0, $newPlan->price - $dailyCredit);
         }
-
-        if ($coupon && $coupon->isValidForCart($cart)) {
-            $cart->applyDiscount($coupon->discount_amount);
-            $cart->coupon_applied_id = $coupon->id; // Mark coupon as applied
-            $request->session()->put('cart', $cart);
-            session()->flash('message', 'Coupon applied!');
-        } else {
-            session()->flash('error', 'Invalid or inapplicable coupon code.');
-        }
-        return Redirect::route('cart.show');
     }
 
-    // app/Http/Controllers/SurveyController.php (Secure Reward Claim)
-    public function claimReward(Request $request, Survey $survey) {
-        $user = auth()->user();
-        if ($survey->user_id !== $user->id) { abort(403); }
-
-        // SECURE: Check survey completion status.
-        if (!$survey->is_completed) { // Assume is_completed is a boolean field
-             session()->flash('error', 'Survey not completed yet.');
-             return Redirect::route('survey.show', $survey);
+    // VoucherController.php (SECURE)
+    class VoucherController extends Controller
+    {
+        public function __construct()
+        {
+            // SECURE: Rate limiting
+            $this->middleware('throttle:5,1')->only('generateVoucher');
         }
-        // SECURE: Check if reward already claimed.
-        if ($survey->reward_claimed) {
-            session()->flash('error', 'Reward already claimed for this survey.');
-            return Redirect::route('rewards.index');
+        
+        public function generateVoucher(Request $request)
+        {
+            // SECURE: Validate input
+            $validated = $request->validate([
+                'amount' => 'required|numeric|min:1|max:100',
+                'quantity' => 'required|integer|min:1|max:10',
+                'reason' => 'required|string|max:255'
+            ]);
+            
+            // SECURE: Authorization check
+            if (!Auth::user()->can('create-vouchers')) {
+                abort(403, 'Unauthorized to create vouchers');
+            }
+            
+            // SECURE: Check daily limits
+            $todayCount = Voucher::where('created_by', Auth::id())
+                ->whereDate('created_at', today())
+                ->count();
+            
+            if ($todayCount + $validated['quantity'] > 50) {
+                throw new BusinessLogicException('Daily voucher limit exceeded');
+            }
+            
+            // SECURE: Use transaction for atomic operation
+            $vouchers = DB::transaction(function () use ($validated) {
+                $vouchers = [];
+                
+                for ($i = 0; $i < $validated['quantity']; $i++) {
+                    // SECURE: Generate cryptographically secure codes
+                    $code = strtoupper(Str::random(8));
+                    
+                    // SECURE: Ensure uniqueness
+                    while (Voucher::where('code', $code)->exists()) {
+                        $code = strtoupper(Str::random(8));
+                    }
+                    
+                    $voucher = Voucher::create([
+                        'code' => $code,
+                        'amount' => $validated['amount'],
+                        'created_by' => Auth::id(),
+                        'reason' => $validated['reason'],
+                        'expires_at' => now()->addDays(30), // SECURE: Reasonable expiry
+                        'max_uses' => 1 // SECURE: Single use
+                    ]);
+                    
+                    $vouchers[] = $voucher;
+                    
+                    // SECURE: Audit log
+                    activity()
+                        ->causedBy(Auth::user())
+                        ->performedOn($voucher)
+                        ->withProperties(['amount' => $validated['amount'], 'reason' => $validated['reason']])
+                        ->log('Voucher generated');
+                }
+                
+                return $vouchers;
+            });
+            
+            return response()->json([
+                'message' => count($vouchers) . ' vouchers created',
+                'vouchers' => $vouchers->pluck('code')
+            ]);
         }
-
-        // Give reward only if checks pass
-        $user->addRewardPoints(100);
-        $survey->reward_claimed = true;
-        $survey->save();
-
-        return Redirect::route('rewards.index');
     }
     ```
 
     #### Testing Strategy
-    Map application workflows.
-    * **Replay Actions:** Try applying a coupon twice. Try claiming a reward twice.
-    * **State Bypass:** Access reward URL before completing the survey.
-    * **Concurrency:** Use tools (Burp Intruder) to submit multiple requests simultaneously (e.g., two requests to use a single-use coupon). Verify only one succeeds.
-    Manual testing and careful code review are crucial.
+    Use PHPUnit with database transactions for testing. Create tests for concurrent operations using multiple database connections. Test with invalid state transitions and boundary values. Use Laravel Dusk for end-to-end testing of multi-step workflows.
   </Tab>
   <Tab title="Node.js">
     #### Framework Context
-    Flaws in Express route handlers or service logic that fail to manage state transitions correctly or re-verify business rules.
+    Common in Express applications handling real-time operations, gaming mechanics, or API rate limiting. Issues often arise in middleware and route handlers dealing with session management or resource allocation.
 
-    #### Vulnerable Scenario 1: Voting Multiple Times
-    An API endpoint allows voting but doesn't implement atomicity, leading to race conditions.
+    #### Vulnerable Scenario 1: API Rate Limit Bypass
     ```javascript
-    // routes/poll.js
-    router.post('/:pollId/vote', ensureAuthenticated, async (req, res) => {
-        const { pollId } = req.params;
-        const { optionId } = req.body;
-        const userId = req.user.id;
+    // rateLimiter.js (VULNERABLE)
+    const rateLimitMap = new Map();
 
-        try {
-            // DANGEROUS: Race condition. Attacker sends 10 requests at once.
-            // All 10 requests might pass this check before any vote is saved.
-            const hasVoted = await VoteService.checkIfUserVoted(userId, pollId);
-            if (hasVoted) {
-                return res.status(400).send('Already voted.');
-            }
-
-            // Record the vote
-            await VoteService.recordVote(userId, pollId, optionId);
-            res.send('Vote recorded.');
-        } catch (err) { res.status(500).send('Error.'); }
-    });
+    const rateLimiter = (req, res, next) => {
+        const userId = req.user?.id;
+        
+        // DANGEROUS: Only checking authenticated users
+        if (!userId) {
+            return next(); // Unauthenticated users bypass rate limiting!
+        }
+        
+        const userLimits = rateLimitMap.get(userId) || { count: 0, resetTime: Date.now() + 60000 };
+        
+        // DANGEROUS: Client can manipulate headers to reset counter
+        if (req.headers['x-reset-limit'] === 'true') {
+            rateLimitMap.delete(userId);
+            return next();
+        }
+        
+        if (userLimits.count >= 100) {
+            return res.status(429).json({ error: 'Rate limit exceeded' });
+        }
+        
+        userLimits.count++;
+        rateLimitMap.set(userId, userLimits);
+        next();
+    };
     ```
 
-    #### Vulnerable Scenario 2: Adding Item After Order Finalized
-    An endpoint to add items to a cart doesn't check if the cart/order has already been submitted or paid for.
+    #### Vulnerable Scenario 2: Game Score Manipulation
     ```javascript
-    // routes/cart.js
-    router.post('/items', ensureAuthenticated, async (req, res) => {
-        const { cartId, productId, quantity } = req.body;
+    // gameController.js (VULNERABLE)
+    router.post('/submit-score', async (req, res) => {
+        const { gameId, score, timeSpent } = req.body;
         const userId = req.user.id;
-
-        try {
-             // DANGEROUS: Fetches cart but doesn't check its status.
-             // Attacker could submit this request *after* payment for 'cartId' is complete.
-             const cart = await CartService.getCart(cartId, userId);
-             if (!cart) return res.status(404).send('Cart not found.');
-
-             // Logic proceeds even if cart.status is 'PAID' or 'SUBMITTED'
-             await CartService.addItem(cartId, productId, quantity);
-             res.send('Item added.');
-
-        } catch (err) { res.status(500).send('Error.'); }
+        
+        // DANGEROUS: Trusting client-provided score
+        const gameSession = await GameSession.findOne({ userId, gameId });
+        
+        // DANGEROUS: No validation of score legitimacy
+        gameSession.score = score;
+        gameSession.timeSpent = timeSpent;
+        gameSession.completed = true;
+        
+        await gameSession.save();
+        
+        // Award prizes based on score
+        if (score > 10000) {
+            await User.findByIdAndUpdate(userId, { $inc: { coins: 1000 } });
+        }
+        
+        res.json({ success: true });
     });
     ```
 
     #### Mitigation and Best Practices
-    * **Atomicity/Locking:** Use database transactions with locking (`SELECT ... FOR UPDATE`) or atomic operations (`findOneAndUpdate` with conditions) to prevent race conditions. Use unique constraints in the database (e.g., on `(userId, pollId)` for votes).
-    * **State Validation:** Always check the current state of the object (`cart.status`) before performing an action.
+    * **Server-Side State:** Maintain game state and calculations server-side.
+    * **Distributed Locking:** Use Redis for distributed rate limiting.
+    * **Cryptographic Signatures:** Sign critical values to prevent tampering.
+    * **Session Validation:** Verify session integrity and timing constraints.
 
     #### Secure Code Example
     ```javascript
-    // routes/poll.js (Secure - using DB constraints or atomic update)
-    router.post('/:pollId/vote-secure', ensureAuthenticated, async (req, res) => {
-        // ... params ...
-        try {
-            // SECURE: Attempt to record vote using a method that includes atomicity.
-            // This method should rely on a unique DB constraint (userId, pollId).
-            const voteRecorded = await VoteService.recordVoteAtomically(userId, pollId, optionId);
+    // rateLimiter.js (SECURE)
+    const Redis = require('ioredis');
+    const redis = new Redis();
+    const crypto = require('crypto');
 
-            if (voteRecorded) { // true if insert succeeded
-                res.send('Vote recorded.');
-            } else { // false if insert failed (e.g., unique constraint violation)
-                res.status(400).send('Already voted.');
+    const rateLimiter = (options = {}) => {
+        const {
+            windowMs = 60000,
+            max = 100,
+            keyGenerator = (req) => req.ip // Default to IP-based
+        } = options;
+        
+        return async (req, res, next) => {
+            // SECURE: Generate rate limit key
+            const key = `rate_limit:${keyGenerator(req)}`;
+            
+            try {
+                // SECURE: Use Redis for distributed rate limiting
+                const pipeline = redis.pipeline();
+                const now = Date.now();
+                const window = now - windowMs;
+                
+                // Remove old entries
+                pipeline.zremrangebyscore(key, 0, window);
+                // Add current request
+                pipeline.zadd(key, now, `${now}-${crypto.randomBytes(4).toString('hex')}`);
+                // Count requests in window
+                pipeline.zcard(key);
+                // Set expiry
+                pipeline.expire(key, Math.ceil(windowMs / 1000));
+                
+                const results = await pipeline.exec();
+                const requestCount = results[2][1];
+                
+                // SECURE: Set rate limit headers
+                res.setHeader('X-RateLimit-Limit', max);
+                res.setHeader('X-RateLimit-Remaining', Math.max(0, max - requestCount));
+                res.setHeader('X-RateLimit-Reset', new Date(now + windowMs).toISOString());
+                
+                if (requestCount > max) {
+                    // SECURE: Log potential abuse
+                    logger.warn('Rate limit exceeded', {
+                        key,
+                        count: requestCount,
+                        ip: req.ip,
+                        user: req.user?.id
+                    });
+                    
+                    return res.status(429).json({
+                        error: 'Too many requests',
+                        retryAfter: Math.ceil(windowMs / 1000)
+                    });
+                }
+                
+                next();
+            } catch (error) {
+                logger.error('Rate limiter error', error);
+                // Fail open but log the issue
+                next();
             }
-        } catch (err) {
-             // Handle DB errors (like constraint violation if not caught by service)
-             res.status(500).send('Error recording vote.');
-        }
+        };
+    };
+
+    // gameController.js (SECURE)
+    const crypto = require('crypto');
+    const gameSecret = process.env.GAME_SECRET;
+
+    router.post('/start-game', async (req, res) => {
+        const { gameId } = req.body;
+        const userId = req.user.id;
+        
+        // SECURE: Create server-side game session
+        const session = await GameSession.create({
+            userId,
+            gameId,
+            startTime: Date.now(),
+            sessionToken: crypto.randomBytes(32).toString('hex'),
+            maxScore: 0,
+            moves: []
+        });
+        
+        // SECURE: Send session token (not the actual game state)
+        res.json({
+            sessionId: session._id,
+            sessionToken: session.sessionToken
+        });
     });
 
-    // routes/cart.js (Secure - Check Status)
-    router.post('/items-secure', ensureAuthenticated, async (req, res) => {
-        // ... params ...
-        try {
-             const cart = await CartService.getCart(cartId, userId);
-             if (!cart) return res.status(404).send('Cart not found.');
+    router.post('/game-move', async (req, res) => {
+        const { sessionId, sessionToken, move } = req.body;
+        
+        // SECURE: Validate session
+        const session = await GameSession.findById(sessionId);
+        if (!session || session.sessionToken !== sessionToken) {
+            return res.status(401).json({ error: 'Invalid session' });
+        }
+        
+        // SECURE: Check session timeout
+        if (Date.now() - session.startTime > 3600000) { // 1 hour limit
+            session.completed = true;
+            session.timedOut = true;
+            await session.save();
+            return res.status(400).json({ error: 'Session expired' });
+        }
+        
+        // SECURE: Validate move server-side
+        const moveValidation = validateMove(session, move);
+        if (!moveValidation.valid) {
+            // Log potential cheating attempt
+            logger.warn('Invalid move attempted', {
+                userId: session.userId,
+                sessionId,
+                move
+            });
+            return res.status(400).json({ error: 'Invalid move' });
+        }
+        
+        // SECURE: Calculate score server-side
+        const scoreIncrement = calculateScore(move, session.moves.length);
+        session.moves.push({
+            move,
+            timestamp: Date.now(),
+            score: scoreIncrement
+        });
+        session.maxScore += scoreIncrement;
+        
+        // SECURE: Check for impossible scores
+        const theoreticalMax = calculateTheoreticalMax(session.moves.length, Date.now() - session.startTime);
+        if (session.maxScore > theoreticalMax) {
+            session.flaggedForReview = true;
+            logger.alert('Suspicious game activity', {
+                userId: session.userId,
+                sessionId,
+                score: session.maxScore,
+                theoretical: theoreticalMax
+            });
+        }
+        
+        await session.save();
+        
+        res.json({
+            currentScore: session.maxScore,
+            moveAccepted: true
+        });
+    });
 
-             // SECURE: Check the cart's status before allowing modification.
-             if (cart.status !== 'ACTIVE') {
-                  return res.status(400).send('Cart is not active and cannot be modified.');
-             }
-
-             await CartService.addItem(cartId, productId, quantity);
-             res.send('Item added.');
-
-        } catch (err) { res.status(500).send('Error.'); }
+    router.post('/end-game', async (req, res) => {
+        const { sessionId, sessionToken } = req.body;
+        
+        // SECURE: Lock session for completion
+        const session = await GameSession.findOneAndUpdate(
+            {
+                _id: sessionId,
+                sessionToken,
+                completed: false
+            },
+            {
+                $set: {
+                    completed: true,
+                    endTime: Date.now()
+                }
+            },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+        
+        if (!session) {
+            return res.status(400).json({ error: 'Invalid or already completed session' });
+        }
+        
+        // SECURE: Validate final score
+        const calculatedScore = session.moves.reduce((sum, m) => sum + m.score, 0);
+        if (calculatedScore !== session.maxScore) {
+            logger.alert('Score mismatch detected', {
+                sessionId,
+                calculated: calculatedScore,
+                stored: session.maxScore
+            });
+            session.flaggedForReview = true;
+            await session.save();
+            return res.status(400).json({ error: 'Score validation failed' });
+        }
+        
+        // SECURE: Award prizes only for validated scores
+        if (!session.flaggedForReview && session.maxScore > 10000) {
+            await User.findByIdAndUpdate(
+                session.userId,
+                {
+                    $inc: { coins: Math.min(1000, Math.floor(session.maxScore / 100)) },
+                    $push: {
+                        achievements: {
+                            type: 'HIGH_SCORE',
+                            score: session.maxScore,
+                            date: new Date()
+                        }
+                    }
+                },
+                { runValidators: true }
+            );
+        }
+        
+        res.json({
+            finalScore: session.maxScore,
+            coinsEarned: session.flaggedForReview ? 0 : Math.min(1000, Math.floor(session.maxScore / 100))
+        });
     });
     ```
 
     #### Testing Strategy
-    Map workflows.
-    * **Race Conditions:** Use an intercepting proxy (Burp Intruder) to send multiple identical requests (e.g., to vote) nearly simultaneously. Check if the action is performed more than once.
-    * **State Bypass:** Identify objects with status fields (Cart, Order, Survey). Try performing actions only valid for one status when the object is in a different status (e.g., add item to 'PAID' cart).
+    Use Mocha/Chai with sinon for mocking time-based operations. Create stress tests with multiple concurrent requests using supertest. Test with manipulated client data to ensure server-side validation catches cheating attempts. Use Jest for testing race conditions with proper async handling.
   </Tab>
   <Tab title="Ruby">
     #### Framework Context
-    Flaws in Controller actions or Models that don't enforce state transitions or re-verify business conditions.
+    Common in Rails applications handling inventory management, auction systems, or reservation platforms. Issues often arise in controllers and models dealing with competitive resource allocation.
 
-    #### Vulnerable Scenario 1: Transferring More Funds Than Available
-    A bank transfer function checks the balance initially but doesn't use locking, allowing a race condition.
+    #### Vulnerable Scenario 1: Inventory Double-Spending
     ```ruby
-    # app/controllers/transfers_controller.rb
-    class TransfersController < ApplicationController
-      def create
-        amount = BigDecimal(params[:amount])
-        recipient = User.find(params[:recipient_id])
-        sender = current_user
-
-        # DANGEROUS: Balance checked outside of transaction lock.
-        if sender.balance >= amount && amount > 0
-          # Attacker sends two simultaneous requests for $100 when balance is $100.
-          # Both might pass this check before either transaction completes.
-          ActiveRecord::Base.transaction do
-            sender.balance -= amount
-            recipient.balance += amount
-            sender.save!
-            recipient.save!
-          end
-          redirect_to root_path, notice: "Transfer successful."
+    # products_controller.rb (VULNERABLE)
+    class ProductsController < ApplicationController
+      def purchase
+        product = Product.find(params[:id])
+        quantity = params[:quantity].to_i
+        
+        # DANGEROUS: Race condition between check and update
+        if product.stock >= quantity
+          product.stock -= quantity
+          product.save
+          
+          Order.create!(
+            user: current_user,
+            product: product,
+            quantity: quantity,
+            total: product.price * quantity
+          )
+          
+          render json: { success: true }
         else
-          redirect_to root_path, alert: "Insufficient funds or invalid amount."
+          render json: { error: 'Insufficient stock' }, status: 400
         end
       end
     end
     ```
 
-    #### Vulnerable Scenario 2: Modifying Finalized Record
-    Allowing edits to an invoice after it has been marked as 'paid'.
+    #### Vulnerable Scenario 2: Auction Bid Manipulation
     ```ruby
-    # app/controllers/invoices_controller.rb
-    class InvoicesController < ApplicationController
-      before_action :set_invoice
-
-      def update
-        # DANGEROUS: Does not check invoice status before allowing update.
-        # Attacker could change items/amount on an already paid invoice.
-        if @invoice.update(invoice_params)
-           redirect_to @invoice, notice: 'Invoice updated.'
+    # auction.rb (VULNERABLE)
+    class Auction < ApplicationRecord
+      def place_bid(user, amount)
+        # DANGEROUS: No validation of bid increments
+        if amount > self.current_bid
+          self.current_bid = amount
+          self.highest_bidder = user
+          self.save
+          
+          # DANGEROUS: Time extension can be abused
+          if self.ends_at - Time.current < 1.minute
+            self.ends_at += 5.minutes
+            self.save
+          end
+          
+          true
         else
-           render :edit
+          false
         end
-      end
-
-      private
-      def set_invoice
-        @invoice = current_user.invoices.find(params[:id])
       end
     end
     ```
 
     #### Mitigation and Best Practices
-    * **Locking/Atomicity:** Use pessimistic locking (`sender.lock!`) within the transaction to prevent race conditions during balance checks and updates.
-    * **State Validation:** Check the object's state *before* performing actions (`unless @invoice.is_editable? ...`). Use state machine gems (`aasm`) to enforce valid transitions.
+    * **Pessimistic Locking:** Use `with_lock` for critical sections.
+    * **Optimistic Locking:** Add `lock_version` to tables for concurrent updates.
+    * **State Machines:** Use gems like AASM for controlled state transitions.
+    * **Database Constraints:** Add check constraints for business rules.
 
     #### Secure Code Example
     ```ruby
-    # app/controllers/transfers_controller.rb (Secure - Pessimistic Locking)
-    class TransfersController < ApplicationController
-      def create
-        amount = BigDecimal(params[:amount])
-        recipient = User.find(params[:recipient_id])
-        sender = current_user
-
-        # SECURE: Perform check and update within a transaction with locking.
-        ActiveRecord::Base.transaction do
-          sender.lock! # Lock the sender row
-          recipient.lock! # Lock the recipient row
-
-          # Re-check balance *after* acquiring lock
-          if sender.balance >= amount && amount > 0
-            sender.balance -= amount
-            recipient.balance += amount
-            sender.save!
-            recipient.save!
-          else
-            raise ActiveRecord::Rollback, "Insufficient funds or invalid amount."
-          end
+    # products_controller.rb (SECURE)
+    class ProductsController < ApplicationController
+      def purchase
+        quantity = params[:quantity].to_i
+        
+        # SECURE: Input validation
+        if quantity <= 0 || quantity > 10
+          return render json: { error: 'Invalid quantity' }, status: 400
         end
-        redirect_to root_path, notice: "Transfer successful."
-      rescue ActiveRecord::Rollback => e
-        redirect_to root_path, alert: e.message
+        
+        # SECURE: Use transaction with locking
+        order = nil
+        ActiveRecord::Base.transaction do
+          product = Product.lock.find(params[:id])
+          
+          # SECURE: Verify product is purchasable
+          unless product.available_for_purchase?
+            raise BusinessLogicError, 'Product not available'
+          end
+          
+          # SECURE: Check stock within lock
+          if product.stock < quantity
+            raise BusinessLogicError, 'Insufficient stock'
+          end
+          
+          # SECURE: Check purchase limits
+          recent_orders_count = current_user.orders
+            .where(product: product)
+            .where('created_at > ?', 24.hours.ago)
+            .sum(:quantity)
+          
+          if recent_orders_count + quantity > product.max_per_customer
+            raise BusinessLogicError, 'Purchase limit exceeded'
+          end
+          
+          # SECURE: Update stock
+          product.stock -= quantity
+          product.save!
+          
+          # SECURE: Create order with validation
+          order = Order.create!(
+            user: current_user,
+            product: product,
+            quantity: quantity,
+            unit_price: product.current_price, # Store price at time of purchase
+            total: product.current_price * quantity,
+            status: 'pending_payment'
+          )
+          
+          # SECURE: Reserve stock for limited time
+          StockReservation.create!(
+            order: order,
+            product: product,
+            quantity: quantity,
+            expires_at: 15.minutes.from_now
+          )
+        end
+        
+        # Trigger payment processing job
+        ProcessPaymentJob.perform_later(order)
+        
+        render json: {
+          success: true,
+          order_id: order.id,
+          reservation_expires_at: order.stock_reservation.expires_at
+        }
+      rescue BusinessLogicError => e
+        render json: { error: e.message }, status: 400
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { error: 'Invalid order data' }, status: 400
       end
     end
 
-    # app/controllers/invoices_controller.rb (Secure - State Check)
-    class InvoicesController < ApplicationController
-      before_action :set_invoice
-      before_action :check_if_editable, only: [:edit, :update]
-
-      def update
-        if @invoice.update(invoice_params)
-           redirect_to @invoice, notice: 'Invoice updated.'
-        else
-           render :edit, status: :unprocessable_entity
+    # auction.rb (SECURE)
+    class Auction < ApplicationRecord
+      include AASM
+      
+      has_many :bids
+      belongs_to :highest_bidder, class_name: 'User', optional: true
+      
+      # SECURE: Use optimistic locking
+      # Migration: add_column :auctions, :lock_version, :integer, default: 0, null: false
+      
+      # SECURE: State machine for auction lifecycle
+      aasm column: 'status' do
+        state :draft, initial: true
+        state :active
+        state :ending
+        state :completed
+        state :cancelled
+        
+        event :activate do
+          transitions from: :draft, to: :active
+          after do
+            self.starts_at = Time.current
+            self.ends_at = self.starts_at + self.duration.hours
+          end
+        end
+        
+        event :complete do
+          transitions from: [:active, :ending], to: :completed
         end
       end
-
-      private
-      def set_invoice
-        @invoice = current_user.invoices.find(params[:id])
+      
+      def place_bid(user, amount)
+        # SECURE: Use transaction with retry on optimistic lock failure
+        max_retries = 3
+        retry_count = 0
+        
+        begin
+          ActiveRecord::Base.transaction do
+            # SECURE: Lock the auction record
+            auction = Auction.lock.find(self.id)
+            
+            # SECURE: Validate auction state
+            unless auction.active? || auction.ending?
+              raise BusinessLogicError, 'Auction is not accepting bids'
+            end
+            
+            # SECURE: Validate bid amount
+            minimum_bid = auction.current_bid.to_f + auction.minimum_increment
+            if amount < minimum_bid
+              raise BusinessLogicError, "Bid must be at least #{minimum_bid}"
+            end
+            
+            # SECURE: Validate user can bid
+            if auction.seller_id == user.id
+              raise BusinessLogicError, 'Cannot bid on own auction'
+            end
+            
+            if auction.highest_bidder_id == user.id
+              raise BusinessLogicError, 'You are already the highest bidder'
+            end
+            
+            # SECURE: Check user's bid limit
+            user_total_bids = user.bids
+              .joins(:auction)
+              .where(auctions: { status: [:active, :ending] })
+              .sum(:amount)
+            
+            if user_total_bids + amount > user.bid_limit
+              raise BusinessLogicError, 'Bid limit exceeded'
+            end
+            
+            # SECURE: Create bid record
+            bid = auction.bids.create!(
+              user: user,
+              amount: amount,
+              ip_address: user.current_sign_in_ip,
+              placed_at: Time.current
+            )
+            
+            # SECURE: Update auction
+            auction.current_bid = amount
+            auction.highest_bidder = user
+            auction.bid_count += 1
+            
+            # SECURE: Controlled time extension with limits
+            time_remaining = auction.ends_at - Time.current
+            if time_remaining < 2.minutes && auction.extensions_count < 3
+              auction.ends_at += 2.minutes
+              auction.extensions_count += 1
+              auction.ending! if time_remaining < 5.minutes && auction.active?
+            end
+            
+            auction.save!
+            
+            # Notify previous highest bidder
+            if auction.previous_changes['highest_bidder_id']
+              OutbidNotificationJob.perform_later(
+                auction.previous_changes['highest_bidder_id'][0],
+                auction
+              )
+            end
+            
+            bid
+          end
+        rescue ActiveRecord::StaleObjectError
+          # SECURE: Handle optimistic locking conflict
+          retry_count += 1
+          if retry_count < max_retries
+            sleep(0.1 * retry_count) # Exponential backoff
+            retry
+          else
+            raise BusinessLogicError, 'Unable to place bid due to high activity'
+          end
+        end
       end
-
-      def check_if_editable
-        # Assume Invoice model has statuses like 'draft', 'sent', 'paid'
-        unless @invoice.status == 'draft'
-           redirect_to @invoice, alert: "Cannot edit an invoice that is not in draft status."
+      
+      # SECURE: Scheduled job to finalize auctions
+      def self.finalize_ended_auctions
+        Auction.where(status: [:active, :ending])
+               .where('ends_at < ?', Time.current)
+               .find_each do |auction|
+          auction.with_lock do
+            next unless auction.active? || auction.ending?
+            
+            auction.complete!
+            
+            if auction.highest_bidder.present?
+              # Create purchase obligation
+              Purchase.create!(
+                buyer: auction.highest_bidder,
+                auction: auction,
+                amount: auction.current_bid,
+                due_date: 3.days.from_now
+              )
+              
+              # Notify winner
+              AuctionWonNotificationJob.perform_later(auction)
+            end
+          end
         end
       end
     end
     ```
 
     #### Testing Strategy
-    Map workflows.
-    * **Race Conditions:** Use tools (Burp Intruder) to send simultaneous requests for balance-dependent actions. Verify only one succeeds or balance remains correct.
-    * **State Bypass:** Attempt to perform actions on objects in the wrong state (e.g., edit a 'paid' invoice). Verify the action is denied based on server-side state checks (`before_action`, model validations, state machine).
+    Use RSpec with `transactional` fixtures disabled for testing locking behavior. Create concurrent tests using threads or the `parallel_tests` gem. Test state machines with all possible transitions. Use FactoryBot to create complex test scenarios with various states.
   </Tab>
 </Tabs>
