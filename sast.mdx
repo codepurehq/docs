@@ -1,90 +1,265 @@
 ---
-title: "Static Application Security Testing (SAST)"
-sidebarTitle: "SAST"
-description: "Learn how Codepure’s high-speed SAST engine finds and fixes vulnerabilities in your source code."
-icon: "shield-alt"
-iconType: "solid"
+title: 'Static Application Security Testing (SAST)'
+description: 'Comprehensive source code security analysis with Codepure SAST.'
 ---
 
-## What is Codepure SAST?
+## Overview
 
-Static Application Security Testing (SAST) is a "white-box" security testing method that scans your application's source code to find vulnerabilities *before* it's ever run.
+Static Application Security Testing (SAST) is a white-box security testing methodology that analyzes source code, bytecode, or binary code to identify security vulnerabilities without executing the application. Codepure's SAST solution provides deep code analysis capabilities that integrate seamlessly into your development workflow, enabling you to build secure software from the ground up.
 
-Codepure's SAST engine integrates directly into your development workflow, acting like a security-focused linter for your entire codebase. It analyzes the code paths, data flows, and configurations to identify dangerous coding patterns and flaws that could lead to a breach.
+## What is SAST?
 
----
+Codepure's SAST engine performs comprehensive security analysis of your application's source code during the development phase. By examining code structure, data flows, and control flows, SAST identifies security vulnerabilities, quality issues, and compliance violations before they reach production.
 
-## The "Shift Left" Advantage
+### Core Capabilities
 
-By integrating SAST early in your development lifecycle (a practice known as "shifting left"), you ensure that security is built into your code from the start, not bolted on at the end.
+- **Deep Code Analysis**: Examines code paths, data flows, and control structures
+- **Language-Agnostic Scanning**: Supports 30+ programming languages and frameworks
+- **Incremental Scanning**: Analyzes only changed code for faster feedback
+- **Custom Rule Engine**: Define organization-specific security policies
+- **AI-Powered Detection**: Machine learning models identify complex vulnerability patterns
+- **Developer-Friendly Reporting**: Clear, actionable remediation guidance
 
-* **Find Flaws Early:** Detect vulnerabilities during the coding phase, long before they can reach production.
-* **Lower Remediation Costs:** Fixing a bug is 10-100x cheaper in development than in production.
-* **Empower Developers:** Give your team immediate security feedback so they can learn and write more secure code over time.
+## How SAST Works
 
----
+### Analysis Methodology
 
-## Key Benefits of Codepure's SAST
+Codepure SAST employs multiple analysis techniques for comprehensive coverage:
 
-While many tools run SAST, Codepure's engine is designed for the speed and accuracy modern development teams need.
+#### 1. **Lexical Analysis**
+- Tokenizes source code into meaningful components
+- Identifies dangerous functions and deprecated methods
+- Detects hardcoded secrets and credentials
 
-<CardGroup cols={2}>
-  <Card title="Blazing Fast Scans" icon="bolt">
-    Our core SAST engine is built in **C++23** for maximum speed and efficiency. This means faster scan results that don't slow down your CI/CD pipeline.
-  </Card>
-  <Card title="High-Accuracy, Low Noise" icon="bullseye-arrow">
-    We focus on delivering high-confidence results. By minimizing false positives, your team can focus on fixing real vulnerabilities, not chasing ghosts.
-  </Card>
-  <Card title="Developer-First Remediation" icon="code-merge">
-    We don't just point out problems. Codepure provides clear, actionable guidance—often with code suggestions—on *how* to fix the vulnerability.
-  </Card>
-  <Card title="Seamless CI/CD Integration" icon="cogs">
-    Automate security checks on every commit or pull request. Codepure integrates with your existing CI/CD pipelines to make security an invisible part of your workflow.
-  </Card>
-</CardGroup>
+#### 2. **Syntactic Analysis**
+- Builds Abstract Syntax Trees (AST) of your code
+- Validates code structure and patterns
+- Identifies anti-patterns and insecure constructs
 
----
+#### 3. **Semantic Analysis**
+- Understands code behavior and intent
+- Tracks variable states and transformations
+- Analyzes type safety and memory management
 
-## What Codepure SAST Finds
+#### 4. **Data Flow Analysis**
+- Traces data movement through the application
+- Identifies tainted data sources
+- Tracks data sanitization and validation
 
-Codepure's SAST engine is trained to find a wide variety of vulnerability classes, including many from the **OWASP Top 10**. This provides broad protection against the most common and critical risks.
+#### 5. **Control Flow Analysis**
+- Maps all possible execution paths
+- Identifies unreachable code and dead ends
+- Detects race conditions and timing issues
 
-* **Injection Flaws (A03):** Detects patterns that could lead to [SQL Injection (CWE-89)](/vulnerabilities/sql-injection), [Command Injection (CWE-78)](/vulnerabilities/command-injection), and [EL Injection (CWE-917)](/vulnerabilities/cwe-917).
-* **Cryptographic Failures (A02):** Finds weak algorithms like [CWE-327](/vulnerabilities/cwe-327) or hard-coded secrets like [CWE-259](/vulnerabilities/cwe-259).
-* **Broken Access Control (A01):** Identifies flaws like [Path Traversal (CWE-22)](/vulnerabilities/path-traversal).
-* **Insecure Design (A04):** Catches risky coding patterns like the use of `eval()` or dangerous file uploads ([CWE-434](/vulnerabilities/cwe-434)).
-* **Security Misconfiguration (A05):** Discovers issues like disabling security features or insecure XML parsers ([CWE-611](/vulnerabilities/xxe)).
+### Vulnerability Detection Categories
 
----
+#### **Injection Flaws**
+- **SQL Injection**: Unsanitized database queries
+- **Command Injection**: OS command execution vulnerabilities
+- **LDAP Injection**: Directory service query manipulation
+- **XPath Injection**: XML query vulnerabilities
+- **NoSQL Injection**: Document database vulnerabilities
 
-## Dashboard Guide: Running Your First Scan
+#### **Authentication & Session Management**
+- Weak password policies
+- Insecure session handling
+- Missing authentication checks
+- Privilege escalation paths
+- Broken authentication flows
 
-Running a SAST scan in Codepure is a simple, three-step process.
+#### **Cross-Site Scripting (XSS)**
+- **Reflected XSS**: Immediate execution vulnerabilities
+- **Stored XSS**: Persistent script injection
+- **DOM-based XSS**: Client-side script vulnerabilities
 
-### Step 1: Start Your Scan
+#### **Security Misconfiguration**
+- Hardcoded credentials
+- Insecure default settings
+- Verbose error messages
+- Unnecessary features enabled
+- Missing security headers
 
-From the dashboard, select the project you want to scan. In the project view, choose **SAST** and click **Start Scanning**.
+#### **Sensitive Data Exposure**
+- Unencrypted data transmission
+- Weak cryptographic algorithms
+- Improper key management
+- Data leakage in logs
+- Insufficient data masking
+
+#### **Access Control Issues**
+- **Path Traversal**: Directory traversal vulnerabilities
+- **Insecure Direct Object References**: Unauthorized data access
+- **Missing Function Level Access Control**: Unprotected APIs
+- **CORS Misconfiguration**: Cross-origin resource sharing issues
+
+#### **Business Logic Flaws**
+- Race conditions
+- Time-of-check to time-of-use (TOCTOU)
+- Improper input validation
+- Integer overflow/underflow
+- Buffer overflows
+
+## Why SAST is Critical
+
+### Security Benefits
+
+**Shift-Left Security**
+- Integrate security into the earliest stages of development
+- Reduce the cost of vulnerability remediation by 100x
+- Prevent vulnerabilities from reaching production
+
+**Comprehensive Coverage**
+- Analyze 100% of your codebase
+- Detect vulnerabilities in rarely executed code paths
+- Identify issues in third-party integrations
+
+**Continuous Security**
+- Automated scanning on every commit
+- Real-time security feedback during development
+- Progressive security improvement over time
+
+### Business Impact
+
+#### **Cost Reduction**
+- **Early Detection**: Fix vulnerabilities when they're 100x cheaper to resolve
+- **Automated Testing**: Reduce manual security review overhead
+- **Prevent Breaches**: Avoid costly security incidents and data breaches
+
+#### **Accelerated Development**
+- **Instant Feedback**: Developers get security insights in real-time
+- **Automated Remediation**: AI-powered fix suggestions
+- **Reduced Rework**: Fewer security issues in later stages
+
+#### **Compliance Assurance**
+- Meet regulatory requirements (GDPR, HIPAA, PCI DSS)
+- Satisfy security audit requirements
+- Demonstrate due diligence in software security
+
+## Supported Technologies
+
+### Programming Languages
+
+**Web Technologies**
+- JavaScript/TypeScript (Node.js, React, Angular, Vue)
+- Python (Django, Flask, FastAPI)
+- PHP (Laravel, Symfony, WordPress)
+- Ruby (Rails, Sinatra)
+
+**Enterprise Languages**
+- Java (Spring, Struts, JSF)
+- C# (.NET Core, ASP.NET)
+- Go
+- Scala
+- Kotlin
+
+**System Languages**
+- C/C++
+- Rust
+- Swift
+- Objective-C
+
+**Mobile Development**
+- Android (Java/Kotlin)
+- iOS (Swift/Objective-C)
+- React Native
+- Flutter/Dart
+
+**Infrastructure as Code**
+- Terraform
+- CloudFormation
+- Ansible
+- Kubernetes YAML
+
+### Frameworks and Libraries
+
+Codepure maintains an extensive database of framework-specific security rules:
+- Spring Security patterns
+- Django security middleware
+- Express.js security configurations
+- React security best practices
+- And 100+ more frameworks
+
+## Using Codepure SAST
+
+### Quick Start Guide
+
+#### 1. Initiate Scan
+
+Configure and launch your SAST analysis:
 
 <Frame>
   <img src="/assets/sast2.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-### Step 2: Triage Vulnerabilities
+**Steps:**
+- Navigate to your project dashboard
+- Select the repository or upload code
+- Choose **SAST** from the scanner options
+- Configure scan parameters:
+  - Select rule sets (OWASP, CWE, Custom)
+  - Set severity thresholds
+  - Choose incremental or full scan
+- Click **Start Scanning** to begin analysis
 
-When the scan finishes, click the project name to go to the results dashboard. Click **Full Result** to view all findings. You can use the filters to sort by severity, file, or vulnerability type (e.g., CWE, OWASP, PCI).
+#### 2. Review Results
+
+Access detailed vulnerability findings with contextual information:
 
 <Frame>
   <img src="/assets/sast-1.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-### Step 3: Remediate and Resolve
+**Understanding Results:**
+- **Severity Levels**: Critical, High, Medium, Low, Informational
+- **Confidence Scores**: Likelihood of true positive
+- **CWE Mapping**: Common Weakness Enumeration classification
+- **OWASP Alignment**: Top 10 category mapping
+- **Compliance Tags**: PCI DSS, HIPAA, GDPR relevance
 
-Click **Open** on any vulnerability to see the in-depth details. On the right-hand side, the **Remediation** tab provides clear, actionable guidance on how to fix the issue, often with secure code examples.
+**Filtering Options:**
+- By severity level
+- By vulnerability type (CWE category)
+- By compliance standard (OWASP, PCI, ISO)
+- By file or component
+- By introduction date
+- By developer/team
 
-Once you have applied the fix in your source code, you can change the vulnerability's status to **Fixed** in the dashboard.
+#### 3. Remediate Vulnerabilities
+
+Get actionable fix guidance with code examples:
 
 <Frame>
   <img src="/assets/sast-sqli.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-By following this "Scan, Triage, Remediate" loop, you can systematically reduce your application's security risk with each development cycle.
+**Remediation Features:**
+- **Detailed Description**: Understanding the vulnerability
+- **Attack Scenario**: How the vulnerability could be exploited
+- **Code Examples**: Vulnerable vs. secure code patterns
+- **Fix Suggestions**: Step-by-step remediation guidance
+- **Auto-Fix**: One-click fixes for common issues (where applicable)
+- **Verification**: Re-scan to confirm successful remediation
+
+### Advanced Features
+
+#### Incremental Scanning
+
+Optimize scan times with intelligent incremental analysis:
+- Scans only modified code and dependencies
+- Maintains security context across scans
+- Reduces scan time by up to 90%
+- Perfect for CI/CD integration
+
+#### Custom Rule Creation
+
+Define organization-specific security policies:
+
+```yaml
+custom_rule:
+  name: "Sensitive Data in Logs"
+  severity: "HIGH"
+  languages: ["java", "python", "javascript"]
+  pattern: |
+    log.*(password|token|secret|api_key)
+  message: "Sensitive data should not be logged"
+  remediation: "Remove or mask sensitive data before logging"
