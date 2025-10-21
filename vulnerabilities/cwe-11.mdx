@@ -123,6 +123,12 @@ This is a **deployment and configuration** issue common across many frameworks. 
     export FLASK_DEBUG=1
     flask run --host=0.0.0.0
     ```
+    ```python
+    # app.py (Alternative dangerous way if using app.run directly)
+    if __name__ == '__main__':
+        # DANGEROUS: Never run with debug=True in production.
+        app.run(debug=True, host='0.0.0.0')
+    ```
 
     #### Mitigation and Best Practices
     * **Django:** Set `DEBUG = False` in production `settings.py`. Use environment variables or separate settings files (e.g., `production_settings.py`) to manage this. Configure `LOGGING` and custom error pages (`500.html`, `404.html`).
@@ -155,7 +161,7 @@ This is a **deployment and configuration** issue common across many frameworks. 
     #### Vulnerable Scenario 1: `include-stacktrace=always`
     ```properties
     # application.properties (Production)
-    # DANGEROUS: Shows full stack trace.
+    # DANGEROUS: Shows full stack trace in browser/API response.
     server.error.include-stacktrace=always
     # DANGEROUS: Running with development profile active in prod.
     # spring.profiles.active=development
@@ -275,14 +281,18 @@ This is a **deployment and configuration** issue common across many frameworks. 
     // SECURE: Error handling middleware (place last)
     app.use((err, req, res, next) => {
         const statusCode = err.status || 500;
-        // Log the full error server-side
-        console.error(`[${new Date().toISOString()}] Error: ${err.message}`, err.stack);
+
+        // SECURE: Log the full error server-side
+        console.error(`[${new Date().toISOString()}] ${statusCode} ${req.method} ${req.url} Error: ${err.message}`);
+        console.error(err.stack); // Log stack trace
 
         res.status(statusCode);
-        // Send generic response in production, details otherwise
+
+        // SECURE: Send generic response in production
         if (isProd) {
             res.json({ message: "An internal server error occurred." });
         } else {
+            // Development: Send more details
             res.json({ message: err.message, stack: err.stack });
         }
     });
