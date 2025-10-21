@@ -103,6 +103,10 @@
     {
       "group": "A04:2021 – Insecure Design",
       "pages": [
+        "vulnerabilities/cwe-209",
+        "vulnerabilities/cwe-434",
+        "vulnerabilities/cwe-209",
+        "vulnerabilities/cwe-209",
         "vulnerabilities/cwe-209"
       ]
     },

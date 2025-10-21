@@ -1,0 +1,689 @@
+---
+title: "Unrestricted Upload of File with Dangerous Type"
+sidebarTitle: "Unsafe File Upload (CWE-434)"
+description: "Mitigation for allowing uploads of dangerous file types (e.g., .php, .jsp, .exe) leading to code execution or XSS."
+icon: "file-arrow-up"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application allows users to upload files without sufficiently restricting the **file type**, **file content**, or **storage location**. Attackers can upload malicious files disguised as benign ones (e.g., a PHP script named `avatar.jpg.php` or `shell.php` saved as `image.gif`). If the server later executes or serves this file incorrectly, it can lead to **Remote Code Execution (RCE)**, Cross-Site Scripting (XSS), or Denial of Service (DoS). 📁💣
+
+---
+
+## Business Impact
+
+Unrestricted file uploads are extremely dangerous:
+* **Remote Code Execution:** Uploading and executing a web shell (e.g., `.php`, `.jsp`, `.aspx`) grants the attacker full control over the server.
+* **Cross-Site Scripting (XSS):** Uploading HTML or SVG files containing JavaScript can lead to stored XSS attacks against other users who view the file.
+* **Denial of Service:** Uploading extremely large files or files designed to crash parsers (e.g., "zip bombs") can exhaust server resources.
+* **Phishing/Malware Distribution:** The site can be used to host malicious files targeting users.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-434](https://cwe.mitre.org/data/definitions/434.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design
+  **Severity:** Critical (if RCE is possible)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a common design flaw where developers don't fully consider the implications of file uploads. Robust defense requires multiple layers:
+1.  **Strict Allow-list Validation:** Only permit specific, safe file extensions (e.g., `.jpg`, `.png`, `.pdf`). **Never** rely on a block-list.
+2.  **Content Type Verification:** Check the `Content-Type` header, but **do not trust it solely**. Validate it against the extension.
+3.  **File Content Inspection:** Use libraries (like `python-magic`, `Apache Tika`) to verify the file's actual content matches the claimed type (e.g., ensure a `.jpg` file actually contains JPEG data).
+4.  **Rename Files:** Store uploaded files with a randomly generated filename and without the original extension. Store the original filename and content type separately in a database if needed.
+5.  **Secure Storage Location:** Store uploaded files **outside** the web root or in a directory where server-side script execution is disabled (e.g., via `.htaccess` or Nginx config).
+6.  **Serve Files Securely:** Serve files with the correct `Content-Type` and add `Content-Disposition: attachment` to force download for potentially risky types. Consider using a separate domain or CDN for user uploads.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Handling `request.FILES` in Django or `request.files` in Flask without proper validation.
+
+    #### Vulnerable Scenario 1: Basic Upload without Validation
+    ```python
+    # views/upload.py
+    from django.core.files.storage import default_storage
+
+    def upload_profile_picture(request):
+        if request.method == 'POST' and request.FILES.get('profile_pic'):
+            file = request.FILES['profile_pic']
+            # DANGEROUS: No validation of filename, extension, or content type.
+            # An attacker could upload "shell.php" disguised as "image.jpg".
+            # If saved within webroot with original name, it could be executed.
+            filename = default_storage.save(file.name, file)
+            # ... update user profile with filename ...
+            return HttpResponse("Upload successful")
+        return render(request, 'upload_form.html')
+    ```
+
+    #### Vulnerable Scenario 2: Relying Only on Content-Type Header
+    ```python
+    # views/upload_content_type.py
+    def upload_document(request):
+        if request.method == 'POST' and request.FILES.get('document'):
+            file = request.FILES['document']
+            # DANGEROUS: Content-Type header can be easily spoofed by attacker.
+            # Attacker uploads shell.php but sets Content-Type to application/pdf.
+            if file.content_type == 'application/pdf':
+                filename = default_storage.save(file.name, file)
+                return HttpResponse("PDF Uploaded")
+            else:
+                return HttpResponse("Invalid file type", status=400)
+        # ...
+    ```
+
+    #### Mitigation and Best Practices
+    Validate the extension against an allow-list. Use a library like `python-magic` to check the actual file content. Generate a random filename. Store the file outside the web root or in a non-executable location.
+
+    #### Secure Code Example
+    ```python
+    # views/upload_secure.py
+    import os
+    import uuid
+    import magic # Requires python-magic library
+    from django.conf import settings
+    from django.core.files.storage import FileSystemStorage
+
+    # SECURE: Define allowed extensions and MIME types
+    ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif'}
+    ALLOWED_MIME_TYPES = {'image/jpeg', 'image/png', 'image/gif'}
+
+    # SECURE: Configure storage outside web root
+    upload_storage = FileSystemStorage(location=settings.MEDIA_ROOT_SECURE) # Define in settings.py
+
+    def upload_secure(request):
+        if request.method == 'POST' and request.FILES.get('picture'):
+            file = request.FILES['picture']
+
+            # 1. Check extension
+            ext = os.path.splitext(file.name)[1].lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                return HttpResponse("Invalid file extension", status=400)
+
+            # 2. Check Content-Type header (less reliable, but a layer)
+            if file.content_type not in ALLOWED_MIME_TYPES:
+                 return HttpResponse("Invalid reported MIME type", status=400)
+
+            # 3. Check file content using python-magic
+            # Read a chunk to avoid loading huge files into memory
+            file_content_chunk = file.read(2048) # Read first 2KB
+            file.seek(0) # Reset file pointer
+            mime_type = magic.from_buffer(file_content_chunk, mime=True)
+            if mime_type not in ALLOWED_MIME_TYPES:
+                return HttpResponse("Invalid file content detected", status=400)
+
+            # 4. Generate random filename
+            random_filename = f"{uuid.uuid4()}{ext}"
+
+            # 5. Save to secure location
+            filename = upload_storage.save(random_filename, file)
+
+            # Store mapping of random_filename to original_filename in DB if needed
+            # ...
+            return HttpResponse(f"Secure upload successful: {filename}")
+        # ...
+    ```
+
+    #### Testing Strategy
+    Attempt to upload files with disallowed extensions (`.php`, `.html`, `.exe`). Attempt to upload files with double extensions (`.jpg.php`). Attempt to upload a valid PHP script renamed to `.jpg`. Attempt to upload a file with a correct extension but incorrect content (e.g., text file named `.png`). Verify that all attempts except legitimate, allowed files are rejected. Check the storage location and filenames on the server.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Handling `MultipartFile` in Spring MVC without validation.
+
+    #### Vulnerable Scenario 1: Saving with Original Filename
+    ```java
+    // controller/UploadController.java
+    import org.springframework.web.multipart.MultipartFile;
+    import java.nio.file.*;
+
+    @PostMapping("/upload-avatar")
+    public String uploadAvatar(@RequestParam("avatar") MultipartFile file) throws IOException {
+        if (!file.isEmpty()) {
+            // DANGEROUS: Uses original filename directly.
+            // If uploaded file is "shell.jsp", it's saved as "shell.jsp".
+            // If UPLOAD_DIR is within web root and executable, leads to RCE.
+            Path destinationFile = Paths.get(UPLOAD_DIR).resolve(
+                Paths.get(file.getOriginalFilename())).normalize();
+
+            Files.copy(file.getInputStream(), destinationFile, StandardCopyOption.REPLACE_EXISTING);
+            // ... update user ...
+            return "redirect:/profile";
+        }
+        return "uploadError";
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Basic Content-Type Check
+    ```java
+    // controller/UploadController.java
+    @PostMapping("/upload-report")
+    public String uploadReport(@RequestParam("report") MultipartFile file) throws IOException {
+        // DANGEROUS: Relies only on Content-Type header, which is user-controlled.
+        String contentType = file.getContentType();
+        if (contentType != null && contentType.equals("application/pdf")) {
+            Path destinationFile = Paths.get(UPLOAD_DIR).resolve( /* ... use random name ... */);
+            Files.copy(file.getInputStream(), destinationFile);
+            return "redirect:/reports";
+        } else {
+             return "uploadError?type=invalid";
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Validate file extension against an allow-list. Use a library like Apache Tika to detect the actual file type from content. Generate a random filename (e.g., using `UUID.randomUUID()`). Store files outside the web root or in a non-executable directory.
+
+    #### Secure Code Example
+    ```java
+    // controller/UploadControllerSecure.java
+    import org.springframework.web.multipart.MultipartFile;
+    import org.apache.tika.Tika; // Requires Apache Tika dependency
+    import java.nio.file.*;
+    import java.util.*;
+
+    @PostMapping("/upload-secure")
+    public String uploadSecure(@RequestParam("file") MultipartFile file) throws IOException {
+        // SECURE: Define allowed types and extensions
+        List<String> allowedExtensions = Arrays.asList(".jpg", ".png", ".gif");
+        List<String> allowedMimeTypes = Arrays.asList("image/jpeg", "image/png", "image/gif");
+        String UPLOAD_DIR_SECURE = "/path/outside/webroot/uploads/"; // Configure securely
+
+        if (!file.isEmpty()) {
+            String originalFilename = file.getOriginalFilename();
+            if (originalFilename == null) return "uploadError?name=missing";
+
+            // 1. Check extension
+            String extension = "";
+            int i = originalFilename.lastIndexOf('.');
+            if (i > 0) {
+                extension = originalFilename.substring(i).toLowerCase();
+            }
+            if (!allowedExtensions.contains(extension)) {
+                return "uploadError?ext=invalid";
+            }
+
+            // 2. Check Content-Type header (less reliable)
+            String reportedContentType = file.getContentType();
+            if (reportedContentType == null || !allowedMimeTypes.contains(reportedContentType)) {
+                // Log potential spoofing attempt
+            }
+
+            // 3. Check content using Tika
+            Tika tika = new Tika();
+            String detectedType = tika.detect(file.getInputStream());
+            if (!allowedMimeTypes.contains(detectedType)) {
+                 return "uploadError?content=invalid";
+            }
+
+            // 4. Generate random filename
+            String randomFilename = UUID.randomUUID().toString() + extension;
+
+            // 5. Save to secure location
+            Path destinationFile = Paths.get(UPLOAD_DIR_SECURE).resolve(randomFilename).normalize();
+            // Ensure parent directory exists and has correct permissions
+            Files.createDirectories(destinationFile.getParent());
+            Files.copy(file.getInputStream(), destinationFile);
+
+            // ... associate randomFilename with user/originalFilename in DB ...
+            return "redirect:/success";
+        }
+        return "uploadError?empty=true";
+    }
+    ```
+
+    #### Testing Strategy
+    Attempt uploads similar to the Python tests: disallowed extensions, double extensions, scripts renamed to allowed extensions, files with mismatched content. Verify rejection. Check the server filesystem for storage location and filenames.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Handling `IFormFile` in ASP.NET Core controllers without proper validation.
+
+    #### Vulnerable Scenario 1: Saving with Original Filename
+    ```csharp
+    // Controllers/UploadController.cs
+    public class UploadController : Controller
+    {
+        private readonly IWebHostEnvironment _hostingEnvironment;
+        public UploadController(IWebHostEnvironment hostingEnvironment) { _hostingEnvironment = hostingEnvironment; }
+
+        [HttpPost("UploadAvatar")]
+        public async Task<IActionResult> UploadAvatar(IFormFile avatar)
+        {
+            if (avatar != null && avatar.Length > 0)
+            {
+                // DANGEROUS: Uses user-provided filename directly.
+                // Could contain ".." (Path Traversal) or dangerous extensions (.aspx).
+                var uploadsFolder = Path.Combine(_hostingEnvironment.WebRootPath, "uploads"); // Potentially executable path!
+                var filePath = Path.Combine(uploadsFolder, avatar.FileName);
+
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await avatar.CopyToAsync(stream);
+                }
+                // ...
+                return RedirectToAction("Profile");
+            }
+            return View("UploadError");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Relying on File Extension Only
+    ```csharp
+    // Controllers/UploadController.cs
+    [HttpPost("UploadImage")]
+    public async Task<IActionResult> UploadImage(IFormFile image)
+    {
+        if (image != null && image.Length > 0)
+        {
+            var extension = Path.GetExtension(image.FileName).ToLowerInvariant();
+            var allowedExtensions = new[] { ".jpg", ".png", ".gif" };
+
+            // DANGEROUS: Only checks extension. Attacker uploads shell.aspx renamed to file.jpg.
+            if (!allowedExtensions.Contains(extension))
+            {
+                return View("UploadError", "Invalid file type based on extension.");
+            }
+            var randomFileName = Path.GetRandomFileName() + extension; // Better, but content not checked
+            var filePath = Path.Combine(/* secure path */, randomFileName);
+            // ... save file ...
+            return RedirectToAction("Success");
+        }
+        return View("UploadError");
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Validate the extension against an allow-list. **Crucially, validate the file signature/content** (magic bytes) to ensure the content matches the extension. Generate a random filename. Store outside the web root or in a non-executable location. Use `Path.GetRandomFileName()` or `Guid.NewGuid()` for names.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/UploadControllerSecure.cs
+    using System.ComponentModel.DataAnnotations; // For file signature validation example
+    // Add a utility class or library for file signature validation
+
+    public class UploadControllerSecure : Controller
+    {
+        private readonly string _secureUploadPath = "/path/outside/webroot/uploads"; // Configure securely
+        private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".gif" };
+        private static readonly Dictionary<string, List<byte[]>> FileSignatures = /* Initialize signatures */; // Load signatures
+
+        [HttpPost("UploadSecure")]
+        public async Task<IActionResult> UploadSecure(IFormFile file)
+        {
+            if (file == null || file.Length == 0) return BadRequest("No file uploaded.");
+            // Limit file size (e.g., via attribute [RequestSizeLimit(5 * 1024 * 1024)])
+
+            var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+
+            // 1. Check extension
+            if (string.IsNullOrEmpty(extension) || !AllowedExtensions.Contains(extension))
+            {
+                return BadRequest("Invalid file extension.");
+            }
+
+            // 2. Check file signature (magic bytes)
+            if (!IsValidFileSignature(file, extension))
+            {
+                 return BadRequest("Invalid file content signature.");
+            }
+
+            // 3. Generate random filename
+            var randomFileName = $"{Guid.NewGuid()}{extension}";
+
+            // 4. Save to secure location
+            var filePath = Path.Combine(_secureUploadPath, randomFileName);
+            // Ensure directory exists, handle potential Path Traversal in _secureUploadPath if dynamic
+            Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+
+            // ... save mapping in DB ...
+            return Ok(new { fileName = randomFileName });
+        }
+
+        // Example signature validation (needs a robust implementation)
+        private bool IsValidFileSignature(IFormFile file, string extension)
+        {
+            if (!FileSignatures.ContainsKey(extension)) return false; // Ext not configured
+
+            using (var reader = new BinaryReader(file.OpenReadStream()))
+            {
+                var signatures = FileSignatures[extension];
+                var headerBytes = reader.ReadBytes(signatures.Max(m => m.Length));
+                file.OpenReadStream().Position = 0; // Reset stream position
+
+                return signatures.Any(sig => headerBytes.Take(sig.Length).SequenceEqual(sig));
+            }
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Test uploads with disallowed/double extensions, scripts renamed with allowed extensions, and files with mismatched content signatures. Verify rejection. Check server filesystem for storage location and random filenames.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Handling the `$_FILES` superglobal without proper validation in plain PHP, or `UploadedFile` object in Laravel/Symfony.
+
+    #### Vulnerable Scenario 1: Moving with Original Name to Web Root
+    ```php
+    <?php
+    // upload.php (Plain PHP)
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/'; // DANGEROUS: Inside web root
+    if (isset($_FILES['userFile']) && $_FILES['userFile']['error'] === UPLOAD_ERR_OK) {
+        $tmpName = $_FILES['userFile']['tmp_name'];
+        // DANGEROUS: Using client-provided name directly.
+        $fileName = basename($_FILES['userFile']['name']);
+        $destination = $uploadDir . $fileName;
+
+        // DANGEROUS: Moves file (e.g., shell.php) into executable directory.
+        if (move_uploaded_file($tmpName, $destination)) {
+            echo "File uploaded successfully.";
+            // Attacker can now navigate to /uploads/shell.php
+        } else {
+            echo "Error moving file.";
+        }
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Basic Extension Check Only
+    ```php
+    // upload_ext_check.php
+    $allowedExts = ['jpg', 'png', 'gif'];
+    $fileName = $_FILES['userFile']['name'];
+    $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+
+    // DANGEROUS: Only checks extension. Attacker uploads shell.php renamed to image.jpg.
+    if (in_array($extension, $allowedExts)) {
+        // ... proceed to move file ...
+    } else {
+        echo "Invalid extension.";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Validate extension against an allow-list. Use `finfo_file` (or `mime_content_type`) to check the actual MIME type from content. Generate a random filename. Use `move_uploaded_file()` but save **outside** the web root or to a non-executable directory (configure via `.htaccess` or server config).
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // upload_secure.php
+    $allowedExts = ['jpg', 'jpeg', 'png', 'gif'];
+    $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    // SECURE: Define upload dir outside web root
+    $secureUploadDir = '/var/www/storage/uploads/'; // Example path
+
+    if (isset($_FILES['userFile']) && $_FILES['userFile']['error'] === UPLOAD_ERR_OK) {
+        $tmpName = $_FILES['userFile']['tmp_name'];
+        $originalName = $_FILES['userFile']['name'];
+        $fileSize = $_FILES['userFile']['size']; // Check size limit
+
+        // 1. Check extension
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowedExts)) {
+            die("Invalid file extension.");
+        }
+
+        // 2. Check MIME type from content
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $tmpName);
+        finfo_close($finfo);
+        if (!in_array($mimeType, $allowedMimeTypes)) {
+            die("Invalid file content type detected.");
+        }
+
+        // 3. Generate random filename
+        $randomName = bin2hex(random_bytes(16)) . '.' . $extension;
+
+        // 4. Save to secure location
+        $destination = $secureUploadDir . $randomName;
+        // Ensure directory exists and has correct permissions
+        if (!is_dir($secureUploadDir)) { mkdir($secureUploadDir, 0750, true); }
+
+        if (move_uploaded_file($tmpName, $destination)) {
+            echo "File uploaded securely as " . $randomName;
+            // Store mapping of $randomName to $originalName in DB if needed
+        } else {
+            echo "Error saving uploaded file.";
+        }
+    } else {
+        // Handle upload errors
+        echo "Upload failed. Error code: " . ($_FILES['userFile']['error'] ?? 'Unknown');
+    }
+    ?>
+    ```
+
+    #### Testing Strategy
+    Test uploads with disallowed/double extensions, scripts renamed with allowed extensions, and files with mismatched content (`finfo_file`). Verify rejection. Check server filesystem for storage location and random filenames. Ensure the storage directory is not accessible via web browser and does not have execute permissions.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using libraries like `multer` or `formidable` without configuring proper validation and storage.
+
+    #### Vulnerable Scenario 1: `multer` with Original Filename in Web Root
+    ```javascript
+    // app.js
+    const express = require('express');
+    const multer = require('multer');
+    const path = require('path');
+    const app = express();
+
+    // DANGEROUS: Saving to './public/uploads' (web accessible) using original name.
+    const storage = multer.diskStorage({
+        destination: function (req, file, cb) {
+            cb(null, './public/uploads/'); // In web root!
+        },
+        filename: function (req, file, cb) {
+            // DANGEROUS: Uses file.originalname directly.
+            cb(null, file.originalname);
+        }
+    });
+    const upload = multer({ storage: storage });
+
+    app.post('/upload-profile-pic', upload.single('profilePic'), (req, res) => {
+        // Attacker uploads shell.js, saved as shell.js in /uploads/
+        // Can potentially be executed via SSTI elsewhere or if Node serves it directly.
+        res.send(`Uploaded ${req.file.filename}`);
+    });
+    // Need express.static('public') configured as well
+    ```
+
+    #### Vulnerable Scenario 2: Filter Based Only on Extension
+    ```javascript
+    // app.js (multer setup)
+    const fileFilter = (req, file, cb) => {
+        // DANGEROUS: Only checks extension. Attacker renames shell.php to image.jpg.
+        if (file.originalname.match(/\.(jpg|jpeg|png)$/i)) {
+            cb(null, true); // Accept file
+        } else {
+            cb(new Error('Invalid file type based on extension!'), false); // Reject file
+        }
+    };
+    const uploadExtCheck = multer({ storage: /* use random name */, fileFilter: fileFilter });
+    // ... route uses uploadExtCheck ...
+    ```
+
+    #### Mitigation and Best Practices
+    Configure `multer`'s `diskStorage` to generate a random filename (e.g., using `crypto.randomBytes` or `uuid`). Set the `destination` outside the web root. Implement a `fileFilter` function that checks the extension against an allow-list AND uses a library like `file-type` or `mmmagic` to validate the file's magic bytes/content.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure multer setup)
+    const crypto = require('crypto');
+    const path = require('path');
+    const multer = require('multer');
+    const { fileTypeFromBuffer } = require('file-type'); // Requires 'file-type' package (async)
+    const fs = require('fs/promises'); // For reading buffer
+
+    const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif'];
+    const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif'];
+    const SECURE_UPLOAD_DIR = '/path/outside/webroot/uploads'; // Configure securely
+
+    const secureStorage = multer.diskStorage({
+        destination: function (req, file, cb) {
+            // SECURE: Destination outside web root
+            // Ensure this directory exists and has correct permissions
+            fs.mkdir(SECURE_UPLOAD_DIR, { recursive: true })
+              .then(() => cb(null, SECURE_UPLOAD_DIR))
+              .catch(err => cb(err));
+        },
+        filename: function (req, file, cb) {
+            // SECURE: Generate random filename, keep original extension
+            const ext = path.extname(file.originalname).toLowerCase();
+            cb(null, crypto.randomBytes(16).toString('hex') + ext);
+        }
+    });
+
+    const secureFileFilter = async (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+
+        // 1. Check extension allow-list
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+            return cb(new Error('Invalid file extension'), false);
+        }
+
+        // 2. Check content type using file-type (requires reading part of the file)
+        // Note: Multer streams to temp file first usually. Access req.file.buffer if using memoryStorage
+        // or read the temp file if using diskStorage before it's moved.
+        // This example assumes we can access the file stream or buffer somehow (might need adjustments).
+        // A simpler but less secure check is just on file.mimetype provided by browser.
+
+        // Simpler check on reported mimetype (less secure):
+        if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+             return cb(new Error('Invalid reported MIME type'), false);
+        }
+
+        // More secure content check (example - might need refinement based on how multer handles temp files):
+        // const buffer = await fs.readFile(file.path); // Read temp file if on disk
+        // const typeInfo = await fileTypeFromBuffer(buffer);
+        // if (!typeInfo || !ALLOWED_MIME_TYPES.includes(typeInfo.mime)) {
+        //     return cb(new Error('Invalid file content detected'), false);
+        // }
+
+        cb(null, true); // Accept file
+    };
+
+    const uploadSecure = multer({ storage: secureStorage, fileFilter: secureFileFilter });
+
+    app.post('/upload-secure', uploadSecure.single('secureFile'), (req, res) => {
+        if (!req.file) {
+           return res.status(400).send("Upload failed validation.");
+        }
+        res.send(`File uploaded securely as ${req.file.filename}`);
+        // Store mapping req.file.filename -> file.originalname in DB if needed
+    });
+    ```
+
+    #### Testing Strategy
+    Test uploads with disallowed/double extensions, scripts renamed with allowed extensions, and files with mismatched content type headers or magic bytes. Verify rejection. Check server filesystem for storage location (outside web root) and random filenames.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Handling file uploads with Rails (`ActionDispatch::Http::UploadedFile`) without proper validation, often using libraries like `CarrierWave` or `ActiveStorage`. Misconfiguration is the primary risk.
+
+    #### Vulnerable Scenario 1: Basic Save with Original Name
+    ```ruby
+    # app/controllers/uploads_controller.rb
+    class UploadsController < ApplicationController
+      def create
+        uploaded_io = params[:user_file]
+        if uploaded_io
+          # DANGEROUS: Saving with original filename to public path.
+          upload_path = Rails.root.join('public', 'uploads', uploaded_io.original_filename)
+          File.open(upload_path, 'wb') do |file|
+            file.write(uploaded_io.read)
+          end
+          # If uploads/ is served directly and contains shell.php...
+          redirect_to root_path, notice: "File uploaded."
+        else
+          redirect_to root_path, alert: "No file selected."
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: CarrierWave/ActiveStorage without Validation
+    Using an uploader without defining `extension_allowlist` (CarrierWave) or `content_type` validation (ActiveStorage).
+    ```ruby
+    # app/uploaders/avatar_uploader.rb (CarrierWave)
+    class AvatarUploader < CarrierWave::Uploader::Base
+      storage :file
+      # DANGEROUS: No allow-list defined. Any file type can be uploaded.
+      # def extension_allowlist
+      #   %w(jpg jpeg gif png)
+      # end
+    end
+
+    # app/models/user.rb (ActiveStorage)
+    class User < ApplicationRecord
+      has_one_attached :avatar
+      # DANGEROUS: No validation on content type or extension.
+      # validates :avatar, content_type: ['image/png', 'image/jpeg'] # This is missing
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **ActiveStorage:** Add validations for `content_type` and potentially `filename` to your model.
+    * **CarrierWave:** Implement `extension_allowlist` and consider `content_type_allowlist`. Implement `filename` method to generate random names.
+    * **Manual:** Validate extension, use `Marcel` gem (used by ActiveStorage) or `ruby-filemagic` to check content type. Save with random names outside the web root or configure server to not execute scripts in upload directory.
+
+    #### Secure Code Example
+    ```ruby
+    # app/models/user.rb (ActiveStorage - Secure)
+    class User < ApplicationRecord
+      has_one_attached :avatar
+
+      # SECURE: Validate content type and size.
+      validates :avatar, content_type: { in: ['image/png', 'image/jpeg', 'image/gif'],
+                                         message: 'must be a valid image format' },
+                         size: { less_than: 5.megabytes,
+                                 message: 'should be less than 5MB' }
+      # ActiveStorage saves with random keys by default, which is good.
+      # Ensure storage service (e.g., :local) is configured securely (outside web root if possible).
+    end
+
+    # app/uploaders/document_uploader.rb (CarrierWave - Secure)
+    class DocumentUploader < CarrierWave::Uploader::Base
+      storage :file # Or :fog for cloud storage
+
+      # SECURE: Store files outside public directory.
+      def store_dir
+        "uploads/#{model.class.to_s.underscore}/#{mounted_as}/#{model.id}" # Path relative to Rails.root or storage root
+      end
+
+      # SECURE: Allow-list specific safe extensions.
+      def extension_allowlist
+        %w(pdf doc docx txt)
+      end
+
+      # SECURE: Generate a random unique filename.
+      def filename
+        "#{secure_token}.#{file.extension}" if original_filename.present?
+      end
+
+      protected
+      def secure_token
+        var = :"@#{mounted_as}_secure_token"
+        model.instance_variable_get(var) or model.instance_variable_set(var, SecureRandom.uuid)
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Test uploads with disallowed extensions, double extensions, scripts renamed with allowed extensions, and files with mismatched content types. Verify rejection. Check ActiveStorage/CarrierWave configurations for validation rules (`content_type`, `extension_allowlist`) and secure filename generation. Inspect storage location.
+  </Tab>
+</Tabs>
