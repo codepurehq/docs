@@ -1,0 +1,603 @@
+---
+title: "Weak Password Recovery Mechanism for Forgotten Password"
+sidebarTitle: "Weak Password Recovery (CWE-640)"
+description: "Mitigation for insecure password reset features, like guessable tokens, security questions, or leaking information."
+icon: "key-skeleton-left-right"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when the mechanism for users to **recover or reset forgotten passwords** is insecure. Common weaknesses include:
+* **Predictable Reset Tokens:** Generating password reset tokens that are short, based on guessable information (like username or timestamp), or have insufficient randomness, allowing attackers to predict or brute-force them.
+* **Token Transmission over Insecure Channels:** Sending reset tokens or temporary passwords via unencrypted email (HTTP links) or SMS.
+* **Information Leakage:** The recovery process reveals whether a username or email exists in the system ("User Enumeration").
+* **Weak Security Questions:** Relying on easily guessable or publicly available answers to "secret questions".
+* **Token Reuse/No Expiry:** Reset tokens do not expire or can be reused after the password has been reset.
+* **Not Invalidating Other Sessions:** Failing to log the user out of other active sessions after a password reset. 🤔❓🔑
+
+---
+
+## Business Impact
+
+Weak password recovery mechanisms provide a direct path for attackers to compromise user accounts:
+* **Account Takeover:** Attackers can guess or predict reset tokens/answers, allowing them to set a new password and take over the account.
+* **User Enumeration:** Attackers can determine valid usernames or emails registered with the service.
+* **Loss of Trust:** Users rely on secure recovery processes; flaws severely damage trust.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-640](https://cwe.mitre.org/data/definitions/640.html)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Password recovery typically involves generating a **secure, random, single-use, time-limited token**, sending it to the user via a secure channel (usually email with an HTTPS link), and requiring the user to present that token to set a new password. Frameworks often provide built-in modules for this.
+
+**Key Remediation Principles:**
+1.  **Use Strong Tokens:** Generate long (e.g., 32+ bytes), cryptographically random tokens (CSPRNG). Store a hash of the token in the database, not the token itself.
+2.  **Set Token Expiry:** Tokens should expire after a short period (e.g., 15-60 minutes). Store the expiry timestamp with the token hash.
+3.  **Single Use:** Invalidate the token immediately after it is successfully used.
+4.  **Secure Transmission:** Send reset links via email using HTTPS URLs. Avoid sending temporary passwords directly.
+5.  **Avoid User Enumeration:** Respond with a generic message like "If an account exists for this email, a reset link has been sent" regardless of whether the email was found.
+6.  **Avoid Weak Security Questions:** Do not use easily guessable questions. Prefer token-based email/SMS reset.
+7.  **Invalidate Sessions:** Log the user out of all other active sessions upon successful password reset.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using Django's built-in `PasswordResetView` and associated forms/tokens, or custom Flask logic.
+
+    #### Vulnerable Scenario 1: Predictable Token Generation (Custom)
+    ```python
+    # accounts/utils.py
+    import hashlib
+    import time
+    from django.conf import settings
+
+    def generate_weak_reset_token(user):
+        # DANGEROUS: Token based on predictable data (user ID, timestamp)
+        # and a weak hash (MD5) without strong randomness.
+        timestamp = int(time.time())
+        data_to_hash = f"{user.id}:{user.password}:{timestamp}:{settings.SECRET_KEY}"
+        token = hashlib.md5(data_to_hash.encode()).hexdigest()
+        # Assume token and timestamp stored temporarily
+        return token, timestamp
+    ```
+
+    #### Vulnerable Scenario 2: Token Sent Over HTTP
+    The email template for the password reset link uses an `http://` URL.
+    ```html
+    Please click here to reset your password:
+    <a href="http://{{ domain }}{% url 'password_reset_confirm' uidb64=uid token=token %}">Reset Link</a>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Use the built-in authentication views (`PasswordResetView`, `PasswordResetConfirmView`, etc.) which rely on `django.contrib.auth.tokens.PasswordResetTokenGenerator`. This generator creates secure, time-limited, single-use tokens based on user state and the application's `SECRET_KEY`.
+    * Ensure email templates use `https://` links.
+
+    #### Secure Code Example
+    ```python
+    # urls.py (Using Django's built-in views)
+    from django.contrib.auth import views as auth_views
+
+    urlpatterns = [
+        # SECURE: Use Django's built-in password reset flow.
+        path('reset_password/',
+             auth_views.PasswordResetView.as_view(template_name="accounts/password_reset.html"),
+             name="reset_password"),
+        path('reset_password/sent/',
+             auth_views.PasswordResetDoneView.as_view(template_name="accounts/password_reset_sent.html"),
+             name="password_reset_done"),
+        path('reset/<uidb64>/<token>/',
+             auth_views.PasswordResetConfirmView.as_view(template_name="accounts/password_reset_form.html"),
+             name="password_reset_confirm"),
+        path('reset_password/complete/',
+             auth_views.PasswordResetCompleteView.as_view(template_name="accounts/password_reset_done.html"),
+             name="password_reset_complete"),
+    ]
+    ```
+    ```html
+    Please click here to reset your password:
+    <a href="https://{{ domain }}{% url 'password_reset_confirm' uidb64=uid token=token %}">Reset Link</a>
+    ```
+
+    #### Testing Strategy
+    Review the token generation logic. Is it using cryptographically secure randomness (`secrets.token_urlsafe`) or a robust framework mechanism (like Django's)? Check token length and expiry. Attempt to reuse a reset token after successfully resetting the password. Check the reset link email for `http://` vs `https://`. Test the "forgot password" form with known and unknown email addresses; verify the response message is generic and doesn't reveal account existence.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Implementing password reset logic manually or using libraries without proper token generation, storage, and validation.
+
+    #### Vulnerable Scenario 1: Token Based on Timestamp/UserID
+    ```java
+    // service/PasswordResetService.java
+    import java.time.Instant;
+    import java.util.UUID; // UUIDs are not cryptographically random enough alone
+
+    public String generateWeakToken(User user) {
+        // DANGEROUS: Combining predictable elements. Version 1 UUIDs are time-based.
+        // Even Version 4 UUIDs are not designed as secure tokens.
+        // Needs a cryptographically secure random source.
+        long timestamp = Instant.now().toEpochMilli();
+        String simpleToken = user.getId() + ":" + timestamp + ":" + UUID.randomUUID().toString();
+        // Assume this is maybe hashed weakly or stored directly
+        return simpleToken; // Or Base64.getEncoder().encodeToString(simpleToken.getBytes())
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Security Questions
+    Using security questions with easily guessable answers.
+    ```java
+    // controller/PasswordResetController.java
+    @PostMapping("/reset-by-question")
+    public String resetByQuestion(@RequestParam String username, @RequestParam String answer) {
+        User user = userService.findByUsername(username);
+        // DANGEROUS: "Mother's maiden name", "City of birth" etc., are often public info.
+        if (user != null && user.getSecurityAnswer().equalsIgnoreCase(answer)) {
+            // Allow password reset without strong verification
+            String temporaryPassword = generateTemporaryPassword(); // Also risky if weak
+            userService.updatePassword(user, temporaryPassword); // Send temp pass via email?
+            return "resetSuccess"; // Attacker guesses answer, gets access
+        }
+        return "resetFailed";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Generate tokens using `java.security.SecureRandom`. Create a long (e.g., 32+ bytes) random byte array and Base64-encode it.
+    * Store a **hash** of the token (e.g., SHA-256) in the database along with the user ID and an expiry timestamp.
+    * When the user clicks the link, hash the received token and compare it against the stored hash. Check expiry. Invalidate upon use.
+    * **Avoid security questions.** Use email or SMS verification with secure tokens.
+    * Use HTTPS links in emails.
+
+    #### Secure Code Example
+    ```java
+    // service/PasswordResetService.java (Secure Token Generation)
+    import java.security.MessageDigest;
+    import java.security.NoSuchAlgorithmException;
+    import java.security.SecureRandom;
+    import java.time.Instant;
+    import java.util.Base64;
+    // Assume PasswordResetToken entity/repository exists
+
+    @Service
+    public class PasswordResetService {
+        private SecureRandom secureRandom = new SecureRandom();
+        private static final long EXPIRY_DURATION_MINUTES = 30;
+
+        public String generateAndStoreResetToken(User user) throws NoSuchAlgorithmException {
+            // SECURE: Generate cryptographically random bytes.
+            byte[] randomBytes = new byte[32]; // 32 bytes = 256 bits
+            secureRandom.nextBytes(randomBytes);
+            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+
+            // SECURE: Hash the token before storing.
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashedTokenBytes = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            String tokenHash = Base64.getUrlEncoder().withoutPadding().encodeToString(hashedTokenBytes);
+
+            // SECURE: Store hash, user ID, and expiry.
+            Instant expiry = Instant.now().plus(Duration.ofMinutes(EXPIRY_DURATION_MINUTES));
+            PasswordResetToken resetToken = new PasswordResetToken();
+            resetToken.setUserId(user.getId());
+            resetToken.setTokenHash(tokenHash);
+            resetToken.setExpiryDate(expiry);
+            passwordResetTokenRepository.save(resetToken); // Save to DB
+
+            // Return the *original* token (not the hash) to be sent to the user
+            return token;
+        }
+
+        public boolean validateResetToken(String receivedToken, /* user context */) {
+            // 1. Hash the received token using SHA-256
+            // 2. Find the tokenHash in the database for the relevant user
+            // 3. SECURE: Compare hashes using constant-time comparison (MessageDigest.isEqual())
+            // 4. Check if the retrieved token record is expired (expiryDate vs Instant.now())
+            // 5. If valid & not expired, allow reset and DELETE the token record from DB.
+            // ... implementation ...
+             return isValid;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Request multiple password resets and examine the generated tokens. Are they long, random-looking strings? Do they change each time? Check the expiry time. Try using an expired token. Try using the same token twice. Check email links use HTTPS. Test the "forgot password" form with valid/invalid emails and verify generic responses (no user enumeration). Avoid security questions altogether.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using ASP.NET Core Identity's built-in `UserManager<TUser>` methods like `GeneratePasswordResetTokenAsync()` and `ResetPasswordAsync()`.
+
+    #### Vulnerable Scenario 1: Custom Token Generation (Weak)
+    A developer implements a custom token provider or manual token logic using predictable values.
+    ```csharp
+    // Services/CustomTokenProvider.cs
+    public class WeakTokenProvider // Assume implements IUserTwoFactorTokenProvider<TUser> incorrectly or similar
+    {
+        public Task<string> GenerateAsync(string purpose, UserManager<TUser> manager, TUser user)
+        {
+            // DANGEROUS: Token based on easily guessable data.
+            string weakToken = $"{user.Id}-{DateTime.UtcNow.Ticks}"; // Highly predictable
+            // Maybe Base64 encoded, but still weak.
+            return Task.FromResult(Convert.ToBase64String(Encoding.UTF8.GetBytes(weakToken)));
+        }
+        // ValidateAsync would have corresponding weak logic
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Leaking User Existence
+    The "Forgot Password" page returns different messages based on whether the email exists.
+    ```csharp
+    // Pages/Account/ForgotPassword.cshtml.cs
+    public async Task<IActionResult> OnPostAsync()
+    {
+        if (ModelState.IsValid)
+        {
+            var user = await _userManager.FindByEmailAsync(Input.Email);
+            if (user == null || !(await _userManager.IsEmailConfirmedAsync(user)))
+            {
+                // DANGEROUS: Reveals email doesn't exist or isn't confirmed.
+                ModelState.AddModelError(string.Empty, "User not found or email not confirmed.");
+                return Page();
+            }
+            // ... generate token and send email ...
+            return RedirectToPage("./ForgotPasswordConfirmation");
+        }
+        return Page();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use Identity Defaults:** Rely on `UserManager.GeneratePasswordResetTokenAsync()` and `UserManager.ResetPasswordAsync()`. These use Identity's secure, time-limited, signed token generation mechanism (DPAPI based).
+    * **Avoid User Enumeration:** Always return a generic success message on the "Forgot Password" submission page, regardless of whether the user exists.
+
+    #### Secure Code Example
+    ```csharp
+    // Pages/Account/ForgotPassword.cshtml.cs (Secure - Using Identity)
+    using Microsoft.AspNetCore.Identity; // Added namespaces
+    using Microsoft.AspNetCore.Mvc;
+    using Microsoft.AspNetCore.Mvc.RazorPages;
+    using System.Threading.Tasks;
+    // Assume InputModel with Email, UserManager injected
+
+    public class ForgotPasswordModel : PageModel
+    {
+        private readonly UserManager<IdentityUser> _userManager; // Use your user type
+        // Assume IEmailSender _emailSender injected
+
+        [BindProperty]
+        public InputModel Input { get; set; } // Assume has Email property
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByEmailAsync(Input.Email);
+                // SECURE: Check for user but proceed to confirmation regardless
+                // to prevent user enumeration. Only send email if user is valid.
+                if (user != null && await _userManager.IsEmailConfirmedAsync(user))
+                {
+                    // SECURE: Generate token using Identity's secure provider.
+                    var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                    // Ensure token encoding is URL safe if passing directly in URL
+                    // var code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+                    var callbackUrl = Url.Page(
+                        "/Account/ResetPassword", // Your reset password page
+                        pageHandler: null,
+                        values: new { area = "Identity", userId = user.Id, code = token }, // Pass token
+                        protocol: Request.Scheme);
+
+                    // Send email using HTTPS link
+                    await _emailSender.SendEmailAsync(
+                        Input.Email,
+                        "Reset Password",
+                        $"Please reset your password by <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>clicking here</a>.");
+                }
+
+                // SECURE: Always redirect to confirmation page to prevent enumeration.
+                return RedirectToPage("./ForgotPasswordConfirmation"); // Generic confirmation page
+            }
+            return Page();
+        }
+        // InputModel definition...
+    }
+
+    // Pages/Account/ResetPassword.cshtml.cs (Secure - Using Identity)
+    public async Task<IActionResult> OnPostAsync()
+    {
+        if (!ModelState.IsValid) return Page();
+        var user = await _userManager.FindByIdAsync(Input.UserId); // Assuming UserId is bound
+        if (user == null) {
+             // Don't reveal user doesn't exist, redirect to confirmation
+             return RedirectToPage("./ResetPasswordConfirmation");
+        }
+        // SECURE: ResetPasswordAsync validates the token, checks expiry, and invalidates it.
+        var result = await _userManager.ResetPasswordAsync(user, Input.Code, Input.Password);
+        if (result.Succeeded)
+        {
+             // SECURE: Optionally, invalidate user's sessions here
+             // await _signInManager.SignOutAsync(); // Example if applicable
+             // await _userManager.UpdateSecurityStampAsync(user); // Helps invalidate cookies
+
+             return RedirectToPage("./ResetPasswordConfirmation");
+        }
+        foreach (var error in result.Errors) { ModelState.AddModelError(string.Empty, error.Description); }
+        return Page();
+    }
+    ```
+
+    #### Testing Strategy
+    Request password resets. Check token format (should be long, random-looking). Check expiry. Try reusing tokens. Verify email links use HTTPS. Test forgot password form with known/unknown emails and confirm generic responses. Ensure successful reset invalidates the token and optionally other sessions.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using Laravel's built-in password reset functionality (notifications, `PasswordBroker`) or manual implementation.
+
+    #### Vulnerable Scenario 1: Custom Token Generation (Weak)
+    ```php
+    // app/Services/PasswordResetService.php
+    use Illuminate\Support\Str; // Str::random is good, but example uses weak source
+
+    public function createToken(User $user) {
+        // DANGEROUS: Using something predictable like microtime or weak random source.
+        $token = hash('sha256', $user->email . microtime() . rand(1, 100000));
+        // Store token directly (or weakly hashed) with short/no expiry
+        DB::table('password_resets')->insert([
+            'email' => $user->email,
+            'token' => $token, // Storing raw token is less ideal than hash
+            'created_at' => now()
+        ]);
+        return $token;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: User Enumeration Leak
+    The `sendResetLinkEmail` method in `ForgotPasswordController` returns different views/messages.
+    ```php
+    // app/Http/Controllers/Auth/ForgotPasswordController.php (Modified - Vulnerable)
+    protected function sendResetLinkResponse(Request $request, $response)
+    {
+        // DANGEROUS: Returning specific success message only if user exists.
+        return back()->with('status', trans($response)); // Shows "Email sent"
+    }
+
+    protected function sendResetLinkFailedResponse(Request $request, $response)
+    {
+        // DANGEROUS: Returning error message reveals user doesn't exist.
+        return back()->withErrors(['email' => trans($response)]); // Shows "Can't find user"
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Use the built-in `CanResetPassword` trait and `PasswordBroker`. It handles secure token generation (using `Str::random`), hashing tokens before storage, expiry checks, and provides generic responses by default (via `PasswordResetServiceProvider`).
+    * Ensure reset email links use HTTPS (`APP_URL` in `.env`).
+
+    #### Secure Code Example
+    ```php
+    // Using Laravel's Built-in Flow (Secure by default)
+    // 1. Ensure User model uses CanResetPassword trait:
+    // use Illuminate\Foundation\Auth\User as Authenticatable;
+    // use Illuminate\Notifications\Notifiable;
+    // use Illuminate\Contracts\Auth\CanResetPassword; // Interface
+    // use Illuminate\Auth\Passwords\CanResetPassword as CanResetPasswordTrait; // Trait
+
+    // class User extends Authenticatable implements CanResetPassword {
+    //    use Notifiable, CanResetPasswordTrait;
+    //    // ...
+    // }
+
+    // 2. Use default Auth controllers (ForgotPasswordController, ResetPasswordController)
+    //    or ensure custom controllers call the Broker correctly.
+    //    Auth::routes() includes these.
+
+    // 3. Ensure email view uses HTTPS:
+    // config/app.php or .env should have correct APP_URL starting with https://
+
+    // 4. Ensure ForgotPasswordController returns generic response (default behavior):
+    // app/Http/Controllers/Auth/ForgotPasswordController.php
+    // protected function sendResetLinkResponse(Request $request, $response) {
+    //     // Default returns view/redirect with generic status message
+    //     return back()->with('status', trans($response));
+    // }
+    // protected function sendResetLinkFailedResponse(Request $request, $response) {
+    //     // Default *also* returns view/redirect with generic status message,
+    //     // using the same 'status' key but different translation string.
+    //     // This prevents enumeration based on response type/key.
+    //     return back()->with('status', trans($response)); // Changed from withErrors
+    // }
+    // NOTE: Check your Laravel version's exact default behavior. The goal is a generic success-style response always.
+    ```
+
+    #### Testing Strategy
+    Request resets, check token length/randomness, expiry, single-use. Check email links use HTTPS. Test forgot password with known/unknown emails and verify identical, generic "If account exists..." messages are displayed. Check database `password_resets` table (tokens should be hashed).
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Manual implementation using libraries like `crypto` for tokens and `nodemailer` for email.
+
+    #### Vulnerable Scenario 1: Weak Token Generation
+    ```javascript
+    // services/authService.js
+    const crypto = require('crypto');
+
+    function generateWeakResetToken(user) {
+        // DANGEROUS: Using Math.random() or non-crypto functions.
+        const pseudoRandom = Math.random().toString(36).substring(2);
+        // DANGEROUS: Based only on time and user ID.
+        const predictablePart = user.id + Date.now();
+        const token = crypto.createHash('sha1').update(predictablePart + pseudoRandom).digest('hex');
+        // Store token with short/no expiry...
+        return token;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Token Sent in HTTP Link
+    ```javascript
+    // services/emailService.js
+    const nodemailer = require('nodemailer');
+
+    async function sendResetEmail(email, token) {
+        // ... transporter setup ...
+        const resetUrl = `http://myapp.com/reset-password?token=${token}`; // DANGEROUS: HTTP
+        await transporter.sendMail({
+            from: '"MyApp" <noreply@myapp.com>',
+            to: email,
+            subject: 'Password Reset',
+            html: `Click <a href="${resetUrl}">here</a> to reset.`,
+        });
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Generate tokens using `crypto.randomBytes(size).toString('hex')`.
+    * Store a hash (SHA-256) of the token in the DB with a user ID and expiry timestamp.
+    * Use HTTPS links in emails.
+    * Return generic messages from the "forgot password" endpoint.
+    * Invalidate tokens after use.
+
+    #### Secure Code Example
+    ```javascript
+    // services/authService.js (Secure Token Generation & Storage)
+    const crypto = require('crypto');
+    const PasswordResetToken = require('../models/PasswordResetToken'); // Assume Mongoose model
+
+    const TOKEN_EXPIRY_MINUTES = 30;
+
+    async function generateAndSaveResetToken(user) {
+        // SECURE: Generate strong random token.
+        const token = crypto.randomBytes(32).toString('hex');
+
+        // SECURE: Hash the token for storage.
+        const hash = crypto.createHash('sha256').update(token).digest('hex');
+
+        // SECURE: Set expiry.
+        const expiry = new Date();
+        expiry.setMinutes(expiry.getMinutes() + TOKEN_EXPIRY_MINUTES);
+
+        // SECURE: Save hash, user ID, expiry to DB. Remove old tokens for user.
+        await PasswordResetToken.deleteMany({ userId: user._id }); // Invalidate old ones
+        await PasswordResetToken.create({
+            userId: user._id,
+            tokenHash: hash,
+            expiryDate: expiry
+        });
+
+        // Return the *original* token for the email.
+        return token;
+    }
+
+    async function validateAndUseToken(userId, receivedToken) {
+        // SECURE: Hash received token.
+        const receivedHash = crypto.createHash('sha256').update(receivedToken).digest('hex');
+
+        // Find token by hash AND userId.
+        const storedToken = await PasswordResetToken.findOne({
+            userId: userId,
+            tokenHash: receivedHash,
+            expiryDate: { $gt: new Date() } // Check expiry
+        });
+
+        if (!storedToken) {
+            return false; // Token invalid, not found, or expired
+        }
+
+        // SECURE: Invalidate token immediately after successful validation/use.
+        await PasswordResetToken.deleteOne({ _id: storedToken._id });
+
+        return true; // Token was valid
+    }
+
+    // services/emailService.js (Secure Link)
+    async function sendResetEmailSecure(email, token, userId) { // Include userId if needed for URL
+        // ... transporter setup ...
+        // SECURE: Use HTTPS and ensure BASE_URL is configured correctly.
+        const baseUrl = process.env.BASE_URL || '[https://myapp.com](https://myapp.com)'; // Load base URL
+        const resetUrl = `${baseUrl}/reset-password?token=${token}&id=${userId}`; // Example URL structure
+        await transporter.sendMail({
+            // ... from, to, subject ...
+            html: `Click <a href="${resetUrl}">here</a> to reset.`, // URL will be https
+        });
+    }
+    ```
+
+    #### Testing Strategy
+    Check token generation uses `crypto.randomBytes`. Check storage uses hashes and expiry. Test token reuse and expiry. Verify email links use HTTPS. Test user enumeration on forgot password form.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using Devise's `send_reset_password_instructions` and related helpers, or custom token logic.
+
+    #### Vulnerable Scenario 1: Custom Weak Token
+    ```ruby
+    # app/models/user.rb
+    def generate_weak_reset_token!
+      # DANGEROUS: Predictable token (e.g., based on time or simple random).
+      token = Digest::MD5.hexdigest(self.email + Time.now.to_s)
+      self.update!(reset_token: token, reset_sent_at: Time.zone.now)
+      token # Return raw token
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Devise Misconfiguration (User Enumeration)
+    Older Devise versions or custom controllers might have leaked user existence. Modern Devise defaults are generally safe. Check Devise configuration for `config.paranoid = true` (enables timing attacks if false, but prevents enumeration). The default response is usually generic.
+
+    #### Mitigation and Best Practices
+    * **Devise:** Use the built-in `user.send_reset_password_instructions` method. It uses `Devise.token_generator` which creates secure, signed, time-limited tokens. Ensure Devise is configured to return generic messages (`config.paranoid` implications).
+    * **Custom:** Generate tokens using `SecureRandom.urlsafe_base64(32)` or similar. Store a digest (`Digest::SHA256.hexdigest`) of the token with an expiry. Compare using `ActiveSupport::SecurityUtils.secure_compare`.
+    * Use HTTPS links in mailers.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/passwords_controller.rb (Using Devise Securely)
+    class PasswordsController < Devise::PasswordsController
+      # Devise controller handles secure token generation, email sending,
+      # generic responses, token validation, and expiry automatically.
+      # Ensure Devise initializer (config/initializers/devise.rb) is secure.
+      # Ensure mailer templates (app/views/devise/mailer/) use HTTPS links.
+      # Example: edit_password_url(@resource, reset_password_token: @token) should generate HTTPS URL.
+
+      # Overriding response to ensure generic message (Usually default in modern Devise)
+      # protected function after_sending_reset_password_instructions_path_for(resource_name)
+      #   '/users/password/sent' # Redirect to a generic confirmation page
+      # end
+    end
+
+    # Custom Token Generation (Secure - If not using Devise)
+    # app/models/user.rb
+    def generate_secure_reset_token!
+      # SECURE: Generate strong random token
+      raw_token = SecureRandom.urlsafe_base64(32)
+      # SECURE: Store only the hash and expiry
+      token_hash = Digest::SHA256.hexdigest(raw_token)
+      expiry = 30.minutes.from_now # Example expiry
+      self.update!(reset_token_hash: token_hash, reset_sent_at: Time.zone.now, reset_expiry: expiry)
+      raw_token # Return raw token to send via email
+    end
+
+    def self.find_by_reset_token(received_token)
+       return nil if received_token.blank?
+       received_hash = Digest::SHA256.hexdigest(received_token)
+       # SECURE: Find by hash and check expiry
+       user = User.find_by(reset_token_hash: received_hash)
+       # SECURE: Check expiry and use constant time compare just in case (belt-and-suspenders)
+       if user && user.reset_expiry.present? && Time.zone.now < user.reset_expiry && \
+          ActiveSupport::SecurityUtils.secure_compare(user.reset_token_hash, received_hash)
+         user
+       else
+         nil
+       end
+    end
+    # Remember to nil out reset_token_hash and reset_expiry after successful use.
+    ```
+
+    #### Testing Strategy
+    Check token generation (Devise default is good, check custom logic for `SecureRandom`). Check storage uses hashes/digests. Test expiry and reuse. Verify email links use HTTPS. Test forgot password form for generic responses (no enumeration).
+  </Tab>
+</Tabs>
