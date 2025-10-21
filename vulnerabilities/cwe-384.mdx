@@ -1,0 +1,568 @@
+---
+title: "Session Fixation"
+sidebarTitle: "Session Fixation (CWE-384)"
+description: "Mitigation for session fixation attacks where an attacker forces a user's browser to use a known session ID."
+icon: "handshake-simple"
+iconType: "solid"
+---
+
+## Overview
+
+Session Fixation is an attack where an attacker **forces a victim's browser to use a specific session identifier** known to the attacker *before* the victim logs in. If the application fails to generate a **new session identifier** upon successful authentication, the attacker can then use the *same, fixated session identifier* to impersonate the victim after they have logged in. The attacker essentially "rides along" on the session they forced the user to adopt. 🍪📌
+
+**Common Attack Flow:**
+1.  Attacker obtains a valid session ID from the application (e.g., by visiting the login page).
+2.  Attacker tricks the victim into using this specific session ID (e.g., via a phishing link containing the session ID in the URL: `http://vulnerable.com/?SESSIONID=attacker_knows_this`, or via XSS setting the cookie).
+3.  Victim logs into the application using the session ID provided by the attacker.
+4.  The application authenticates the user but **fails to generate a new session ID**.
+5.  Attacker uses the known session ID to access the victim's authenticated session.
+
+---
+
+## Business Impact
+
+Successful session fixation leads directly to **session hijacking** and account takeover:
+* **Account Impersonation:** Attackers gain full access to the victim's account and can perform any action the victim can.
+* **Data Theft:** Attackers can steal sensitive information accessible within the victim's session.
+* **Unauthorized Transactions:** Attackers can perform actions like transferring funds, making purchases, or changing account settings.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-384](https://cwe.mitre.org/data/definitions/384.html)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability occurs when the application's session management logic fails to invalidate the existing session identifier and issue a new one immediately after successful authentication. Modern web frameworks often handle this automatically as part of their standard login procedures.
+
+**Key Remediation Principles:**
+1.  **Regenerate Session ID on Login:** **Crucially**, always generate a completely new session identifier and invalidate the old (pre-login) one immediately upon successful user authentication.
+2.  **Do Not Accept Session IDs from URL Parameters:** Configure the framework or server to ignore session identifiers passed as query parameters. Rely only on session cookies.
+3.  **Use Secure Cookie Attributes:** Set `HttpOnly`, `Secure`, and `SameSite=Strict` (or `Lax`) attributes on session cookies to mitigate other risks like XSS stealing the cookie or CSRF leveraging it (See `CWE-1004`, `CWE-614`, `CWE-1275`).
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Django's `login()` function and Flask-Login's `login_user()` function typically handle session ID regeneration correctly by default. Vulnerabilities arise in custom login logic or if defaults are overridden.
+
+    #### Vulnerable Scenario 1: Custom Django Login without `login()`
+    Manually setting session variables without calling `django.contrib.auth.login`.
+    ```python
+    # views/auth.py (Django Custom Login)
+    from django.shortcuts import redirect
+    from django.contrib.auth import authenticate
+
+    def custom_manual_login(request):
+        if request.method == 'POST':
+            user = authenticate(username=request.POST['username'], password=request.POST['password'])
+            if user is not None:
+                # DANGEROUS: Manually setting user ID in session without
+                # invalidating the old session ID (fixation).
+                request.session['_auth_user_id'] = user.pk
+                request.session['_auth_user_backend'] = user.backend
+                # Missing: session rotation/invalidation
+                return redirect('/dashboard')
+            # ... handle failure ...
+        # ... render form ...
+    ```
+
+    #### Vulnerable Scenario 2: Flask Login without Regeneration (Less Common)
+    While `Flask-Login` usually handles this, a misconfiguration or a very old version, or manual session handling could be vulnerable.
+    ```python
+    # app.py (Flask Manual Session)
+    from flask import session, request, redirect
+
+    @app.route('/manual-login', methods=['POST'])
+    def manual_login():
+        username = request.form['username']
+        password = request.form['password']
+        user = authenticate_user(username, password) # Assume function exists
+        if user:
+            # DANGEROUS: Setting user in session without regenerating ID.
+            # Attacker forces session ID before user hits this.
+            session['user_id'] = user.id
+            session['logged_in'] = True
+            return redirect('/dashboard')
+        # ... handle failure ...
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Always use `django.contrib.auth.login(request, user)` after authenticating a user. This function automatically rotates the session key.
+    * **Flask:** Use `flask_login.login_user(user)`. Ensure your Flask session configuration is secure (e.g., using `Flask-Session` with server-side storage and configuring session protection options if available). Modern Flask versions often have basic session rotation.
+
+    #### Secure Code Example
+    ```python
+    # views/auth.py (Django Secure Login)
+    from django.contrib.auth import authenticate, login # Import login
+
+    def secure_django_login(request):
+        if request.method == 'POST':
+            user = authenticate(username=request.POST['username'], password=request.POST['password'])
+            if user is not None:
+                # SECURE: login() handles session regeneration and sets user in session.
+                login(request, user)
+                return redirect('/dashboard')
+            # ... handle failure ...
+        # ... render form ...
+    ```
+    ```python
+    # app.py (Flask Secure Login with Flask-Login)
+    from flask_login import login_user # Import login_user
+
+    @app.route('/secure-login', methods=['POST'])
+    def secure_login():
+        username = request.form['username']
+        password = request.form['password']
+        user = authenticate_user(username, password) # Assume returns User object
+        if user:
+            # SECURE: login_user typically handles session regeneration features.
+            # Check Flask-Login docs for specific version behavior if unsure.
+            login_user(user)
+            return redirect('/dashboard')
+        # ... handle failure ...
+    ```
+
+    #### Testing Strategy
+    1.  Visit the login page of the application in your browser. Use developer tools to find the current `sessionid` cookie value.
+    2.  Copy this session ID.
+    3.  In a *different browser* (or incognito window), manually set the session cookie to the copied value (e.g., using browser extensions like Cookie Editor). Alternatively, try passing the session ID as a URL parameter if the application accepts it (`?sessionid=...`).
+    4.  Using this second browser (with the fixated session ID), log in successfully.
+    5.  Go back to the *first browser* (which still has the original session ID) and refresh the page or navigate to a protected area.
+    6.  **If you are now logged in as the user who authenticated in the second browser, the application is vulnerable to session fixation.** A secure application would have invalidated the original session ID upon login in the second browser, leaving the first browser logged out or with a new, unauthenticated session ID.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `HttpServletRequest.getSession()` without invalidating the old session and creating a new one after login. Spring Security handles this correctly by default with its session management filters.
+
+    #### Vulnerable Scenario 1: Manual Session Handling without Invalidation
+    ```java
+    // servlet/LoginServlet.java
+    import javax.servlet.http.*;
+
+    public class LoginServlet extends HttpServlet {
+        protected void doPost(HttpServletRequest request, HttpServletResponse response)
+                throws ServletException, IOException {
+            String user = request.getParameter("username");
+            String pass = request.getParameter("password");
+            // Assume authenticateUser(user, pass) returns a User object or null
+
+            if (authenticateUser(user, pass) != null) {
+                // DANGEROUS: Gets existing session (potentially set by attacker)
+                // and just adds attributes. Does not invalidate old ID.
+                HttpSession session = request.getSession(); // Might return existing session
+                session.setAttribute("userPrincipal", user);
+                response.sendRedirect("/dashboard");
+            } else {
+                // Handle login failure
+                response.sendRedirect("/login?error=1");
+            }
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Spring Security Misconfiguration (Disabling Migration)
+    Explicitly disabling Spring Security's default session fixation protection.
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            // ... authorizeRequests, formLogin ...
+            .sessionManagement()
+                // DANGEROUS: Disables session migration after login.
+                .sessionFixation().none(); // Options: none, newSession, migrateSession (default)
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Spring Security:** Use the default session fixation protection strategy (`migrateSession` or `newSession`). `migrateSession` (default) creates a new session ID but attempts to copy attributes from the old session. `newSession` creates a completely clean session. Avoid `none`.
+    * **Manual Servlet:** After successful authentication, invalidate the old session and create a new one:
+        ```java
+        HttpSession oldSession = request.getSession(false); // Get old session without creating
+        if (oldSession != null) {
+            oldSession.invalidate(); // Invalidate old session
+        }
+        // Create a new session for the authenticated user
+        HttpSession newSession = request.getSession(true);
+        newSession.setAttribute("userPrincipal", user);
+        ```
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure Spring Security Default)
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            // ... authorizeRequests, formLogin ...
+            .sessionManagement()
+                // SECURE: Use default (migrateSession) or explicitly set newSession.
+                .sessionFixation().migrateSession(); // Or .newSession()
+    }
+
+    // servlet/LoginServlet.java (Secure Manual Session Handling)
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+                throws ServletException, IOException {
+        String user = request.getParameter("username");
+        String pass = request.getParameter("password");
+
+        if (authenticateUser(user, pass) != null) {
+            // SECURE: Invalidate previous session (if any)
+            HttpSession oldSession = request.getSession(false);
+            if (oldSession != null) {
+                oldSession.invalidate();
+            }
+            // SECURE: Create a brand new session after successful login
+            HttpSession newSession = request.getSession(true); // Creates new session
+            newSession.setAttribute("userPrincipal", user);
+            response.sendRedirect("/dashboard");
+        } else {
+            response.sendRedirect("/login?error=1");
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Follow the same steps as the Python testing strategy:
+    1. Get a pre-login session ID (`JSESSIONID`).
+    2. Force a second browser to use that ID.
+    3. Log in using the second browser.
+    4. Refresh the first browser.
+    If the first browser is now logged in, the application is vulnerable. Check Spring Security's `sessionFixation()` configuration or manual session handling logic.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    ASP.NET Core Identity and session management generally handle session regeneration automatically upon login (`SignInManager.PasswordSignInAsync`, `SignInAsync`). Vulnerabilities are more likely in custom authentication or manual session manipulation.
+
+    #### Vulnerable Scenario 1: Custom Authentication Not Regenerating Session
+    If using custom authentication logic that manually sets session variables without leveraging `SignInManager`.
+    ```csharp
+    // Controllers/AccountController.cs (Custom Auth Example)
+    public IActionResult ManualLogin(string username, string password)
+    {
+        var user = ValidateCredentialsManually(username, password); // Assume returns user object
+        if (user != null)
+        {
+            // DANGEROUS: Directly setting session variables without regenerating session ID.
+            // Attacker could fixate the session ID before this point.
+            HttpContext.Session.SetString("UserId", user.Id.ToString());
+            HttpContext.Session.SetInt32("IsLoggedIn", 1);
+            // Missing: HttpContext.Session.CommitAsync(); HttpContext.Session.Clear(); then set again? Complex.
+            // Better: Use SignInManager or manually force new session ID if possible.
+            return RedirectToAction("Index", "Home");
+        }
+        // Handle failure...
+        return View("Login");
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Accepting Session ID from Query (Very Unlikely in modern ASP.NET)
+    If the application were configured to accept session identifiers via query parameters (highly non-standard and insecure).
+
+    #### Mitigation and Best Practices
+    * **Use `SignInManager`:** Rely on `SignInManager.PasswordSignInAsync()` or `SignInManager.SignInAsync()` for logging users in. These methods handle the creation and management of the authentication cookie (which acts as the session identifier for Identity) securely, including regeneration upon login.
+    * **Avoid Manual Session Auth:** Do not implement authentication by manually setting flags in `HttpContext.Session`. Use the built-in Identity framework.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/AccountController.cs (Secure - Using SignInManager)
+    public class AccountController : Controller
+    {
+        private readonly SignInManager<IdentityUser> _signInManager; // Use actual user type
+        private readonly UserManager<IdentityUser> _userManager;
+
+        public AccountController(SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager) { /* ... */ }
+
+        [HttpPost]
+        public async Task<IActionResult> Login(LoginViewModel model)
+        {
+            if (ModelState.IsValid)
+            {
+                var user = await _userManager.FindByEmailAsync(model.Email);
+                if (user != null) {
+                     // SECURE: PasswordSignInAsync handles secure comparison AND
+                     // manages the authentication cookie/session securely, preventing fixation.
+                    var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe, lockoutOnFailure: true);
+                    if (result.Succeeded)
+                    {
+                        return RedirectToAction("Index", "Home");
+                    }
+                    // ... handle lockout, MFA, failure ...
+                }
+                ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+            }
+            return View(model);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Follow the same general steps:
+    1. Get the pre-login authentication cookie value (e.g., `.AspNetCore.Identity.Application` or session cookie if using `HttpContext.Session`).
+    2. Force a second browser to use that cookie value.
+    3. Log in using the second browser.
+    4. Refresh the first browser.
+    If the first browser is now logged in, investigate how authentication is handled. Ensure `SignInManager` is used or custom logic explicitly regenerates identifiers. Check if session IDs are accepted from query parameters (they shouldn't be).
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `session_start()` without calling `session_regenerate_id(true)` after successful login. Laravel's `Auth::attempt()` and `Session::regenerate()` handle this correctly.
+
+    #### Vulnerable Scenario 1: Plain PHP without `session_regenerate_id()`
+    ```php
+    <?php
+    // login.php (Plain PHP)
+    session_start(); // Starts session, potentially using attacker-provided ID
+    $username = $_POST['username'];
+    $password = $_POST['password'];
+    $stored_hash = get_password_hash($username); // Assume function exists
+
+    if ($stored_hash && password_verify($password, $stored_hash)) {
+        // DANGEROUS: User is logged in, but the session ID is not regenerated.
+        // Attacker who fixated the ID before login now has access.
+        $_SESSION['user_id'] = get_user_id($username);
+        $_SESSION['logged_in'] = true;
+        header('Location: /dashboard.php');
+        exit;
+    } else {
+        header('Location: /login.php?error=1');
+        exit;
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Laravel Login without Session Regeneration
+    Custom login logic that bypasses the standard `Auth::attempt` or forgets to regenerate.
+    ```php
+    // app/Http/Controllers/CustomLoginController.php
+    public function login(Request $request) {
+        // ... validate credentials ...
+        $user = User::where('email', $request->email)->first();
+        if ($user && Hash::check($request->password, $user->password)) {
+            // DANGEROUS: Manually setting session without regenerating ID.
+            $request->session()->put('user_id', $user->id);
+            // Missing: $request->session()->regenerate();
+            return redirect('/dashboard');
+        }
+        return back()->withErrors(['email' => 'Login failed']);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Plain PHP:** Call `session_regenerate_id(true)` immediately after successful authentication and *before* setting any authenticated session variables. `true` deletes the old session file.
+    * **Laravel:** Use `Auth::attempt()` or `Auth::login()`, and ensure session regeneration occurs (it's default in `AuthenticatesUsers` trait via `Request::session()->regenerate()`).
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // login_secure.php (Plain PHP)
+    session_start();
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+    $stored_hash = get_password_hash($username);
+
+    if ($stored_hash && password_verify($password, $stored_hash)) {
+        // SECURE: Regenerate session ID, delete old session data.
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = get_user_id($username);
+        $_SESSION['logged_in'] = true;
+        header('Location: /dashboard.php');
+        exit;
+    } else {
+        // ... handle failure ...
+    }
+    ?>
+    ```
+    ```php
+    // app/Http/Controllers/Auth/LoginController.php (Laravel Default - Secure)
+    use Illuminate\Foundation\Auth\AuthenticatesUsers;
+    // ...
+    class LoginController extends Controller {
+        use AuthenticatesUsers; // Includes secure login attempt handling
+        // ...
+        // AuthenticatesUsers trait calls $request->session()->regenerate()
+        // in the authenticated() method or sendLoginResponse().
+    }
+    // OR if using manual login:
+    public function secureManualLogin(Request $request) {
+       // ... validate, check credentials ...
+       if ($validCredentials) {
+            Auth::login($user); // Log the user in
+            // SECURE: Manually regenerate session ID
+            $request->session()->regenerate();
+            return redirect()->intended('dashboard');
+       }
+       // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Follow the standard session fixation test:
+    1. Get pre-login session ID (`PHPSESSID`, `laravel_session`).
+    2. Force second browser to use it.
+    3. Log in with second browser.
+    4. Refresh first browser.
+    If first browser is logged in, check login code for `session_regenerate_id(true)` (plain PHP) or `Request::session()->regenerate()` (Laravel). Ensure session IDs are not accepted from URL parameters (`php.ini`: `session.use_trans_sid = 0`).
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using session middleware like `express-session` without explicitly regenerating the session after login.
+
+    #### Vulnerable Scenario 1: Setting Session Data without Regeneration
+    ```javascript
+    // routes/auth.js - Assume express-session middleware is used
+    // Assume User model, bcrypt, ensureLoggedOut middleware exist
+    router.post('/login', ensureLoggedOut, async (req, res) => {
+        const { username, password } = req.body;
+        const user = await User.findOne({ username });
+        if (user && await bcrypt.compare(password, user.passwordHash)) {
+            // DANGEROUS: Modifying the existing session (potentially fixated)
+            // without regenerating its ID.
+            req.session.userId = user._id;
+            req.session.loggedIn = true;
+            // Missing: req.session.regenerate(...)
+            res.redirect('/dashboard');
+        } else {
+            res.status(401).send('Login failed');
+        }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Passport.js without Session Regeneration (Less Common)
+    While Passport's standard `req.login()` often triggers session regeneration depending on the `express-session` setup, custom callbacks or misconfigurations might bypass it.
+
+    #### Mitigation and Best Practices
+    Use the `req.session.regenerate(callback)` method provided by `express-session` immediately after successful authentication and *before* setting the authenticated user's data in the new session.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/auth.js (Secure - Manual Regeneration)
+    router.post('/login-secure', ensureLoggedOut, async (req, res, next) => { // Added next for error handling
+        const { username, password } = req.body;
+        try {
+            const user = await User.findOne({ username });
+            if (user && user.passwordHash && await bcrypt.compare(password, user.passwordHash)) {
+                // SECURE: Regenerate session before storing user data.
+                req.session.regenerate((err) => {
+                    if (err) {
+                        console.error("Session regeneration error:", err);
+                        return next(err); // Pass error to error handler
+                    }
+                    // Store user ID etc. in the NEW session
+                    req.session.userId = user._id;
+                    req.session.loggedIn = true;
+                    // Save session before redirect if using certain stores
+                    req.session.save((saveErr) => {
+                        if (saveErr) {
+                            console.error("Session save error:", saveErr);
+                            return next(saveErr);
+                        }
+                        res.redirect('/dashboard');
+                    });
+                });
+            } else {
+                // Add rate limiting
+                res.status(401).send('Invalid credentials');
+            }
+        } catch (err) {
+             console.error("Login process error:", err);
+             next(err); // Pass to error handler
+        }
+    });
+
+    // Secure Example with Passport.js (Relies on internal regeneration)
+    // passport.authenticate('local', { successRedirect: '/dashboard', failureRedirect: '/login' })
+    // Verify Passport's req.login() triggers session regeneration with your express-session setup.
+    // Explicit regeneration within a custom callback provides certainty:
+    // passport.authenticate('local', (err, user, info) => {
+    //    if (err) { return next(err); }
+    //    if (!user) { return res.redirect('/login'); }
+    //    req.logIn(user, (loginErr) => { // req.logIn handles session setup
+    //       if (loginErr) { return next(loginErr); }
+    //       // Ensure session regeneration happens here, often req.logIn does this. Check source/docs.
+    //       // If needed, call req.session.regenerate() AFTER req.logIn completes.
+    //       return res.redirect('/dashboard');
+    //    });
+    // })(req, res, next);
+    ```
+
+    #### Testing Strategy
+    Follow the standard session fixation test:
+    1. Get pre-login session ID (`connect.sid` or custom name).
+    2. Force second browser to use it (e.g., via Cookie Editor extension).
+    3. Log in with second browser.
+    4. Refresh first browser.
+    If first browser is logged in, check the login route handler for a call to `req.session.regenerate()`. Ensure session IDs are not accepted from URL parameters.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using Rails sessions without calling `reset_session` after login, especially in custom authentication logic. Devise handles this correctly by default.
+
+    #### Vulnerable Scenario 1: Manual Session Setting without Reset
+    ```ruby
+    # app/controllers/sessions_controller.rb
+    class SessionsController < ApplicationController
+      def create
+        user = User.find_by(email: params[:email])
+        # Assume authenticate checks password correctly
+        if user&.authenticate(params[:password])
+          # DANGEROUS: Setting user_id in the existing session without resetting.
+          # Attacker could have fixated the session ID before login.
+          session[:user_id] = user.id
+          # Missing: reset_session
+          redirect_to root_path, notice: 'Logged in.'
+        else
+          flash.now[:alert] = "Invalid credentials."
+          render :new, status: :unprocessable_entity
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Warden Callback without Session Reset (If using Warden directly/custom)
+    In lower-level Warden callbacks (`after_set_user`, `after_authentication`), failing to reset the session. (Devise typically handles this layer correctly).
+
+    #### Mitigation and Best Practices
+    * **Rails:** Call `reset_session` immediately after successful authentication and *before* storing the new user's ID in the session.
+    * **Devise:** Rely on Devise's built-in session handling (`sign_in` methods), which includes protection against fixation.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/sessions_controller.rb (Secure Manual Login)
+    class SessionsController < ApplicationController
+      def create
+        user = User.find_by(email: params[:email])
+
+        if user&.authenticate(params[:password])
+          # SECURE: Reset session to invalidate the old ID and create a new one.
+          reset_session
+          # Now store user ID in the new session.
+          session[:user_id] = user.id
+          redirect_to root_path, notice: 'Logged in successfully.'
+        else
+          flash.now[:alert] = "Invalid email or password."
+          render :new, status: :unprocessable_entity
+        end
+      end
+    end
+
+    # Using Devise (Secure by Default)
+    # Ensure standard Devise controllers or Warden hooks are used.
+    # Devise's sign_in method typically handles session rotation.
+    ```
+
+    #### Testing Strategy
+    Follow the standard session fixation test:
+    1. Get pre-login session cookie value (`_my_app_session`).
+    2. Force second browser to use it.
+    3. Log in with second browser.
+    4. Refresh first browser.
+    If first browser is logged in, check the login action for a call to `reset_session`. Ensure session identifiers are not accepted via URL parameters (`config/initializers/session_store.rb` should not enable this).
+  </Tab>
+</Tabs>
