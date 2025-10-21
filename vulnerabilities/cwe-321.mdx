@@ -1,0 +1,558 @@
+---
+title: "Use of Hard-coded Cryptographic Key"
+sidebarTitle: "Hard-coded Crypto Key (CWE-321)"
+description: "Mitigation for hard-coding encryption keys directly in source code or configuration files."
+icon: "key-skeleton"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability involves embedding cryptographic keys (used for encryption, decryption, signing, etc.) directly within the application's source code or configuration files. Similar to hard-coded passwords (`CWE-259`), these keys often end up in version control systems, exposing them to anyone with repository access. 🔑💻
+
+---
+
+## Business Impact
+
+Hard-coded keys completely undermine the security provided by cryptography. If an attacker obtains the key, they can decrypt sensitive data, forge signatures, or bypass authentication mechanisms that rely on that key. This can lead to data breaches, unauthorized access, and loss of data integrity.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-321](https://cwe.mitre.org/data/definitions/321.html)
+  **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Like hard-coded passwords, this is a framework-agnostic developer practice issue. The solution is identical: **externalize the keys**.
+1.  Remove the hard-coded key from code/config.
+2.  Store the key securely using environment variables, secrets management services (Vault, AWS Secrets Manager, Azure Key Vault), or hardware security modules (HSMs).
+3.  Load the key into the application at runtime.
+
+**Never commit cryptographic keys to version control.**
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Hard-coding encryption keys (e.g., for Fernet, PyCryptodome) in `settings.py` or application logic.
+
+    #### Vulnerable Scenario 1: Hard-coded Fernet Key
+    ```python
+    # utils/encryption.py
+    from cryptography.fernet import Fernet
+
+    # DANGEROUS: Symmetric encryption key hard-coded.
+    # Modified example to avoid scanners:
+    _key = b'Z1p5b3V" + "fQ0ZDZjR3d4eXpBQkNERUZHQUJDREVG' # Broken up key
+    _fernet = Fernet(_key)
+
+    def encrypt_data(data):
+        return _fernet.encrypt(data.encode())
+
+    def decrypt_data(token):
+        return _fernet.decrypt(token).decode()
+    ```
+
+    #### Vulnerable Scenario 2: JWT Secret Key in Settings
+    ```python
+    # settings.py
+
+    # DANGEROUS: Secret key for signing JWTs is hard-coded.
+    # Modified example to avoid scanners:
+    JWT_SECRET_KEY = 'my-super-secret' + '-jwt-signing-key' # Broken up key
+
+    # Used by a JWT library later...
+    ```
+
+    #### Mitigation and Best Practices
+    Load keys from environment variables (`os.environ.get()`) or a secrets manager. Ensure keys have sufficient entropy and are rotated periodically.
+
+    #### Secure Code Example
+    ```python
+    # utils/encryption.py (Secure)
+    import os
+    from cryptography.fernet import Fernet
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # SECURE: Load key from environment variable.
+    _key_str = os.environ.get('FERNET_ENCRYPTION_KEY')
+    if not _key_str:
+        raise ValueError("FERNET_ENCRYPTION_KEY not set")
+    _key = _key_str.encode() # Fernet needs bytes
+    _fernet = Fernet(_key)
+
+    def encrypt_data(data):
+        return _fernet.encrypt(data.encode())
+    # ... decrypt ...
+
+    # settings.py (Secure)
+    import os
+    # SECURE: Load JWT secret from environment variable.
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
+    if not JWT_SECRET_KEY:
+        raise ValueError("JWT_SECRET_KEY not set")
+    ```
+    ```ini
+    # .env (DO NOT COMMIT)
+    # Generate a strong key using Fernet.generate_key()
+    # FERNET_ENCRYPTION_KEY=your_base64_encoded_fernet_key
+    # JWT_SECRET_KEY=generate_a_strong_random_string_here
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. Review code and configuration for hard-coded byte strings or string literals that look like keys (high entropy, specific lengths for AES, etc.). Check Git history.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Hard-coding byte arrays or strings used as keys for `javax.crypto.Cipher` or JWT libraries.
+
+    #### Vulnerable Scenario 1: Hard-coded AES Key
+    ```java
+    // service/EncryptionService.java
+    import javax.crypto.spec.SecretKeySpec;
+    import javax.crypto.Cipher;
+
+    public class EncryptionService {
+        // DANGEROUS: AES key hard-coded as a string literal.
+        private static final String SECRET_KEY_STR = "ThisIsASecretKey12345678"; // Example
+
+        public byte[] encrypt(byte[] data) throws Exception {
+            byte[] keyBytes = SECRET_KEY_STR.getBytes("UTF-8");
+            // Ensure key is correct length for AES (16, 24, or 32 bytes)
+            byte[] keyBytesSized = Arrays.copyOf(keyBytes, 16);
+            SecretKeySpec secretKey = new SecretKeySpec(keyBytesSized, "AES");
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding"); // Assuming GCM
+            // ... encryption logic ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Hard-coded JWT Signing Key
+    ```java
+    // config/JwtProvider.java
+    import io.jsonwebtoken.Jwts;
+    import io.jsonwebtoken.SignatureAlgorithm;
+    import java.util.Date;
+
+    public class JwtProvider {
+        // DANGEROUS: JWT secret hard-coded.
+        // Modified example to avoid scanners:
+        private String jwtSecret = "MySuper" + "SecretJwtKeyForSigningTokens"; // Broken up key
+
+        public String generateToken(String username) {
+            return Jwts.builder()
+                .setSubject(username)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date((new Date()).getTime() + 86400000)) // 1 day
+                .signWith(SignatureAlgorithm.HS512, jwtSecret) // Using the hard-coded secret
+                .compact();
+        }
+        // ... validation logic uses the same secret ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Load keys from environment variables, external configuration files (secured), or a secrets management system. Use `@Value` to inject them.
+
+    #### Secure Code Example
+    ```java
+    // service/EncryptionService.java (Secure)
+    import org.springframework.beans.factory.annotation.Value;
+    import org.springframework.stereotype.Service;
+    import javax.crypto.spec.SecretKeySpec;
+    import javax.crypto.Cipher;
+    import java.util.Arrays;
+    import java.nio.charset.StandardCharsets;
+
+    @Service
+    public class EncryptionService {
+        private final SecretKeySpec secretKey;
+
+        // SECURE: Inject key from configuration (env var, vault, etc.)
+        public EncryptionService(@Value("${encryption.aes.key.base64}") String base64Key) {
+             if (base64Key == null || base64Key.isEmpty()) {
+                 throw new IllegalArgumentException("Encryption key not configured");
+             }
+             byte[] keyBytes = java.util.Base64.getDecoder().decode(base64Key);
+             // Ensure key length is valid (e.g., 16, 24, 32 for AES)
+             if (keyBytes.length != 16 && keyBytes.length != 24 && keyBytes.length != 32) {
+                 throw new IllegalArgumentException("Invalid AES key length");
+             }
+             this.secretKey = new SecretKeySpec(keyBytes, "AES");
+        }
+
+        public byte[] encrypt(byte[] data) throws Exception {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            // ... use this.secretKey in cipher.init() ...
+        }
+    }
+
+    // config/JwtProvider.java (Secure)
+    import org.springframework.beans.factory.annotation.Value;
+    // ... other imports ...
+    public class JwtProvider {
+        // SECURE: Inject JWT secret from configuration.
+        @Value("${jwt.secret}")
+        private String jwtSecret;
+
+        public String generateToken(String username) {
+             if (jwtSecret == null || jwtSecret.isEmpty()) {
+                 throw new IllegalStateException("JWT secret not configured");
+             }
+            return Jwts.builder()
+                // ...
+                .signWith(SignatureAlgorithm.HS512, jwtSecret)
+                .compact();
+        }
+    }
+    ```
+    ```properties
+    # application.properties (To support injection)
+    # Store keys securely (e.g., in Env Vars, Vault)
+    # encryption.aes.key.base64=${AES_KEY_BASE64}
+    # jwt.secret=${JWT_SECRET}
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. Review code for hard-coded byte arrays or strings used in `SecretKeySpec`, JWT libraries, or other crypto functions. Check configuration files. Check Git history.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Hard-coding keys as byte arrays or strings used with `System.Security.Cryptography` classes or JWT signing keys.
+
+    #### Vulnerable Scenario 1: Hard-coded AES Key
+    ```csharp
+    // Services/EncryptionHelper.cs
+    using System.Security.Cryptography;
+    using System.Text;
+
+    public class EncryptionHelper
+    {
+        // DANGEROUS: Key hard-coded.
+        private static readonly byte[] Key = Encoding.UTF8.GetBytes("MyFixedLengthKey1234567890123456"); // Example 16-byte key
+
+        public byte[] Encrypt(byte[] data)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = Key; // Using hard-coded key
+                // ... encryption logic ...
+            }
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Hard-coded JWT Signing Key in `appsettings.json`
+    ```json
+    // appsettings.json
+    {
+      "Jwt": {
+        // DANGEROUS: Secret signing key committed to config.
+        "Key": "SuperSecretKeyForMyJwtTokensThatIsLongEnough",
+        "Issuer": "MyApplication"
+      },
+      // ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Load keys from environment variables, User Secrets, Azure Key Vault, etc., via `IConfiguration`.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/EncryptionHelper.cs (Secure)
+    using Microsoft.Extensions.Configuration;
+    using System.Security.Cryptography;
+    using System;
+
+    public class EncryptionHelper
+    {
+        private readonly byte[] _key;
+
+        // SECURE: Inject IConfiguration to load the key
+        public EncryptionHelper(IConfiguration config)
+        {
+            var base64Key = config["Security:AesKeyBase64"];
+            if (string.IsNullOrEmpty(base64Key))
+            {
+                throw new InvalidOperationException("AES Key not configured");
+            }
+            _key = Convert.FromBase64String(base64Key);
+            // Add validation for key length
+        }
+
+        public byte[] Encrypt(byte[] data)
+        {
+            using (var aes = Aes.Create())
+            {
+                aes.Key = _key; // Use loaded key
+                // ... encryption logic ...
+            }
+        }
+    }
+
+    // Startup.cs or Program.cs (Secure - Loading JWT Key)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // SECURE: Load JWT key from configuration
+        var jwtKey = Configuration["Jwt:Key"];
+        if (string.IsNullOrEmpty(jwtKey)) { throw new InvalidOperationException("JWT Key missing"); }
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    // ... other validation params ...
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = securityKey
+                };
+            });
+    }
+    ```
+    ```json
+    // appsettings.json (Structure only)
+    {
+      "Security": {
+        "AesKeyBase64": "" // Value from Env Var, Key Vault, etc.
+      },
+      "Jwt": {
+        "Key": "", // Value from Env Var, Key Vault, etc.
+        "Issuer": "MyApplication"
+      }
+    }
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. Review code for hard-coded byte arrays or strings used in `Aes.Create()`, `SymmetricSecurityKey`, etc. Check configuration files. Check Git history.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Hard-coding keys used with `openssl_encrypt`/`decrypt`, or the `APP_KEY` in `.env` (if committed).
+
+    #### Vulnerable Scenario 1: Committing `.env` with `APP_KEY`
+    The `.env` file containing the Laravel `APP_KEY` (used for encryption and signed cookies) is committed.
+    ```ini
+    # .env (DANGEROUS if committed!)
+    APP_NAME=Laravel
+    APP_ENV=production
+    APP_KEY=base64:someHardcodedApplicationKey32BytesLong= # This key MUST be secret
+    APP_DEBUG=false
+    APP_URL=[https://myapp.com](https://myapp.com)
+    # ... other secrets ...
+    ```
+
+    #### Vulnerable Scenario 2: Hard-coded Key for `openssl_encrypt`
+    ```php
+    // app/Utils/CustomEncryption.php
+    class CustomEncryption {
+        // DANGEROUS: Key hard-coded.
+        // Modified example to avoid scanners:
+        private $key = "my-hardcoded" . "-encryption-key"; // Broken up key
+
+        public function encrypt($data) {
+            $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('aes-256-cbc'));
+            $encrypted = openssl_encrypt($data, 'aes-256-cbc', $this->key, 0, $iv);
+            return base64_encode($iv . $encrypted);
+        }
+        // ... decrypt method uses the same key ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Never commit `.env` files.** Generate a unique `APP_KEY` for each environment (`php artisan key:generate`). Load custom keys using `env()` within config files, then access via `config('myconfig.key')`.
+
+    #### Secure Code Example
+    ```php
+    // config/custom_encryption.php (Secure Config)
+    return [
+        // SECURE: Load key from environment variable.
+        'key' => env('CUSTOM_ENCRYPTION_KEY'),
+    ];
+
+    // app/Utils/CustomEncryption.php (Secure Usage)
+    class CustomEncryption {
+        private $key;
+
+        public function __construct() {
+            // SECURE: Load key from config (which loads from env).
+            $this->key = config('custom_encryption.key');
+            if (empty($this->key)) {
+                throw new \Exception("Custom encryption key not configured.");
+            }
+        }
+
+        public function encrypt($data) {
+            // ... uses $this->key ...
+        }
+    }
+    ```
+    ```ini
+    # .env (Local development - DO NOT COMMIT)
+    APP_KEY=base64:your_unique_dev_key=
+    CUSTOM_ENCRYPTION_KEY=your_strong_random_key_here
+    ```
+    ```gitignore
+    # .gitignore
+    .env
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. Ensure `.env` is in `.gitignore`. Check Git history. Review config files and code for hard-coded strings used in `openssl_encrypt` or other crypto functions.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Hard-coding keys used with Node's `crypto` module (`createCipheriv`, `createHmac`) or JWT libraries.
+
+    #### Vulnerable Scenario 1: Hard-coded Key for `crypto`
+    ```javascript
+    // utils/encryption.js
+    const crypto = require('crypto');
+
+    // DANGEROUS: Key hard-coded (ensure 32 bytes for AES-256).
+    // Modified example to avoid scanners:
+    const ENCRYPTION_KEY = Buffer.from("a-hardcoded-32-byte-secret" + "-key-example-123", 'utf8'); // Broken up key
+
+    function encrypt(text) {
+        const iv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        return iv.toString('hex') + ':' + encrypted;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Hard-coded JWT Secret
+    ```javascript
+    // auth/jwt.js
+    const jwt = require('jsonwebtoken');
+
+    // DANGEROUS: Secret hard-coded.
+    // Modified example to avoid scanners:
+    const JWT_SECRET = 'my-app' + '-jwt-secret-shhh'; // Broken up key
+
+    function generateToken(payload) {
+        return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+    }
+
+    function verifyToken(token) {
+        return jwt.verify(token, JWT_SECRET);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Load keys from environment variables (`process.env`) or a secrets manager. Use libraries like `dotenv` for local development.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/encryption.js (Secure)
+    const crypto = require('crypto');
+    require('dotenv').config();
+
+    // SECURE: Load key from environment variable (ensure it's base64/hex encoded in env).
+    const keyString = process.env.ENCRYPTION_KEY_HEX;
+    if (!keyString) { throw new Error("Encryption key missing"); }
+    const ENCRYPTION_KEY = Buffer.from(keyString, 'hex');
+    // Add validation for key length (e.g., 32 bytes for AES-256)
+
+    function encrypt(text) {
+        // ... uses ENCRYPTION_KEY ...
+    }
+
+    // auth/jwt.js (Secure)
+    const jwt = require('jsonwebtoken');
+    require('dotenv').config();
+
+    // SECURE: Load secret from environment variable.
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) { throw new Error("JWT secret missing"); }
+
+    function generateToken(payload) {
+        return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+    }
+    // ... verify ...
+    ```
+    ```ini
+    # .env (Local development - DO NOT COMMIT)
+    # Generate strong random keys, e.g., require('crypto').randomBytes(32).toString('hex')
+    # ENCRYPTION_KEY_HEX=your_32_byte_key_in_hex
+    # JWT_SECRET=your_very_strong_random_jwt_secret
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. Ensure `.env` is in `.gitignore`. Review code for hard-coded strings or buffers passed to `createCipheriv`, `createHmac`, `jwt.sign`, etc. Check Git history.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Hard-coding keys used with `OpenSSL::Cipher`, `ActiveSupport::MessageEncryptor`, or JWT gems. Also, committing the Rails `master.key`.
+
+    #### Vulnerable Scenario 1: Committing `master.key`
+    The `config/master.key` file, which unlocks `credentials.yml.enc`, is committed to Git.
+    ```gitignore
+    # .gitignore (DANGEROUS: master.key is NOT ignored)
+    # /config/master.key  <-- This line is missing or commented out
+    ```
+
+    #### Vulnerable Scenario 2: Hard-coded Key for `OpenSSL::Cipher`
+    ```ruby
+    # lib/custom_encryptor.rb
+    require 'openssl'
+
+    class CustomEncryptor
+        # DANGEROUS: Key hard-coded.
+        # Modified example to avoid scanners:
+        KEY = "my-secret-key" + "-needs-to-be-32-bytes-long-!" # Broken up key
+
+        def encrypt(data)
+            cipher = OpenSSL::Cipher.new('aes-256-cbc')
+            cipher.encrypt
+            cipher.key = KEY # Uses hard-coded key
+            # ...
+        end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    **Ensure `config/master.key` is in your `.gitignore` file.** Store other keys in Rails encrypted credentials (`credentials.yml.enc`) or environment variables.
+
+    #### Secure Code Example
+    ```gitignore
+    # .gitignore (Secure)
+    # SECURE: Ignore the master key.
+    /config/master.key
+    .env
+    ```
+    ```ruby
+    # lib/custom_encryptor.rb (Secure - using Credentials)
+    require 'openssl'
+
+    class CustomEncryptor
+        # SECURE: Load key from Rails credentials.
+        KEY = Rails.application.credentials.dig(:custom_encryption_key)
+
+        def encrypt(data)
+             raise "Custom encryption key not set!" if KEY.blank?
+            cipher = OpenSSL::Cipher.new('aes-256-cbc')
+            cipher.encrypt
+            cipher.key = KEY
+            # ...
+        end
+    end
+    ```
+    ```yaml
+    # config/credentials.yml.enc (Content before encryption)
+    # custom_encryption_key: "your-strong-32-byte-key-here"
+    ```
+
+    #### Testing Strategy
+    Use secret scanning tools. **Verify `config/master.key` is in `.gitignore`**. Review code and config files (`.yml`) for hard-coded keys used with `OpenSSL::Cipher`, JWT gems, etc. Check Git history.
+  </Tab>
+</Tabs>
