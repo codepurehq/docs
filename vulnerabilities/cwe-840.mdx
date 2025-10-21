@@ -8,9 +8,7 @@ iconType: "solid"
 
 ## Overview
 
-Business Logic Errors are flaws in the **design and implementation of an application's workflow** related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit **legitimate application processes** in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states. ⚙️➡️❓➡️💸
-
----
+Business Logic Errors are flaws in the design and implementation of an application's workflow related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit legitimate application processes in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states.
 
 ## Business Impact
 
@@ -20,19 +18,15 @@ Exploiting business logic flaws can lead to significant consequences tailored to
 * **Data Manipulation:** Altering application state in unintended ways (e.g., getting negative account balances, submitting orders for unavailable items).
 * **Denial of Service:** Exploiting logic that consumes excessive resources under specific conditions.
 
----
-
 <Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-840](https://cwe.mitre.org/data/definitions/840.html)
   **OWASP Top 10 (2021):** A04:2021 - Insecure Design
   **Severity:** High to Critical (highly context-dependent)
 </Card>
 
----
-
 ## Framework-Specific Analysis and Remediation
 
-Business logic flaws are **highly application-specific** and **cannot be prevented solely by framework features**. They require careful design, threat modeling, and robust implementation of the application's rules.
+Business logic flaws are highly application-specific and cannot be prevented solely by framework features. They require careful design, threat modeling, and robust implementation of the application's rules.
 
 **Key Remediation Principles:**
 1.  **Threat Modeling:** Identify potential abuses of workflows during the design phase. Think like an attacker: "How can I misuse this feature?"
@@ -40,8 +34,6 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
 3.  **Complete Validation:** Validate not just data types, but also business rules (e.g., quantity must be <= available stock, user must be eligible for discount).
 4.  **Idempotency:** Ensure that critical actions (like payments) cannot be accidentally or maliciously executed multiple times if a request is replayed.
 5.  **Assume Untrusted Input:** Treat all user input, even seemingly benign choices in a workflow, as potentially manipulative. Re-verify critical data server-side at each step.
-
----
 
 <Tabs>
   <Tab title="Python">
@@ -224,7 +216,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     An approval workflow requires manager approval, but the "approve" endpoint accepts an `isManagerApproved=true` parameter that the server trusts.
     ```java
     // controller/WorkflowController.java - Assume RequestData, WorkflowService, WorkflowRequest, WorkflowRepo exist
-    import org.springframework.security.access.prepost.PreAuthorize;
+    import org.springframework.security.access.prepost.PreAuthorize; // For role check
     import org.springframework.web.bind.annotation.*;
     import java.security.Principal;
     // ... other imports ...
@@ -338,7 +330,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         if (user != null)
         {
             // Reset password logic using UserManager is preferred as it handles token validation/invalidation
-            var resetResult = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            var resetResult = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword); // Assumes token is validated internally by ResetPasswordAsync if using Identity default token provider
             // FORGOTTEN STEP (if ResetPasswordAsync doesn't invalidate or if custom token logic):
             // user.PasswordResetToken = null; // Invalidate the token in the DB
             // await _context.SaveChangesAsync();
@@ -382,6 +374,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
              ProductId = productId;
              Product = await _context.Products.FindAsync(productId);
              // Handle product not found
+             if (Product == null) RedirectToPage("/NotFound"); // Example
         }
 
         public async Task<IActionResult> OnPostAsync() // Renamed from example
@@ -393,6 +386,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
                 ModelState.AddModelError(nameof(InputQuantity), "Quantity must be positive.");
                 // Need to reload product for the Page() return if validation fails
                 Product = await _context.Products.FindAsync(ProductId);
+                if (Product == null) return NotFound(); // Check again
                 return Page();
             }
 
@@ -495,7 +489,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     A coupon can be applied, reducing the cart total, but there's no check to prevent applying it repeatedly.
     ```php
     // app/Http/Controllers/CartController.php
-    use Illuminate\Http\Request;
+    use Illuminate\Http\Request; // Added import
     use App\Models\Coupon; // Assuming Coupon model
     use Illuminate\Support\Facades\Redirect; // Use facade for redirect
 
@@ -503,7 +497,8 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         $couponCode = $request->input('coupon_code');
         $coupon = Coupon::where('code', $couponCode)->first();
 
-        if ($coupon && $coupon->isValid()) { // Assume isValid checks date, maybe uses remaining
+        // Assume isValid checks date, maybe uses remaining
+        if ($coupon && $coupon->isValid()) {
             $cart = $request->session()->get('cart'); // Example: getting cart from session
             if ($cart) { // Check if cart exists
                  $cart->applyDiscount($coupon->discount_amount); // Assumes method exists on cart object
@@ -657,6 +652,10 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     An endpoint to add items to a cart doesn't check if the cart/order has already been submitted or paid for.
     ```javascript
     // routes/cart.js - Assume CartService, ensureAuthenticated exist
+    // const CartService = require('../services/cartService'); // Example import
+    // const ensureAuthenticated = require('../middleware/auth'); // Example import
+    // const router = require('express').Router(); // Example router setup
+
     router.post('/items', ensureAuthenticated, async (req, res) => {
         const { cartId, productId, quantity } = req.body; // Assuming cartId is known
         const userId = req.user.id;
@@ -749,8 +748,15 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
       before_action :authenticate_user! # Assume Devise or similar
 
       def create
-        amount = BigDecimal(params[:amount])
-        recipient = User.find(params[:recipient_id])
+        # Ensure params are present and valid types before converting
+        amount_param = params[:amount]
+        recipient_id_param = params[:recipient_id]
+        if amount_param.blank? || recipient_id_param.blank?
+           redirect_to root_path, alert: "Amount and recipient required." and return
+        end
+
+        amount = BigDecimal(amount_param)
+        recipient = User.find(recipient_id_param)
         sender = current_user
 
         # DANGEROUS: Balance checked outside of transaction lock.
@@ -763,7 +769,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
             # recipient.reload
             sender.balance -= amount
             recipient.balance += amount
-            sender.save!
+            sender.save! # Use save! to raise exception on failure
             recipient.save!
           end
           redirect_to root_path, notice: "Transfer successful."
@@ -772,8 +778,8 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         end
       rescue ActiveRecord::RecordNotFound
           redirect_to root_path, alert: "Recipient not found."
-      rescue ArgumentError # Handle invalid BigDecimal
-          redirect_to root_path, alert: "Invalid amount."
+      rescue ArgumentError # Handle invalid BigDecimal conversion
+          redirect_to root_path, alert: "Invalid amount format."
       end
     end
     ```
@@ -792,13 +798,14 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         if @invoice.update(invoice_params)
            redirect_to @invoice, notice: 'Invoice updated.'
         else
-           render :edit # Assume edit action exists
+           render :edit # Assume edit action and view exist
         end
       end
 
       private
       def set_invoice
-        @invoice = current_user.invoices.find(params[:id]) # Scope to user
+        # Scope to user for basic authZ, but doesn't check state
+        @invoice = current_user.invoices.find(params[:id])
       rescue ActiveRecord::RecordNotFound
         redirect_to invoices_path, alert: "Invoice not found." # Assume invoices_path exists
       end
@@ -821,21 +828,31 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
       before_action :authenticate_user!
 
       def create
-        amount = BigDecimal(params[:amount])
-        recipient = User.find(params[:recipient_id])
+        # Basic validation
+        amount_param = params[:amount]
+        recipient_id_param = params[:recipient_id]
+        if amount_param.blank? || recipient_id_param.blank?
+           redirect_to root_path, alert: "Amount and recipient required." and return
+        end
+        amount = BigDecimal(amount_param) rescue nil # Handle conversion error
+        if amount.nil? || amount <= 0
+            redirect_to root_path, alert: "Invalid amount." and return
+        end
+
+        recipient = User.find(recipient_id_param)
         sender = current_user
 
         # SECURE: Perform check and update within a transaction with locking.
         ActiveRecord::Base.transaction do
           # Lock rows in a consistent order to prevent deadlocks (e.g., by ID)
           users_to_lock = [sender, recipient].sort_by(&:id)
-          users_to_lock.first.lock!
-          users_to_lock.second.lock!
+          users_to_lock.first.lock!("FOR UPDATE") # Explicit lock type
+          users_to_lock.second.lock!("FOR UPDATE")
 
           # Re-check balance *after* acquiring lock
           # Reloading might be needed if attributes changed before lock
-          # sender.reload
-          if sender.balance >= amount && amount > 0
+          sender.reload
+          if sender.balance >= amount
             sender.balance -= amount
             recipient.balance += amount
             # Use save! to raise exception on validation failure inside transaction
@@ -843,16 +860,16 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
             recipient.save!
           else
             # Raise exception to rollback transaction and show error
-            raise ActiveRecord::Rollback, "Insufficient funds or invalid amount."
+            raise ActiveRecord::Rollback, "Insufficient funds."
           end
         end
         redirect_to root_path, notice: "Transfer successful."
       rescue ActiveRecord::Rollback => e
-        redirect_to root_path, alert: e.message
+        redirect_to root_path, alert: e.message || "Transfer failed."
       rescue ActiveRecord::RecordNotFound
           redirect_to root_path, alert: "Recipient not found."
       rescue ArgumentError
-          redirect_to root_path, alert: "Invalid amount."
+          redirect_to root_path, alert: "Invalid amount format."
       end
     end
 
@@ -860,7 +877,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     class InvoicesController < ApplicationController
       before_action :authenticate_user!
       before_action :set_invoice
-      # SECURE: Add a check before the update action
+      # SECURE: Add a check before the update/edit actions
       before_action :check_if_editable, only: [:edit, :update] # Check before showing edit form too
 
       def edit # Added edit action example
