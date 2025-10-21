@@ -99,7 +99,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         except Order.DoesNotExist:
             raise Http404
         # ... process payment form ...
-        # Assume payment_successful is a boolean result
+        payment_successful = True # Placeholder for actual payment logic result
         if payment_successful:
             order.status = 'paid'
             order.save()
@@ -155,7 +155,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
             # Clear discount from session after successful charge
             if 'discount_code' in request.session: del request.session['discount_code']
             return HttpResponse("Checked out!")
-        except PaymentFailedError:
+        except Exception as e: # Catch specific PaymentFailedError if defined
              # If charge fails, maybe revert discount usage status? (Complex logic needed)
              # if discount_amount_applied > 0:
              #     revert_discount_usage(discount_code, request.user)
@@ -191,22 +191,27 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     #### Vulnerable Scenario 1: Price Check Only on Add-to-Cart
     The price of an item is checked when added to the cart, but not re-checked at checkout.
     ```java
-    // service/CartService.java - Assuming ProductRepo, CartRepo, CartItem exist
+    // service/CartService.java - Assuming ProductRepo, CartRepo, CartItem, Product exist
+    // @Autowired ProductRepository productRepo;
+    // @Autowired CartRepository cartRepo;
     public void addToCart(String userId, String productId, int quantity) {
         Product p = productRepo.findById(productId).orElseThrow();
         // Price is correct when added
-        cartRepo.addItem(userId, productId, quantity, p.getPrice());
+        cartRepo.addItem(userId, productId, quantity, p.getPrice()); // Assumes CartRepo handles CartItem creation
     }
 
-    // controller/CheckoutController.java
+    // controller/CheckoutController.java - Assume Cart, CartItem, CartRepo, PaymentService exist
+    // @Autowired CartRepository cartRepo;
+    // @Autowired PaymentService paymentService;
     @PostMapping("/checkout")
     public String checkout(Principal principal) {
         String userId = principal.getName();
-        Cart cart = cartRepo.findByUserId(userId);
+        Cart cart = cartRepo.findByUserId(userId); // Assumes method exists
         BigDecimal total = BigDecimal.ZERO;
         // DANGEROUS: Calculates total based on prices stored in the cart session/DB
         // *when items were added*. Prices might have changed since then.
-        for (CartItem item : cart.getItems()) {
+        for (CartItem item : cart.getItems()) { // Assumes getItems() exists
+            // Assumes getPriceAtAddition() exists
             total = total.add(item.getPriceAtAddition().multiply(BigDecimal.valueOf(item.getQuantity())));
         }
         paymentService.charge(userId, total); // Charges potentially outdated total
@@ -218,8 +223,10 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     #### Vulnerable Scenario 2: Workflow Bypass via Parameter Manipulation
     An approval workflow requires manager approval, but the "approve" endpoint accepts an `isManagerApproved=true` parameter that the server trusts.
     ```java
-    // controller/WorkflowController.java
-    import org.springframework.security.access.prepost.PreAuthorize; // For role check
+    // controller/WorkflowController.java - Assume RequestData, WorkflowService, WorkflowRequest, WorkflowRepo exist
+    import org.springframework.security.access.prepost.PreAuthorize;
+    import org.springframework.web.bind.annotation.*;
+    import java.security.Principal;
     // ... other imports ...
 
     @PostMapping("/submit-request")
@@ -239,7 +246,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         // The business logic flaw is trusting this flag instead of re-validating conditions.
         WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
         if (forceApprove || workflowService.checkApprovalConditions(req)) { // Bypasses checks
-            req.setStatus("APPROVED");
+            req.setStatus("APPROVED"); // Assumes setStatus exists
             workflowRepo.save(req);
         } else {
              // Handle condition failure
@@ -256,6 +263,9 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     #### Secure Code Example
     ```java
     // controller/CheckoutController.java (Secure Price Check)
+    // Assume ProductRepository exists
+    // @Autowired ProductRepository productRepo;
+
     @PostMapping("/checkout-secure")
     public String checkoutSecure(Principal principal) {
         String userId = principal.getName();
@@ -281,7 +291,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     public String approveRequestSecure(@PathVariable long id /* Removed forceApprove param */) {
         WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
         // SECURE: Always re-validate conditions on the server. Do not trust client flags.
-        if (workflowService.checkApprovalConditions(req)) {
+        if (workflowService.checkApprovalConditions(req)) { // Assumes this method exists
             // SECURE: Only proceed if server-side conditions are met.
             req.setStatus("APPROVED");
             workflowRepo.save(req);
@@ -308,67 +318,91 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     A password reset link uses a token, but the token isn't invalidated after the first successful use.
     ```csharp
     // Controllers/AccountController.cs - Assume ResetPasswordViewModel, _context, _userManager exist
+    using Microsoft.AspNetCore.Mvc; // Added for attributes, IActionResult etc.
+    using Microsoft.AspNetCore.Identity; // Added for UserManager
+    using Microsoft.EntityFrameworkCore; // Added for FirstOrDefaultAsync
+    using System; // Added for DateTime
+    using System.Threading.Tasks; // Added for Task
+    // Assume ApplicationDbContext _context, UserManager<IdentityUser> _userManager injected
+    // Assume ResetPasswordViewModel has Token, NewPassword, Email properties
+    // Assume User model has PasswordResetToken, PasswordResetTokenExpiry properties
+
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
     {
         // DANGEROUS: Finds user by token, but doesn't check if token has already been used.
         // Attacker could intercept the reset email, let the user reset,
         // then use the same token again later to set their own password.
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.Token /* && u.TokenExpiry > DateTime.UtcNow */);
+        // Also, finding user by token might leak info if token is guessable. Better to find by email/ID.
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.Token && u.PasswordResetTokenExpiry > DateTime.UtcNow);
         if (user != null)
         {
-            // Reset password logic...
-            var resetResult = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword); // Assumes token is validated internally by ResetPasswordAsync if using Identity default token provider
+            // Reset password logic using UserManager is preferred as it handles token validation/invalidation
+            var resetResult = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
             // FORGOTTEN STEP (if ResetPasswordAsync doesn't invalidate or if custom token logic):
             // user.PasswordResetToken = null; // Invalidate the token in the DB
             // await _context.SaveChangesAsync();
             if (resetResult.Succeeded) {
-                 return RedirectToAction("ResetSuccess");
+                 return RedirectToAction("ResetSuccess"); // Assume ResetSuccess action exists
             } else {
                  // Add errors to model state
+                 foreach(var error in resetResult.Errors) { ModelState.AddModelError(string.Empty, error.Description); }
             }
+        } else {
+            ModelState.AddModelError(string.Empty, "Invalid or expired token.");
         }
-        // Handle invalid token
-        ModelState.AddModelError(string.Empty, "Invalid token.");
-        return View(model);
+        // Handle invalid token or Identity errors
+        return View(model); // Return view with model to show errors
     }
     ```
 
     #### Vulnerable Scenario 2: Modifying Quantity Below Minimum Order
     Business rule requires minimum order quantity of 5, enforced client-side only.
-    ```html
-    <form method="post">
-        <input type="number" name="quantity" value="5" min="5" id="quantityInput" asp-for="InputQuantity">
-        <input type="hidden" name="productId" value="@Model.Product.Id" asp-for="ProductId">
-        <button type="submit">Add To Cart</button>
-    </form>
-    ```
     ```csharp
     // Pages/ProductPage.cshtml.cs - Assume _context, _cartService exist, PageModel structure
-    [BindProperties] // Bind properties from form post
+    using Microsoft.AspNetCore.Mvc; // For PageModel, IActionResult etc.
+    using Microsoft.AspNetCore.Mvc.RazorPages; // For PageModel
+    using System.ComponentModel.DataAnnotations; // For Range
+    using System.Threading.Tasks; // For Task
+    // Assume ApplicationDbContext _context, CartService _cartService injected
+    // Assume Product model exists
+
+    // Bind properties for GET and POST
+    [BindProperties(SupportsGet = true)]
     public class ProductPageModel : PageModel
     {
-        public int ProductId { get; set;}
-        public int InputQuantity { get; set;}
-        // Assume Product property loaded OnGet
+        // ... (Inject context, service) ...
+        public Product Product { get; set; } // Property for product details
+        public int ProductId { get; set;} // Bound from route/query
 
-        public async Task<IActionResult> OnPostAsync() // Renamed for clarity
+        [BindProperty] // Only bind this on POST
+        public int InputQuantity { get; set;}
+
+        public async Task OnGetAsync(int productId) {
+             ProductId = productId;
+             Product = await _context.Products.FindAsync(productId);
+             // Handle product not found
+        }
+
+        public async Task<IActionResult> OnPostAsync() // Renamed from example
         {
             // DANGEROUS: Server trusts the submitted quantity.
             // Attacker uses dev tools to change quantity to 1 before submitting.
             // Business rule (min 5) is bypassed because it's only checked client-side.
             if (InputQuantity <= 0) { // Basic check, but not the business rule
                 ModelState.AddModelError(nameof(InputQuantity), "Quantity must be positive.");
+                // Need to reload product for the Page() return if validation fails
+                Product = await _context.Products.FindAsync(ProductId);
                 return Page();
             }
 
             var product = await _context.Products.FindAsync(ProductId);
+            if (product == null) return NotFound();
             // ... add 'InputQuantity' of 'product' to cart ...
             _cartService.AddItem(product, InputQuantity); // Adds only 1 item
 
             return RedirectToPage("/Cart");
         }
-        // ... OnGet and other methods ...
     }
     ```
 
@@ -383,7 +417,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
     {
         // SECURE: Rely on Identity's ResetPasswordAsync to validate AND invalidate the token.
-        // Find user by email or ID, not by token directly in this action.
+        // Find user by email or ID from the model, not by token directly.
         var user = await _userManager.FindByEmailAsync(model.Email); // Assuming email is in ViewModel
         if (user != null)
         {
@@ -394,35 +428,47 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
             {
                 // If using custom token logic, manually invalidate here:
                 // user.PasswordResetToken = null;
-                // await _userManager.UpdateAsync(user);
+                // user.PasswordResetTokenExpiry = null;
+                // await _userManager.UpdateAsync(user); // Use UserManager or _context.SaveChangesAsync()
                 return RedirectToAction("ResetSuccess");
             }
             // Handle Identity errors
             foreach (var error in result.Errors) { ModelState.AddModelError(string.Empty, error.Description); }
         }
         else { ModelState.AddModelError(string.Empty, "Invalid user or token."); }
-        // Handle invalid/expired token
+        // Handle invalid/expired token or user not found
         return View(model);
     }
 
     // Pages/ProductPage.cshtml.cs (Secure Quantity Check)
     public class ProductPageModelSecure : PageModel
     {
+        // ... (Inject context, service) ...
+        [BindProperty(SupportsGet = true)]
         public int ProductId { get; set;}
+        public Product Product { get; set; }
 
         // SECURE: Apply Range validation attribute server-side.
         [BindProperty]
         [Range(5, 100, ErrorMessage = "Quantity must be between 5 and 100.")]
         public int InputQuantity { get; set;}
-        // Assume Product property loaded OnGet
 
-        public async Task<IActionResult> OnPostAsync()
+         public async Task OnGetAsync(int productId) {
+             ProductId = productId;
+             Product = await _context.Products.FindAsync(productId);
+             // Handle not found
+             if (Product == null) RedirectToPage("/NotFound"); // Example
+        }
+
+
+        public async Task<IActionResult> OnPostAsync() // Renamed from example
         {
             // SECURE: ModelState.IsValid checks the [Range] attribute.
             if (!ModelState.IsValid)
             {
-                // Reload product info for the page model if needed for display
-                // Product = await _context.Products.FindAsync(ProductId);
+                // Reload product info needed for the page model if validation fails
+                Product = await _context.Products.FindAsync(ProductId);
+                if (Product == null) return NotFound(); // Check again
                 return Page(); // Return page with validation errors
             }
 
@@ -432,7 +478,6 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
 
             return RedirectToPage("/Cart");
         }
-        // ... OnGet ...
     }
     ```
 
@@ -450,25 +495,29 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     A coupon can be applied, reducing the cart total, but there's no check to prevent applying it repeatedly.
     ```php
     // app/Http/Controllers/CartController.php
-    use Illuminate\Http\Request; // Added import
+    use Illuminate\Http\Request;
     use App\Models\Coupon; // Assuming Coupon model
-    // ... other imports ...
+    use Illuminate\Support\Facades\Redirect; // Use facade for redirect
 
     public function applyCoupon(Request $request) {
         $couponCode = $request->input('coupon_code');
         $coupon = Coupon::where('code', $couponCode)->first();
 
-        if ($coupon && $coupon->isValid()) { // Assume isValid checks date, maybe uses
+        if ($coupon && $coupon->isValid()) { // Assume isValid checks date, maybe uses remaining
             $cart = $request->session()->get('cart'); // Example: getting cart from session
-            $cart->applyDiscount($coupon->discount_amount); // Applies discount
-            // DANGEROUS: Doesn't prevent applying the same (or different) coupon again.
-            // Also, coupon validity (e.g., uses left) should be rechecked *during checkout*.
-            $request->session()->put('cart', $cart); // Save cart back to session
-            session()->flash('message', 'Coupon applied!');
+            if ($cart) { // Check if cart exists
+                 $cart->applyDiscount($coupon->discount_amount); // Assumes method exists on cart object
+                 // DANGEROUS: Doesn't prevent applying the same (or different) coupon again.
+                 // Also, coupon validity (e.g., uses left) should be rechecked *during checkout*.
+                 $request->session()->put('cart', $cart); // Save cart back to session
+                 session()->flash('message', 'Coupon applied!');
+            } else {
+                 session()->flash('error', 'Cart not found.');
+            }
         } else {
             session()->flash('error', 'Invalid coupon code.');
         }
-        return redirect()->route('cart.show');
+        return Redirect::route('cart.show'); // Assume route exists
     }
     ```
 
@@ -478,7 +527,8 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     // app/Http/Controllers/SurveyController.php
     use App\Models\Survey; // Added import
     use App\Models\User; // Added import
-    use Illuminate\Http\Request; // Added import
+    use Illuminate\Http\Request;
+    use Illuminate\Support\Facades\Redirect; // Use facade
 
     public function claimReward(Request $request, Survey $survey) {
         // Assume route model binding finds the survey by ID
@@ -494,7 +544,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         $survey->reward_claimed = true; // Marks claimed, but completion wasn't checked
         $survey->save();
 
-        return redirect()->route('rewards.index'); // Assume rewards.index exists
+        return Redirect::route('rewards.index'); // Assume rewards.index exists
     }
     ```
 
@@ -510,13 +560,19 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         $coupon = Coupon::where('code', $couponCode)->first();
         $cart = $request->session()->get('cart'); // Example: getting cart
 
-        // SECURE: Check if a coupon is already applied to this cart.
-        if ($cart->coupon_applied_id !== null) { // Assume cart has this property
-            session()->flash('error', 'Only one coupon per order.');
-            return redirect()->route('cart.show');
+        if (!$cart) {
+             session()->flash('error', 'Cart not found.');
+             return Redirect::route('cart.show');
         }
 
-        if ($coupon && $coupon->isValidForCart($cart)) { // Pass cart for context checks
+        // SECURE: Check if a coupon is already applied to this cart.
+        if ($cart->coupon_applied_id !== null) { // Assume cart object has this property
+            session()->flash('error', 'Only one coupon per order.');
+            return Redirect::route('cart.show');
+        }
+
+        // Assume isValidForCart checks date, uses remaining, and cart applicability
+        if ($coupon && $coupon->isValidForCart($cart)) {
             $cart->applyDiscount($coupon->discount_amount);
             $cart->coupon_applied_id = $coupon->id; // Mark coupon as applied to THIS cart
             $request->session()->put('cart', $cart); // Save updated cart
@@ -524,7 +580,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         } else {
             session()->flash('error', 'Invalid or inapplicable coupon code.');
         }
-        return redirect()->route('cart.show');
+        return Redirect::route('cart.show');
         // NOTE: Final validation should still happen during checkout.
     }
 
@@ -536,12 +592,12 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         // SECURE: Check survey completion status.
         if (!$survey->is_completed) { // Assume is_completed is a boolean field
              session()->flash('error', 'Survey not completed yet.');
-             return redirect()->route('survey.show', $survey); // Assume survey.show exists
+             return Redirect::route('survey.show', $survey); // Assume survey.show exists
         }
         // SECURE: Check if reward already claimed.
         if ($survey->reward_claimed) {
             session()->flash('error', 'Reward already claimed for this survey.');
-            return redirect()->route('rewards.index');
+            return Redirect::route('rewards.index');
         }
 
         // Give reward only if checks pass
@@ -549,7 +605,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         $survey->reward_claimed = true;
         $survey->save();
 
-        return redirect()->route('rewards.index');
+        return Redirect::route('rewards.index');
     }
     ```
 
@@ -568,13 +624,17 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     An API endpoint allows voting but only checks if the user *has ever* voted, not if they are voting *again* within the allowed period.
     ```javascript
     // routes/poll.js - Assume VoteService, ensureAuthenticated exist
+    // const VoteService = require('../services/voteService'); // Example import
+    // const ensureAuthenticated = require('../middleware/auth'); // Example import
+    // const router = require('express').Router(); // Example router setup
+
     router.post('/:pollId/vote', ensureAuthenticated, async (req, res) => {
         const { pollId } = req.params;
         const { optionId } = req.body;
         const userId = req.user.id; // Assume user is attached by middleware
 
         try {
-            const hasVoted = await VoteService.checkIfUserVoted(userId, pollId);
+            const hasVoted = await VoteService.checkIfUserVoted(userId, pollId); // Assumes method exists
             // DANGEROUS: Simple boolean check. If the user votes, then tries again
             // immediately (e.g., race condition, replayed request), this check might
             // still pass if the vote hasn't fully registered yet, or if the check
@@ -584,9 +644,12 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
             }
 
             // Record the vote
-            await VoteService.recordVote(userId, pollId, optionId);
+            await VoteService.recordVote(userId, pollId, optionId); // Assumes method exists
             res.send('Vote recorded.');
-        } catch (err) { res.status(500).send('Error.'); }
+        } catch (err) {
+            console.error("Voting error:", err); // Log error
+            res.status(500).send('Error.');
+        }
     });
     ```
 
@@ -601,14 +664,17 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         try {
              // DANGEROUS: Fetches cart but doesn't check its status.
              // Attacker could submit this request *after* payment for 'cartId' is complete.
-             const cart = await CartService.getCart(cartId, userId); // Assume this checks ownership
+             const cart = await CartService.getCart(cartId, userId); // Assume this checks ownership & exists
              if (!cart) return res.status(404).send('Cart not found.');
 
              // Logic to add item... proceeds even if cart.status is 'PAID' or 'SUBMITTED'
-             await CartService.addItem(cartId, productId, quantity);
+             await CartService.addItem(cartId, productId, quantity); // Assumes method exists
              res.send('Item added.');
 
-        } catch (err) { res.status(500).send('Error.'); }
+        } catch (err) {
+             console.error("Add item error:", err); // Log error
+             res.status(500).send('Error.');
+        }
     });
     ```
 
@@ -678,7 +744,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     #### Vulnerable Scenario 1: Transferring More Funds Than Available
     A bank transfer function checks the balance initially but doesn't use locking, allowing a race condition.
     ```ruby
-    # app/controllers/transfers_controller.rb - Assume User model has balance
+    # app/controllers/transfers_controller.rb - Assume User model has balance, BigDecimal loaded
     class TransfersController < ApplicationController
       before_action :authenticate_user! # Assume Devise or similar
 
@@ -692,6 +758,9 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
           # Attacker sends two simultaneous requests for $100 when balance is $100.
           # Both might pass this check before either transaction completes.
           ActiveRecord::Base.transaction do
+            # Reloading inside transaction might still race if not locked
+            # sender.reload
+            # recipient.reload
             sender.balance -= amount
             recipient.balance += amount
             sender.save!
@@ -714,7 +783,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     ```ruby
     # app/controllers/invoices_controller.rb - Assume Invoice model has status
     class InvoicesController < ApplicationController
-      before_action :authenticate_user!
+      before_action :authenticate_user! # Added auth
       before_action :set_invoice # Assume this finds @invoice via current_user.invoices.find
 
       def update
@@ -723,18 +792,19 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
         if @invoice.update(invoice_params)
            redirect_to @invoice, notice: 'Invoice updated.'
         else
-           render :edit
+           render :edit # Assume edit action exists
         end
       end
 
       private
       def set_invoice
-        @invoice = current_user.invoices.find(params[:id])
+        @invoice = current_user.invoices.find(params[:id]) # Scope to user
       rescue ActiveRecord::RecordNotFound
-        redirect_to invoices_path, alert: "Invoice not found."
+        redirect_to invoices_path, alert: "Invoice not found." # Assume invoices_path exists
       end
 
       def invoice_params
+         # Ensure permitted params are safe and don't allow changing status here
          params.require(:invoice).permit(:due_date, :amount /* etc */)
       end
     end
@@ -757,15 +827,18 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
 
         # SECURE: Perform check and update within a transaction with locking.
         ActiveRecord::Base.transaction do
-          # Lock rows in a consistent order to prevent deadlocks
+          # Lock rows in a consistent order to prevent deadlocks (e.g., by ID)
           users_to_lock = [sender, recipient].sort_by(&:id)
           users_to_lock.first.lock!
           users_to_lock.second.lock!
 
           # Re-check balance *after* acquiring lock
+          # Reloading might be needed if attributes changed before lock
+          # sender.reload
           if sender.balance >= amount && amount > 0
             sender.balance -= amount
             recipient.balance += amount
+            # Use save! to raise exception on validation failure inside transaction
             sender.save!
             recipient.save!
           else
@@ -790,6 +863,11 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
       # SECURE: Add a check before the update action
       before_action :check_if_editable, only: [:edit, :update] # Check before showing edit form too
 
+      def edit # Added edit action example
+         # If check_if_editable passes, render form
+         render :edit
+      end
+
       def update
         # State already checked by before_action
         if @invoice.update(invoice_params)
@@ -798,8 +876,6 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
            render :edit
         end
       end
-
-      # ... other actions like edit ...
 
       private
       def set_invoice
@@ -810,7 +886,7 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
 
       def check_if_editable
         # Assume Invoice model has statuses like 'draft', 'sent', 'paid'
-        unless @invoice.status == 'draft'
+        unless @invoice.status == 'draft' # Or whatever editable status is
            redirect_to @invoice, alert: "Cannot edit an invoice that is not in draft status."
         end
       end
@@ -824,6 +900,6 @@ Business logic flaws are **highly application-specific** and **cannot be prevent
     #### Testing Strategy
     Map workflows.
     * **Race Conditions:** Use tools (Burp Intruder, custom scripts with threads) to send simultaneous requests for balance-dependent actions (transfers, withdrawals) or actions consuming limited resources (claiming unique coupon). Verify only one succeeds or balance remains correct.
-    * **State Bypass:** Attempt to perform actions on objects in the wrong state (e.g., edit a 'paid' invoice, ship a 'cancelled' order). Verify the action is denied based on server-side state checks.
+    * **State Bypass:** Attempt to perform actions on objects in the wrong state (e.g., edit a 'paid' invoice, ship a 'cancelled' order). Verify the action is denied based on server-side state checks (`before_action`, model validations, state machine).
   </Tab>
 </Tabs>
