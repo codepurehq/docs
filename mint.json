@@ -148,7 +148,11 @@
     {
       "group": "A08:2021 – Software and Data Integrity Failures",
       "pages": [
-        "vulnerabilities/deserialization"
+        "vulnerabilities/deserialization",
+        "vulnerabilities/cwe-494",
+        "vulnerabilities/cwe-829",
+        "vulnerabilities/cwe-915",
+        "vulnerabilities/cwe-353"
       ]
     },
     {

