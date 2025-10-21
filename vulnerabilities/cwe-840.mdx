@@ -1,0 +1,724 @@
+---
+title: "Business Logic Errors"
+sidebarTitle: "Business Logic Errors (CWE-840)"
+description: "Mitigation for flaws in the application's workflow or business rules that allow unintended actions or data access."
+icon: "puzzle-piece"
+iconType: "solid"
+---
+
+## Overview
+
+Business Logic Errors are flaws in the **design and implementation of an application's workflow** related to its intended function. Unlike technical vulnerabilities (like SQLi or XSS), these flaws exploit **legitimate application processes** in unexpected ways to achieve a malicious goal. Examples include manipulating multi-step processes, abusing feature interactions, or exploiting incorrect assumptions about user behavior or data states. ⚙️➡️❓➡️💸
+
+---
+
+## Business Impact
+
+Exploiting business logic flaws can lead to significant consequences tailored to the application's purpose:
+* **Financial Fraud:** Bypassing payment steps, applying excessive discounts, transferring funds improperly.
+* **Unauthorized Access/Action:** Gaining access to features or performing actions reserved for users in a different state (e.g., accessing premium content without paying, approving a request that shouldn't be approvable).
+* **Data Manipulation:** Altering application state in unintended ways (e.g., getting negative account balances, submitting orders for unavailable items).
+* **Denial of Service:** Exploiting logic that consumes excessive resources under specific conditions.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-840](https://cwe.mitre.org/data/definitions/840.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design
+  **Severity:** High to Critical (highly context-dependent)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Business logic flaws are **highly application-specific** and **cannot be prevented solely by framework features**. They require careful design, threat modeling, and robust implementation of the application's rules.
+
+**Key Remediation Principles:**
+1.  **Threat Modeling:** Identify potential abuses of workflows during the design phase. Think like an attacker: "How can I misuse this feature?"
+2.  **State Management:** Ensure application state transitions are correctly enforced server-side (e.g., an order must be 'pending' before it can be 'shipped').
+3.  **Complete Validation:** Validate not just data types, but also business rules (e.g., quantity must be <= available stock, user must be eligible for discount).
+4.  **Idempotency:** Ensure that critical actions (like payments) cannot be accidentally or maliciously executed multiple times if a request is replayed.
+5.  **Assume Untrusted Input:** Treat all user input, even seemingly benign choices in a workflow, as potentially manipulative. Re-verify critical data server-side at each step.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Flaws in Django views or Flask routes that incorrectly handle application state or workflow steps.
+
+    #### Vulnerable Scenario 1: Discount Abuse
+    A discount code is applied, but the server doesn't verify if the code is still valid *at the time of checkout*.
+    ```python
+    # views/cart.py
+    def apply_discount(request):
+        code = request.POST.get('discount_code')
+        discount_amount = get_discount(code) # Assume this checks validity *now*
+        if discount_amount > 0:
+            request.session['discount'] = discount_amount
+            request.session['discount_code'] = code # Store code too
+        return redirect('view_cart')
+
+    # views/checkout.py
+    def process_checkout(request):
+        discount = request.session.get('discount', 0)
+        cart_total = calculate_cart_total(request.user)
+        final_total = cart_total - discount
+        # DANGEROUS: The discount code's validity (e.g., expiry, usage limit)
+        # is NOT re-checked here. The user could apply a valid code, wait for
+        # it to expire or be used up by others, then checkout with the old discount.
+        charge_user(request.user, final_total)
+        # Need to mark discount code as used *here* too
+        # del request.session['discount'] # Forgetting this is also a flaw
+        return HttpResponse("Checked out!")
+    ```
+
+    #### Vulnerable Scenario 2: Skipping Payment Step
+    A multi-step order process allows users to jump directly to the "confirmation" URL without completing the "payment" step.
+    ```python
+    # views/order.py
+    def payment_step(request, order_id):
+        order = Order.objects.get(pk=order_id, user=request.user)
+        # ... process payment form ...
+        if payment_successful:
+            order.status = 'paid'
+            order.save()
+            request.session['last_paid_order'] = order.id # Mark as paid in session
+            return redirect('order_confirmation', order_id=order.id)
+        # ...
+
+    def confirmation_step(request, order_id):
+        # DANGEROUS: Only checks if the user owns the order,
+        # not if the order status is actually 'paid'.
+        # Attacker navigates directly to /order/confirm/123 after creating order, skipping payment.
+        try:
+             order = Order.objects.get(pk=order_id, user=request.user)
+             # Should check order.status here!
+             # if order.status != 'paid': return redirect('order_error')
+             return render(request, 'confirmation.html', {'order': order})
+        except Order.DoesNotExist:
+             raise Http404
+    ```
+
+    #### Mitigation and Best Practices
+    * Re-validate all conditions, prices, discounts, and eligibility server-side *at the point of final action* (e.g., checkout, order placement).
+    * Enforce strict state transitions (e.g., use a state machine pattern). Check the object's current state before allowing the next step in a workflow.
+
+    #### Secure Code Example
+    ```python
+    # views/checkout.py (Secure Discount)
+    def process_checkout_secure(request):
+        discount_code = request.session.get('discount_code')
+        cart_total = calculate_cart_total(request.user)
+        final_total = cart_total
+
+        if discount_code:
+            # SECURE: Re-validate discount code validity *at checkout time*.
+            is_valid, discount_amount = check_and_use_discount(discount_code, request.user, cart_total)
+            if is_valid:
+                final_total -= discount_amount
+            else:
+                 # Inform user discount is no longer valid
+                 del request.session['discount_code'] # Remove invalid code
+
+        charge_user(request.user, final_total)
+        # Clear discount from session after successful charge
+        if 'discount_code' in request.session: del request.session['discount_code']
+        return HttpResponse("Checked out!")
+
+    # views/order.py (Secure Confirmation Step)
+    def confirmation_step_secure(request, order_id):
+        try:
+             order = Order.objects.get(pk=order_id, user=request.user)
+             # SECURE: Check the authoritative state from the database.
+             if order.status != 'paid':
+                  messages.error(request, "Order payment not completed.")
+                  return redirect('order_payment', order_id=order.id) # Redirect back
+             return render(request, 'confirmation.html', {'order': order})
+        except Order.DoesNotExist:
+             raise Http404
+    ```
+
+    #### Testing Strategy
+    Thoroughly map out application workflows. For each step, identify the required state and data. Attempt to:
+    * Skip steps (e.g., browse directly to later URLs).
+    * Replay requests for actions that should only happen once (e.g., submitting payment multiple times).
+    * Manipulate parameters to trigger edge cases (e.g., negative quantities, future dates).
+    * Perform actions out of sequence or when prerequisites aren't met (e.g., apply expired discount).
+    This often requires manual, context-aware testing.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Flaws in Controllers or Services that don't correctly manage state transitions or re-validate business rules.
+
+    #### Vulnerable Scenario 1: Price Check Only on Add-to-Cart
+    The price of an item is checked when added to the cart, but not re-checked at checkout.
+    ```java
+    // service/CartService.java
+    public void addToCart(String userId, String productId, int quantity) {
+        Product p = productRepo.findById(productId).orElseThrow();
+        // Price is correct when added
+        cartRepo.addItem(userId, productId, quantity, p.getPrice());
+    }
+
+    // controller/CheckoutController.java
+    @PostMapping("/checkout")
+    public String checkout(Principal principal) {
+        String userId = principal.getName();
+        Cart cart = cartRepo.findByUserId(userId);
+        BigDecimal total = BigDecimal.ZERO;
+        // DANGEROUS: Calculates total based on prices stored in the cart session/DB
+        // *when items were added*. Prices might have changed since then.
+        for (CartItem item : cart.getItems()) {
+            total = total.add(item.getPriceAtAddition().multiply(BigDecimal.valueOf(item.getQuantity())));
+        }
+        paymentService.charge(userId, total); // Charges potentially outdated total
+        // ... clear cart ...
+        return "confirmation";
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Workflow Bypass via Parameter Manipulation
+    An approval workflow requires manager approval, but the "approve" endpoint accepts an `isManagerApproved=true` parameter that the server trusts.
+    ```java
+    // controller/WorkflowController.java
+    @PostMapping("/submit-request")
+    public String submitRequest(@ModelAttribute RequestData data, Principal principal) {
+        // ... save initial request, status = 'PENDING_APPROVAL' ...
+        workflowService.createRequest(data, principal.getName());
+        return "redirect:/requests";
+    }
+
+    // This endpoint should ideally only be callable by manager,
+    // BUT even if it is, it might trust a parameter sent by client.
+    @PostMapping("/approve-request/{id}")
+    @PreAuthorize("hasRole('MANAGER')") // Checks manager role
+    public String approveRequest(@PathVariable long id, @RequestParam(required=false) boolean forceApprove) {
+        // DANGEROUS: A manager calls this, but if 'forceApprove=true' is submitted
+        // (maybe via dev tools on a hidden field), it bypasses normal checks.
+        // The business logic flaw is trusting this flag instead of re-validating conditions.
+        WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
+        if (forceApprove || workflowService.checkApprovalConditions(req)) { // Bypasses checks
+            req.setStatus("APPROVED");
+            workflowRepo.save(req);
+        } else {
+             // Handle condition failure
+        }
+        return "redirect:/requests";
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Data Freshness:** Always retrieve authoritative data (prices, stock levels, user roles, object status) from the database immediately before performing critical actions. Do not rely on data stored in sessions or submitted by the client if it might be stale or tampered with.
+    * **Server Authority:** Do not trust parameters submitted by the client to indicate state or bypass checks (`forceApprove`). Re-evaluate all conditions server-side based on authoritative data.
+    * **State Enforcement:** Explicitly check the current state of an object before allowing state transitions (e.g., `if (order.getStatus() != OrderStatus.PENDING) { throw new IllegalStateException(...); }`).
+
+    #### Secure Code Example
+    ```java
+    // controller/CheckoutController.java (Secure Price Check)
+    @PostMapping("/checkout-secure")
+    public String checkoutSecure(Principal principal) {
+        String userId = principal.getName();
+        Cart cart = cartRepo.findByUserId(userId);
+        BigDecimal authoritativeTotal = BigDecimal.ZERO;
+
+        // SECURE: Iterate cart items but fetch CURRENT price from product DB for calculation.
+        for (CartItem item : cart.getItems()) {
+            Product currentProduct = productRepo.findById(item.getProductId()).orElseThrow();
+            authoritativeTotal = authoritativeTotal.add(
+                currentProduct.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+            );
+            // Optional: Check stock levels here too
+        }
+        paymentService.charge(userId, authoritativeTotal); // Charges correct, current total
+        // ... clear cart ...
+        return "confirmation";
+    }
+
+    // controller/WorkflowController.java (Secure Approval)
+    @PostMapping("/approve-request-secure/{id}")
+    @PreAuthorize("hasRole('MANAGER')")
+    public String approveRequestSecure(@PathVariable long id /* Removed forceApprove param */) {
+        WorkflowRequest req = workflowRepo.findById(id).orElseThrow();
+        // SECURE: Always re-validate conditions on the server. Do not trust client flags.
+        if (workflowService.checkApprovalConditions(req)) {
+            // SECURE: Only proceed if server-side conditions are met.
+            req.setStatus("APPROVED");
+            workflowRepo.save(req);
+        } else {
+             // Handle condition failure (e.g., return error message)
+             return "redirect:/requests?error=conditions_not_met";
+        }
+        return "redirect:/requests";
+    }
+    ```
+
+    #### Testing Strategy
+    Map application workflows. Identify key data and state checks.
+    * **Stale Data:** Add an item to cart, wait (simulate price change), checkout. Does it use the old or new price?
+    * **State Bypass:** Try accessing step 3 URL before completing step 2. Try approving an item that is already rejected.
+    * **Parameter Tampering:** Modify hidden fields or parameters related to workflow state or conditions (`isApproved`, `status`, discount codes) and see if the server accepts them.
+    * **Race Conditions:** Try submitting duplicate requests rapidly for actions that should only occur once (e.g., using Burp Intruder).
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Flaws in Controller Actions or PageModel Handlers not correctly validating state or business rules before executing actions.
+
+    #### Vulnerable Scenario 1: Re-using a One-Time Token
+    A password reset link uses a token, but the token isn't invalidated after the first successful use.
+    ```csharp
+    // Controllers/AccountController.cs
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+    {
+        // DANGEROUS: Finds user by token, but doesn't check if token has already been used.
+        // Attacker could intercept the reset email, let the user reset,
+        // then use the same token again later to set their own password.
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.Token /* && u.TokenExpiry > DateTime.UtcNow */);
+        if (user != null)
+        {
+            // Reset password logic...
+            await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            // FORGOTTEN STEP: user.PasswordResetToken = null; // Invalidate the token
+            // await _context.SaveChangesAsync();
+            return RedirectToAction("ResetSuccess");
+        }
+        // Handle invalid token
+        return View(model);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Modifying Quantity Below Minimum Order
+    Business rule requires minimum order quantity of 5, enforced client-side only.
+    ```html
+    <form method="post">
+        <input type="number" name="quantity" value="5" min="5" id="quantityInput">
+        <input type="hidden" name="productId" value="@Model.Product.Id">
+        <button type="submit">Add To Cart</button>
+    </form>
+    ```
+    ```csharp
+    // Pages/ProductPage.cshtml.cs
+    public async Task<IActionResult> OnPostAsync(int productId, int quantity)
+    {
+        // DANGEROUS: Server trusts the submitted quantity.
+        // Attacker uses dev tools to change quantity to 1 before submitting.
+        // Business rule (min 5) is bypassed because it's only checked client-side.
+        if (quantity <= 0) return BadRequest(); // Basic check, but not the business rule
+
+        var product = await _context.Products.FindAsync(productId);
+        // ... add 'quantity' of 'product' to cart ...
+        _cartService.AddItem(product, quantity); // Adds only 1 item
+
+        return RedirectToPage("/Cart");
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **State Management:** Ensure state transitions are atomic and correctly enforced. Invalidate tokens immediately after use. Check current object status before allowing actions.
+    * **Server-Side Validation:** Re-validate all business rules (minimum quantities, user eligibility, etc.) on the server, even if checked client-side. Use validation attributes or explicit checks in the handler/action.
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/AccountController.cs (Secure Token Invalidation)
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+    {
+        // SECURE: Check expiry AND if token exists (implies not used yet)
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == model.Token && u.PasswordResetTokenExpiry > DateTime.UtcNow);
+        if (user != null)
+        {
+            var result = await _userManager.ResetPasswordAsync(user, model.Token, model.NewPassword);
+            if (result.Succeeded)
+            {
+                // SECURE: Invalidate the token immediately after successful use.
+                user.PasswordResetToken = null;
+                user.PasswordResetTokenExpiry = null;
+                await _context.SaveChangesAsync(); // Or await _userManager.UpdateAsync(user) if using Identity store
+
+                return RedirectToAction("ResetSuccess");
+            }
+            // Handle Identity errors
+            foreach (var error in result.Errors) { ModelState.AddModelError(string.Empty, error.Description); }
+        }
+        else { ModelState.AddModelError(string.Empty, "Invalid or expired token."); }
+        // Handle invalid/expired token
+        return View(model);
+    }
+
+    // Pages/ProductPage.cshtml.cs (Secure Quantity Check)
+    public async Task<IActionResult> OnPostSecureAsync(int productId, [Range(5, 100)] int quantity) // Use validation attribute
+    {
+        // SECURE: Model binding validation attribute [Range(5, 100)] checks quantity.
+        if (!ModelState.IsValid)
+        {
+            // Reload product info for the page model
+            Model.Product = await _context.Products.FindAsync(productId); // Ensure Product is available
+            return Page(); // Return page with validation errors
+        }
+
+        // Alternative: Explicit check if not using attributes
+        // const int MIN_QUANTITY = 5;
+        // if (quantity < MIN_QUANTITY) {
+        //     ModelState.AddModelError(nameof(quantity), $"Minimum order quantity is {MIN_QUANTITY}.");
+        //     return Page();
+        // }
+
+        var product = await _context.Products.FindAsync(productId);
+        _cartService.AddItem(product, quantity); // Adds valid quantity
+
+        return RedirectToPage("/Cart");
+    }
+    ```
+
+    #### Testing Strategy
+    Map workflows.
+    * **Token Reuse:** Try using a password reset or email verification link multiple times. Does it work after the first successful use?
+    * **State Bypass:** Try accessing URLs or submitting forms related to later steps in a process before completing earlier ones.
+    * **Business Rule Bypass:** Modify client-side values (quantities, amounts) to violate known business rules (minimums, maximums, eligibility) and submit. Does the server catch the violation?
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Flaws in Controller logic or Services that fail to validate state transitions or business rules defined by the application.
+
+    #### Vulnerable Scenario 1: Applying Coupon Multiple Times
+    A coupon can be applied, reducing the cart total, but there's no check to prevent applying it repeatedly.
+    ```php
+    // app/Http/Controllers/CartController.php
+    public function applyCoupon(Request $request) {
+        $couponCode = $request->input('coupon_code');
+        $coupon = Coupon::where('code', $couponCode)->first();
+
+        if ($coupon && $coupon->isValid()) { // Assume isValid checks date, maybe uses
+            $cart = // ... get user's cart ...
+            $cart->applyDiscount($coupon->discount_amount); // Applies discount
+            // DANGEROUS: Doesn't prevent applying the same (or different) coupon again.
+            // Also, coupon validity (e.g., uses left) should be rechecked *during checkout*.
+            $cart->save();
+            session()->flash('message', 'Coupon applied!');
+        } else {
+            session()->flash('error', 'Invalid coupon code.');
+        }
+        return redirect()->route('cart.show');
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Bypassing Survey Completion for Reward
+    Users get a reward after completing a survey, but the reward endpoint only checks if the survey *exists*, not if it's *completed*.
+    ```php
+    // app/Http/Controllers/SurveyController.php
+    public function claimReward(Request $request, Survey $survey) {
+        // Assume route model binding finds the survey by ID
+        $user = auth()->user();
+
+        // DANGEROUS: Only checks if user owns the survey record.
+        // Doesn't check survey->is_completed flag or similar status.
+        // Attacker starts survey, gets the survey ID, then browses here.
+        if ($survey->user_id !== $user->id) { abort(403); }
+
+        // Give reward without checking completion status
+        $user->addRewardPoints(100);
+        $survey->reward_claimed = true; // Marks claimed, but completion wasn't checked
+        $survey->save();
+
+        return redirect()->route('rewards.index');
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **State Tracking:** Add flags or status fields to models (e.g., `coupon_applied_to_cart_id`, `survey_completed_at`, `reward_claimed_at`) and check these flags before allowing actions.
+    * **Re-validation at Critical Points:** Re-verify coupon validity, eligibility, and single-use constraints during the final checkout process. Check survey completion status before granting rewards.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/CartController.php (Secure Coupon Application)
+    public function applyCoupon(Request $request) {
+        $couponCode = $request->input('coupon_code');
+        $coupon = Coupon::where('code', $couponCode)->first();
+        $cart = // ... get user's cart ...
+
+        // SECURE: Check if a coupon is already applied to this cart.
+        if ($cart->coupon_applied_id !== null) {
+            session()->flash('error', 'Only one coupon per order.');
+            return redirect()->route('cart.show');
+        }
+
+        if ($coupon && $coupon->isValidForCart($cart)) { // Pass cart for context checks
+            $cart->applyDiscount($coupon->discount_amount);
+            $cart->coupon_applied_id = $coupon->id; // Mark coupon as applied to THIS cart
+            $cart->save();
+            session()->flash('message', 'Coupon applied!');
+        } else {
+            session()->flash('error', 'Invalid or inapplicable coupon code.');
+        }
+        return redirect()->route('cart.show');
+        // NOTE: Final validation should still happen during checkout.
+    }
+
+    // app/Http/Controllers/SurveyController.php (Secure Reward Claim)
+    public function claimReward(Request $request, Survey $survey) {
+        $user = auth()->user();
+        if ($survey->user_id !== $user->id) { abort(403); }
+
+        // SECURE: Check survey completion status.
+        if (!$survey->is_completed) { // Assume is_completed is a boolean field
+             session()->flash('error', 'Survey not completed yet.');
+             return redirect()->route('survey.show', $survey);
+        }
+        // SECURE: Check if reward already claimed.
+        if ($survey->reward_claimed) {
+            session()->flash('error', 'Reward already claimed for this survey.');
+            return redirect()->route('rewards.index');
+        }
+
+        // Give reward only if checks pass
+        $user->addRewardPoints(100);
+        $survey->reward_claimed = true;
+        $survey->save();
+
+        return redirect()->route('rewards.index');
+    }
+    ```
+
+    #### Testing Strategy
+    Map application workflows.
+    * **Replay Actions:** Try applying a coupon twice. Try claiming a reward twice.
+    * **State Bypass:** Access reward URL before completing the survey. Access checkout confirmation before paying.
+    * **Concurrency:** Use tools (Burp Intruder with multiple threads) to submit requests simultaneously (e.g., two requests to use a single-use coupon). Does the application correctly prevent double-spending/double-action?
+    Manual testing and careful code review are crucial.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Flaws in Express route handlers or service logic that fail to manage state transitions correctly or re-verify business rules.
+
+    #### Vulnerable Scenario 1: Voting Multiple Times
+    An API endpoint allows voting but only checks if the user *has ever* voted, not if they are voting *again* within the allowed period.
+    ```javascript
+    // routes/poll.js
+    router.post('/:pollId/vote', ensureAuthenticated, async (req, res) => {
+        const { pollId } = req.params;
+        const { optionId } = req.body;
+        const userId = req.user.id;
+
+        try {
+            const hasVoted = await VoteService.checkIfUserVoted(userId, pollId);
+            // DANGEROUS: Simple boolean check. If the user votes, then tries again
+            // immediately (e.g., race condition, replayed request), this check might
+            // still pass if the vote hasn't fully registered yet, or if the check
+            // logic only prevents voting if a vote *already exists*.
+            if (hasVoted) {
+                return res.status(400).send('Already voted.');
+            }
+
+            // Record the vote
+            await VoteService.recordVote(userId, pollId, optionId);
+            res.send('Vote recorded.');
+        } catch (err) { res.status(500).send('Error.'); }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Adding Item After Order Finalized
+    An endpoint to add items to a cart doesn't check if the cart/order has already been submitted or paid for.
+    ```javascript
+    // routes/cart.js
+    router.post('/items', ensureAuthenticated, async (req, res) => {
+        const { cartId, productId, quantity } = req.body; // Assuming cartId is known
+        const userId = req.user.id;
+
+        try {
+             // DANGEROUS: Fetches cart but doesn't check its status.
+             // Attacker could submit this request *after* payment for 'cartId' is complete.
+             const cart = await CartService.getCart(cartId, userId); // Assume this checks ownership
+             if (!cart) return res.status(404).send('Cart not found.');
+
+             // Logic to add item... proceeds even if cart.status is 'PAID' or 'SUBMITTED'
+             await CartService.addItem(cartId, productId, quantity);
+             res.send('Item added.');
+
+        } catch (err) { res.status(500).send('Error.'); }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Atomicity/Locking:** Use database transactions or atomic operations (like `findOneAndUpdate` with checks, or locking) to prevent race conditions in actions like voting or using limited resources.
+    * **State Validation:** Always check the current state of the relevant object (cart status, order status, vote status) before performing an action that depends on a specific state.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/poll.js (Secure - using DB constraints or atomic update)
+    router.post('/:pollId/vote-secure', ensureAuthenticated, async (req, res) => {
+        // ... params ...
+        try {
+            // SECURE: Attempt to record vote using a method that includes atomicity.
+            // Option 1: Database unique constraint on (userId, pollId)
+            // Option 2: Atomic operation (e.g., MongoDB findOneAndUpdate with upsert:false and query)
+            const voteRecorded = await VoteService.recordVoteAtomically(userId, pollId, optionId);
+
+            if (voteRecorded) {
+                res.send('Vote recorded.');
+            } else {
+                // This means the unique constraint failed or atomic update found existing vote
+                res.status(400).send('Already voted or invalid poll.');
+            }
+        } catch (err) {
+             // Handle DB errors etc.
+             res.status(500).send('Error recording vote.');
+        }
+    });
+
+    // routes/cart.js (Secure - Check Status)
+    router.post('/items-secure', ensureAuthenticated, async (req, res) => {
+        // ... params ...
+        try {
+             const cart = await CartService.getCart(cartId, userId);
+             if (!cart) return res.status(404).send('Cart not found.');
+
+             // SECURE: Check the cart's status before allowing modification.
+             if (cart.status !== 'ACTIVE') { // Assuming 'ACTIVE' is the modifiable status
+                  return res.status(400).send('Cart is not active and cannot be modified.');
+             }
+
+             await CartService.addItem(cartId, productId, quantity);
+             res.send('Item added.');
+
+        } catch (err) { res.status(500).send('Error.'); }
+    });
+    ```
+
+    #### Testing Strategy
+    Map workflows.
+    * **Race Conditions:** Use an intercepting proxy (Burp Intruder) to send multiple identical requests (e.g., to vote, claim reward, use coupon) nearly simultaneously. Check if the action is performed more than once.
+    * **State Bypass:** Identify objects with status fields (Cart, Order, Survey). Try performing actions only valid for one status when the object is in a different status (e.g., add item to 'PAID' cart, claim reward for 'IN_PROGRESS' survey).
+    Manual testing and understanding the intended logic are crucial.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Flaws in Controller actions or Models that don't enforce state transitions or re-verify business conditions.
+
+    #### Vulnerable Scenario 1: Transferring More Funds Than Available
+    A bank transfer function checks the balance initially but doesn't use locking, allowing a race condition.
+    ```ruby
+    # app/controllers/transfers_controller.rb
+    class TransfersController < ApplicationController
+      def create
+        amount = BigDecimal(params[:amount])
+        recipient = User.find(params[:recipient_id])
+        sender = current_user
+
+        # DANGEROUS: Balance checked outside of transaction lock.
+        if sender.balance >= amount && amount > 0
+          # Attacker sends two simultaneous requests for $100 when balance is $100.
+          # Both might pass this check before either transaction completes.
+          ActiveRecord::Base.transaction do
+            sender.balance -= amount
+            recipient.balance += amount
+            sender.save!
+            recipient.save!
+          end
+          redirect_to root_path, notice: "Transfer successful."
+        else
+          redirect_to root_path, alert: "Insufficient funds or invalid amount."
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Modifying Finalized Record
+    Allowing edits to an invoice after it has been marked as 'paid'.
+    ```ruby
+    # app/controllers/invoices_controller.rb
+    class InvoicesController < ApplicationController
+      before_action :set_invoice # Assume this finds @invoice
+
+      def update
+        # DANGEROUS: Does not check invoice status before allowing update.
+        # Attacker could change items/amount on an already paid invoice.
+        if @invoice.update(invoice_params)
+           redirect_to @invoice, notice: 'Invoice updated.'
+        else
+           render :edit
+        end
+      end
+
+      private
+      def set_invoice
+        @invoice = current_user.invoices.find(params[:id])
+      end
+      # Assume invoice_params permits relevant fields
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Locking/Atomicity:** Use pessimistic locking (`sender.lock!`) within the transaction to prevent race conditions during balance checks and updates. Or use atomic database updates (`User.update_counters`, `decrement!`).
+    * **State Validation:** Check the object's state *before* performing actions (`unless @invoice.is_editable? ...`). Use state machine gems (`aasm`) to enforce valid transitions.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/transfers_controller.rb (Secure - Pessimistic Locking)
+    class TransfersController < ApplicationController
+      def create
+        amount = BigDecimal(params[:amount])
+        recipient = User.find(params[:recipient_id])
+        sender = current_user
+
+        # SECURE: Perform check and update within a transaction with locking.
+        ActiveRecord::Base.transaction do
+          sender.lock! # Lock the sender row
+          recipient.lock! # Lock the recipient row
+
+          # Re-check balance *after* acquiring lock
+          if sender.balance >= amount && amount > 0
+            sender.balance -= amount
+            recipient.balance += amount
+            sender.save!
+            recipient.save!
+            # Redirect outside transaction? Usually okay for simple cases.
+            # Need careful consideration if redirect depends on success.
+          else
+            # Raise exception to rollback transaction and show error
+            raise ActiveRecord::Rollback, "Insufficient funds or invalid amount."
+          end
+        end
+        redirect_to root_path, notice: "Transfer successful."
+      rescue ActiveRecord::Rollback => e
+        redirect_to root_path, alert: e.message
+      end
+    end
+
+    # app/controllers/invoices_controller.rb (Secure - State Check)
+    class InvoicesController < ApplicationController
+      before_action :set_invoice
+      # SECURE: Add a check before the update action
+      before_action :check_if_editable, only: [:update]
+
+      def update
+        # State already checked by before_action
+        if @invoice.update(invoice_params)
+           redirect_to @invoice, notice: 'Invoice updated.'
+        else
+           render :edit
+        end
+      end
+
+      private
+      def set_invoice
+        @invoice = current_user.invoices.find(params[:id])
+      end
+
+      def check_if_editable
+        # Assume Invoice model has statuses like 'draft', 'sent', 'paid'
+        unless @invoice.status == 'draft'
+           redirect_to @invoice, alert: "Cannot edit an invoice that is not in draft status."
+        end
+      end
+      # ... invoice_params ...
+    end
+    ```
+
+    #### Testing Strategy
+    Map workflows.
+    * **Race Conditions:** Use tools (Burp Intruder, custom scripts with threads) to send simultaneous requests for balance-dependent actions (transfers, withdrawals) or actions consuming limited resources (claiming unique coupon). Verify only one succeeds or balance remains correct.
+    * **State Bypass:** Attempt to perform actions on objects in the wrong state (e.g., edit a 'paid' invoice, ship a 'cancelled' order). Verify the action is denied based on server-side state checks.
+  </Tab>
+</Tabs>
