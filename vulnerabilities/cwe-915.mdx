@@ -1,0 +1,561 @@
+---
+title: "Improperly Controlled Modification of Object Attributes"
+sidebarTitle: "Prototype Pollution / Mass Assignment (CWE-915)"
+description: "Mitigation for prototype pollution (JavaScript) and mass assignment (Rails, Laravel, ASP.NET) vulnerabilities."
+icon: "object-group"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application allows attackers to **modify internal object properties or attributes** that they should not be able to control. This is a common flaw in dynamically-typed languages or frameworks that map user input (like JSON or form data) directly onto objects.
+
+* **In JavaScript (Node.js):** This is known as **Prototype Pollution**. An attacker sends a crafted payload (e.g., `{"__proto__": {"isAdmin": true}}`) that modifies the `Object.prototype`. Since most objects inherit from this prototype, the attacker pollutes *all* objects in the application, potentially adding properties like `isAdmin` or overwriting critical functions, leading to security bypasses or RCE.
+* **In Server-Side Frameworks (Rails, Laravel, ASP.NET):** This is known as **Mass Assignment**. An attacker submits data for fields that aren't in the form (e.g., `{"name": "Attacker", "is_admin": true}`). If the application maps *all* submitted data to the model (`User.update(params)`), the attacker can "assign" themselves the `is_admin` role.
+
+---
+
+## Business Impact
+
+Exploiting this flaw can lead to:
+* **Privilege Escalation:** The most common impact. Attackers grant themselves administrative rights (`isAdmin = true`) or modify their user ID.
+* **Data Tampering:** Overwriting critical object properties (like an item's price) before processing.
+* **Security Bypass:** Disabling security controls or flags (`isVerified = true`).
+* **Remote Code Execution (RCE):** In prototype pollution, if a polluted property is later used to execute code (e.g., as part of a `child_process` command or template render).
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-915](https://cwe.mitre.org/data/definitions/915.html)
+  **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Defenses vary by language and framework but center on **validating attribute names and controlling data binding**. Never trust that user input only contains the fields you expect.
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Risk occurs when using `setattr()` with user-controlled property names or unsafely using `__dict__.update()` with user data.
+
+    #### Vulnerable Scenario 1: Unsafe `setattr()`
+    A view updates a user profile by dynamically setting attributes from POST data.
+    ```python
+    # views.py
+    @login_required
+    def update_profile(request):
+        user = request.user
+        for key, value in request.POST.items():
+            # DANGEROUS: Attacker can set ANY attribute.
+            # POST data: {"__class__": ...} (might change object type)
+            # POST data: {"is_staff": True} (Privilege Escalation)
+            # POST data: {"is_superuser": True}
+            setattr(user, key, value)
+        user.save()
+        return redirect('profile')
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe `__dict__.update()`
+    ```python
+    # utils/data_loader.py
+    def update_object_from_dict(obj, data_dict):
+        # DANGEROUS: User-controlled dictionary 'data_dict'
+        # is merged directly into the object's attributes.
+        # Payload: {"is_admin": True}
+        obj.__dict__.update(data_dict)
+        obj.save() # Example
+    ```
+
+    #### Mitigation and Best Practices
+    **Use Django Forms or DRF Serializers.** These tools act as a secure intermediary. They explicitly define *which* fields are allowed to be updated from user input, creating a secure allow-list. Avoid `setattr` and `__dict__.update` with user-controlled keys/data.
+
+    #### Secure Code Example
+    ```python
+    # forms.py (Django - Secure)
+    from django import forms
+
+    class ProfileForm(forms.ModelForm):
+        class Meta:
+            model = User
+            # SECURE: Only 'first_name' and 'last_name' can be updated via this form.
+            # Attacker submitting 'is_staff' will be ignored by form.is_valid().
+            fields = ['first_name', 'last_name']
+
+    # views.py (Secure)
+    @login_required
+    def update_profile_secure(request):
+        user = request.user
+        if request.method == 'POST':
+            # SECURE: Form validates and binds *only* the allowed fields.
+            form = ProfileForm(request.POST, instance=user)
+            if form.is_valid():
+                form.save()
+                return redirect('profile')
+        else:
+            form = ProfileForm(instance=user)
+        return render(request, 'profile_form.html', {'form': form})
+    ```
+
+    #### Testing Strategy
+    Identify endpoints that update objects (user profiles, settings). Submit requests containing additional, malicious properties (e.g., `is_staff=True`, `is_superuser=True`, `__class__=...`). Check if the server state reflects these unauthorized changes. Review code for `setattr(obj, key, ...)` or `obj.__dict__.update(...)` where `key` or the update dictionary are user-controlled.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Statically typed, so less risk of direct attribute creation. The equivalent flaw is **unsafe data binding** (Mass Assignment) where Spring MVC or another framework binds *all* request parameters to a model object, including sensitive fields the user shouldn't control.
+
+    #### Vulnerable Scenario 1: Spring MVC Unsafe Model Binding
+    ```java
+    // model/User.java
+    public class User {
+        private String username;
+        private String email;
+        private boolean isAdmin; // Sensitive field
+        // ... getters and setters ...
+    }
+
+    // controller/UserController.java
+    @PostMapping("/profile/update")
+    public String updateProfile(@ModelAttribute("user") User userForm, Principal principal) {
+        // DANGEROUS: @ModelAttribute binds *all* submitted fields that match
+        // property names in the User class, including 'isAdmin'.
+        // Attacker POSTs: username=new_name&email=new@email.com&isAdmin=true
+        User userToUpdate = userService.findByUsername(principal.getName());
+        // Logic might just update allowed fields, but if it saves 'userForm'...
+        userService.save(userForm); // Vulnerable if this saves all bound fields
+        // Or:
+        // userToUpdate.setEmail(userForm.getEmail());
+        // userToUpdate.setIsAdmin(userForm.getIsAdmin()); // <-- Vulnerable logic
+        userService.save(userToUpdate);
+        return "redirect:/profile";
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Spring Data Binding (Spring4Shell related)
+    Older Spring versions allowed binding to nested properties like `class.module.classLoader`, which could be exploited. This is less Mass Assignment and more RCE, but stems from improperly controlled attribute binding.
+
+    #### Mitigation and Best Practices
+    * **Use DTOs (Data Transfer Objects):** Create a separate class (e.g., `UserProfileDto`) that contains *only* the fields the user is allowed to edit (e.g., `username`, `email`). Bind to the DTO, then manually copy the safe fields to the persistent `User` entity.
+    * **Use `@InitBinder`:** Use `@InitBinder` in the controller to set `binder.setDisallowedFields("isAdmin", "role", "class.*", ...)` as a defense-in-depth measure.
+
+    #### Secure Code Example
+    ```java
+    // dto/UserProfileDto.java (Secure DTO)
+    public class UserProfileDto {
+        @Size(min=3, max=50) private String username;
+        @Email private String email;
+        // SECURE: 'isAdmin' property does not exist here.
+        // ... getters and setters ...
+    }
+
+    // controller/UserController.java (Secure - Using DTO)
+    @PostMapping("/profile/update-secure")
+    public String updateProfileSecure(
+        @Valid @ModelAttribute("profileDto") UserProfileDto dto, // Bind to DTO
+        BindingResult result, Principal principal
+    ) {
+        if (result.hasErrors()) {
+            return "profile_form"; // Return with errors
+        }
+        // SECURE: Server-side logic controls mapping to the real User object.
+        User userToUpdate = userService.findByUsername(principal.getName());
+        userToUpdate.setUsername(dto.getUsername()); // Map safe field
+        userToUpdate.setEmail(dto.getEmail());     // Map safe field
+        // 'isAdmin' was never part of the DTO, so it can't be bound.
+        userService.save(userToUpdate);
+        return "redirect:/profile";
+    }
+
+    // Secure - Using @InitBinder (Defense-in-depth)
+    // @InitBinder
+    // public void initBinder(WebDataBinder binder) {
+    //     // SECURE: Disallow binding to sensitive fields.
+    //     binder.setDisallowedFields("isAdmin", "role", "class.*", "module.*");
+    // }
+    ```
+
+    #### Testing Strategy
+    Identify forms or API endpoints that update models. Inspect the model object for sensitive fields (e.g., `isAdmin`, `Role`, `Balance`, `AccountStatus`). Submit requests that include these sensitive fields in the POST body or JSON payload (e.g., `isAdmin=true`). Check if the server accepts and applies the unauthorized changes.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    **Mass Assignment** in ASP.NET MVC/Core, where the model binder updates properties on a model object that were not intended to be user-editable.
+
+    #### Vulnerable Scenario 1: `TryUpdateModelAsync` on Full Model
+    ```csharp
+    // Models/User.cs
+    public class User {
+        public int Id { get; set; }
+        public string Email { get; set; }
+        public bool IsAdmin { get; set; } // Sensitive field
+    }
+
+    // Controllers/UsersController.cs
+    [HttpPost]
+    [Authorize]
+    public async Task<IActionResult> EditProfile(int id) {
+        var userToUpdate = await _context.Users.FindAsync(id);
+        // ... (check if user is authorized to edit this profile) ...
+
+        // DANGEROUS: TryUpdateModelAsync binds all properties from the
+        // request form that match the User model.
+        // Attacker POSTs: Email=new@email.com&IsAdmin=true
+        if (await TryUpdateModelAsync<User>(
+            userToUpdate,
+            "", // Prefix (empty for root)
+            u => u.Email /* Only 'Email' intended, but others bind too! */ ))
+        {
+            // 'IsAdmin' property on userToUpdate was also set to true.
+            await _context.SaveChangesAsync();
+            return RedirectToAction("Profile", new { id });
+        }
+        return View(userToUpdate);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Binding Parameter to Full Model
+    Similar to Java, binding a full model object as a parameter.
+    ```csharp
+    // Controllers/UsersController.cs
+    [HttpPost]
+    [Authorize]
+    // DANGEROUS: Model binding creates 'userFromForm' with all matching fields.
+    // Attacker POSTs: Id=123&Email=new@email.com&IsAdmin=true
+    public async Task<IActionResult> EditProfilePost([FromForm] User userFromForm) {
+        // Logic might check ID, but then copies sensitive fields
+        var userToUpdate = await _context.Users.FindAsync(userFromForm.Id);
+        // ... (check authorization) ...
+        userToUpdate.Email = userFromForm.Email;
+        userToUpdate.IsAdmin = userFromForm.IsAdmin; // DANGEROUS: Trusts client value
+        await _context.SaveChangesAsync();
+        return RedirectToAction("Profile", new { id = userFromForm.Id });
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use ViewModels/DTOs:** Create specific ViewModel/DTO classes (e.g., `EditProfileViewModel`) that *only* contain properties the user should edit (e.g., `Email`). Bind to this ViewModel.
+    * **Use `[Bind]` Attribute:** Explicitly list the allowed fields to bind: `TryUpdateModelAsync(userToUpdate, "", u => u.Email, u => u.FirstName)`. Or on the action parameter: `([Bind("Email", "FirstName")] User userFromForm)`.
+    * **AutoMapper:** Use AutoMapper to safely map from the DTO to the domain model, ensuring only mapped properties are copied.
+
+    #### Secure Code Example
+    ```csharp
+    // ViewModels/EditProfileViewModel.cs (Secure DTO)
+    public class EditProfileViewModel {
+        [EmailAddress]
+        public string Email { get; set; }
+        public string FirstName { get; set; }
+        // SECURE: 'IsAdmin' property does not exist here.
+    }
+
+    // Controllers/UsersController.cs (Secure - Using ViewModel)
+    [HttpPost]
+    [Authorize]
+    public async Task<IActionResult> EditProfileSecure(int id, EditProfileViewModel model) {
+        if (!ModelState.IsValid) { return View(model); }
+
+        var userToUpdate = await _context.Users.FindAsync(id);
+        // ... (check authorization: e.g., if current user can edit userToUpdate) ...
+        if (userToUpdate == null) { return NotFound(); }
+
+        // SECURE: Manually map *only* allowed fields from ViewModel to Model.
+        userToUpdate.Email = model.Email;
+        userToUpdate.FirstName = model.FirstName;
+        // 'IsAdmin' is not in the ViewModel, so it can't be assigned from the request.
+
+        await _context.SaveChangesAsync();
+        return RedirectToAction("Profile", new { id });
+    }
+
+    // Controllers/UsersController.cs (Secure - Using [Bind])
+    // [HttpPost]
+    // [Authorize]
+    // public async Task<IActionResult> EditProfilePostSecure(int id) {
+    //     var userToUpdate = await _context.Users.FindAsync(id);
+    //     // ... (check authorization) ...
+    //     // SECURE: [Bind] limits properties to only 'Email'.
+    //     if (await TryUpdateModelAsync(userToUpdate, "", u => u.Email)) {
+    //          await _context.SaveChangesAsync();
+    //          return RedirectToAction("Profile", new { id });
+    //     }
+    //     return View(userToUpdate);
+    // }
+    ```
+
+    #### Testing Strategy
+    Identify models with sensitive properties (`IsAdmin`, `Role`, `Balance`). Find HTTP POST/PUT endpoints that update these models. Send requests that include these sensitive properties (e.g., `IsAdmin=true`) in the form data or JSON body. Check if the property is successfully updated in the database.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    **Mass Assignment** in Laravel, where `Model::create($request->all())` or `Model::update($request->all())` is used without `fillable` or `guarded` properties in the model.
+
+    #### Vulnerable Scenario 1: `create()` with `request->all()`
+    ```php
+    // app/Http/Controllers/RegisterController.php
+    public function store(Request $request) {
+        // DANGEROUS: Uses all request data for creation.
+        // Attacker POSTs: {'name': 'Attacker', 'email': 'a@a.com', 'password': '...', 'is_admin': 1}
+        $user = User::create($request->all());
+        // If 'is_admin' is not in $guarded, attacker becomes admin.
+        Auth::login($user);
+        return redirect('/dashboard');
+    }
+    ```
+    ```php
+    // app/Models/User.php (Vulnerable Config - Guarded is empty)
+    class User extends Authenticatable {
+        // DANGEROUS: Allows mass assignment of *any* field.
+        protected $guarded = [];
+        // Or: protected $fillable = ['name', 'email', 'password', 'is_admin']; (Incorrectly includes is_admin)
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `update()` with `request->all()`
+    ```php
+    // app/Http/Controllers/ProfileController.php
+    public function update(Request $request) {
+        $user = auth()->user();
+        // DANGEROUS: Updates user with all submitted data.
+        // Attacker POSTs: {'name': 'New Name', 'is_admin': 1}
+        $user->update($request->all());
+        return redirect('/profile');
+    }
+    // Assumes User model $guarded is empty or $fillable includes is_admin
+    ```
+
+    #### Mitigation and Best Practices
+    **Use `$fillable` (Allow-list) or `$guarded` (Block-list) in your Eloquent models.**
+    * **`$fillable` (Recommended):** Explicitly list *only* the attributes that are safe for mass assignment (e.g., `name`, `email`).
+    * **`$guarded`:** List attributes (like `is_admin`, `role`) that should *never* be mass assigned. Setting `$guarded = ['*']` blocks all mass assignment (safest if not using `create`/`update`), while `$guarded = []` allows all (most dangerous).
+
+    #### Secure Code Example
+    ```php
+    // app/Models/User.php (Secure - Using $fillable)
+    class User extends Authenticatable {
+        // SECURE: Only these attributes can be set via create() or update().
+        // 'is_admin' is NOT listed and cannot be mass assigned.
+        protected $fillable = [
+            'name',
+            'email',
+            'password', // Hash::make() should be used in controller/observer
+            // Add other non-sensitive fields
+        ];
+        // Or alternatively, use $guarded (less explicit):
+        // protected $guarded = ['id', 'is_admin', 'role', 'remember_token'];
+    }
+
+    // app/Http/Controllers/RegisterController.php (Secure)
+    public function store(Request $request) {
+        $validatedData = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => ['required', 'confirmed', Password::min(12)], // Use Password rule
+        ]);
+
+        // SECURE: Use validated data, which is then filtered by $fillable.
+        $user = User::create([
+            'name' => $validatedData['name'],
+            'email' => $validatedData['email'],
+            'password' => Hash::make($validatedData['password']), // Hash password explicitly
+        ]);
+        Auth::login($user);
+        return redirect('/dashboard');
+    }
+
+    // app/Http/Controllers/ProfileController.php (Secure)
+    public function update(Request $request) {
+        $user = auth()->user();
+        // SECURE: Use validate() + only() to get subset of data,
+        // which is then filtered by $fillable anyway.
+        $validatedData = $request->validate([
+             'name' => 'required|string|max:255',
+             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
+        ]);
+        // update() respects $fillable, preventing 'is_admin'
+        $user->update($validatedData);
+        return redirect('/profile');
+    }
+    ```
+
+    #### Testing Strategy
+    Identify models with sensitive attributes (`is_admin`, `role`, `balance`). Find endpoints (Register, Update Profile) that use `create()`, `update()`, or `fill()` with `request->all()` or broad input. Submit requests containing the sensitive attributes. Check if the database values are updated. Review models for weak `$fillable` (includes sensitive fields) or `$guarded = []`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    **Prototype Pollution**. Occurs when merging or cloning objects recursively using unsafe logic that allows attackers to modify `Object.prototype` via keys like `__proto__`.
+
+    #### Vulnerable Scenario 1: Unsafe Recursive Merge
+    A common utility function to merge configuration objects.
+    ```javascript
+    // utils/merge.js
+    function recursiveMerge(target, source) {
+      for (const key in source) {
+        // DANGEROUS: No check for '__proto__'.
+        // If key is '__proto__', it merges into Object.prototype.
+        if (key in source && typeof target[key] === 'object' && typeof source[key] === 'object') {
+          recursiveMerge(target[key], source[key]);
+        } else {
+          target[key] = source[key];
+        }
+      }
+      return target;
+    }
+
+    // Usage:
+    // Attacker sends a JSON payload:
+    // const attackerPayload = JSON.parse('{"__proto__": {"isAdmin": true}}');
+    // const config = {};
+    // recursiveMerge(config, attackerPayload); // Pollutes Object.prototype
+    //
+    // // Later, elsewhere in the code:
+    // const newUser = {};
+    // if (newUser.isAdmin) { // This is now true!
+    //    // Attacker gains admin privileges
+    // }
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe Property Assignment from Query
+    ```javascript
+    // app.js
+    app.get('/set-pref', (req, res) => {
+        // Assume req.query = { 'settings.__proto__.isAdmin': 'true' }
+        const prefs = {};
+        // DANGEROUS: Libraries like 'qs' (used by Express) might parse
+        // query strings into nested objects, allowing __proto__ injection.
+        // Or manual logic:
+        // _.set(prefs, req.query.path, req.query.value); // Using lodash < 4.17.21
+        // If req.query.path = '__proto__.isAdmin', pollution occurs.
+        merge(prefs, req.query); // Assume vulnerable merge
+
+        res.send("Prefs set");
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Block Sensitive Keys:** In any merge or property assignment logic, explicitly block keys like `__proto__`, `constructor`, and `prototype`.
+    * **Use `Object.create(null)`:** Create objects that do not inherit from `Object.prototype` (null-prototype objects) for use as maps/dictionaries.
+    * **Freeze Prototype:** `Object.freeze(Object.prototype)` can be a defense-in-depth, but might break some libraries.
+    * **Update Libraries:** Keep libraries (especially `lodash`, `minimist`, `qs`) updated to patched versions.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/merge.js (Secure Merge)
+    function secureMerge(target, source) {
+      for (const key in source) {
+        // SECURE: Check key is own property AND block sensitive keys
+        if (Object.prototype.hasOwnProperty.call(source, key)) {
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                continue; // Skip sensitive keys
+            }
+            if (typeof target[key] === 'object' && target[key] !== null &&
+                typeof source[key] === 'object' && source[key] !== null) {
+                 secureMerge(target[key], source[key]); // Recurse
+            } else {
+                 target[key] = source[key];
+            }
+        }
+      }
+      return target;
+    }
+
+    // Secure map creation
+    const myMap = Object.create(null); // SECURE: No prototype to pollute.
+    myMap['someKey'] = 'value';
+    ```
+
+    #### Testing Strategy
+    Identify all code locations that recursively merge objects (`Object.assign` (shallow, safe), custom logic) or set object properties based on user-controlled keys. Submit JSON payloads or query parameters containing `__proto__`, `constructor.prototype`, or `prototype` keys. After submission, check if a new empty object (`{}`) has the polluted properties (e.g., check `({}).isAdmin`).
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    **Mass Assignment** in Rails, where `params` are passed directly to `Model.new()` or `model.update()`.
+
+    #### Vulnerable Scenario 1: `update` with `params[:user]`
+    ```ruby
+    # app/controllers/users_controller.rb (Older Rails or no Strong Params)
+    class UsersController < ApplicationController
+      def update
+        @user = User.find(params[:id])
+        # DANGEROUS: Passes all params directly.
+        # Attacker POSTs: user[name]="Attacker"&user[admin]=true
+        if @user.update(params[:user])
+           redirect_to @user
+        else
+           render :edit
+        end
+      end
+      # No user_params method defined or used
+    end
+    ```
+
+    #### Vulnerable Scenario 2: `send()` with Dynamic Method Names
+    Using user input to dynamically call setter methods.
+    ```ruby
+    # app/controllers/profile_controller.rb
+    class ProfileController < ApplicationController
+      def update
+        user = current_user
+        params[:profile].each do |key, value|
+           # DANGEROUS: Attacker can call any setter method.
+           # Input: profile[admin=]=true -> Calls user.admin=(true)
+           # Input: profile[destroy]=true -> Calls user.destroy()
+           user.send("#{key}=", value)
+        end
+        user.save!
+        redirect_to profile_path
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use Strong Parameters:** This is the primary defense in modern Rails. Always filter `params` using `require` and `permit` in your controller *before* passing them to `new`, `create`, or `update`.
+    * **Avoid `send()` with User Input:** Never use `send()` (Ruby's reflection) with method names or arguments derived from user input.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/users_controller.rb (Secure - Strong Parameters)
+    class UsersController < ApplicationController
+      def update
+        @user = User.find(params[:id])
+        # ... authorization check ...
+
+        # SECURE: user_params filters the input.
+        if @user.update(user_params)
+           redirect_to @user
+        else
+           render :edit, status: :unprocessable_entity
+        end
+      end
+
+      private
+      def user_params
+        # SECURE: Explicitly allow-list *only* safe attributes.
+        # 'admin' or 'role' is NOT permitted.
+        params.require(:user).permit(:name, :email, :bio)
+      end
+    end
+
+    # app/controllers/profile_controller.rb (Secure - No 'send()')
+    class ProfileController < ApplicationController
+       def update
+         user = current_user
+         # SECURE: Use strong parameters and standard update.
+         if user.update(profile_params)
+            redirect_to profile_path
+         else
+            render :edit
+         end
+       end
+       private
+       def profile_params
+         params.require(:profile).permit(:first_name, :last_name, :bio)
+       end
+    end
+    ```
+
+    #### Testing Strategy
+    Identify models with sensitive attributes (`admin`, `role`, `balance`). Find controller actions (create, update) that modify these models. Submit requests containing these sensitive attributes in the `params` hash (e.g., `user[admin]=true`, `profile[balance]=999999`). Check if the database values are updated. Review controllers for `params.require(...).permit(...)` and ensure sensitive attributes are *not* in the `permit` list. Scan for `send()` usage with `params`.
+  </Tab>
+</Tabs>
