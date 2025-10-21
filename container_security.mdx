@@ -1,62 +1,204 @@
 ---
 title: 'Container Security'
-description: 'Understand how Codepure’s Container Security scans Docker images and containers for vulnerabilities and misconfigurations.'
+description: 'Comprehensive container security scanning for Docker, Kubernetes, Docker Compose, and containerized applications to detect vulnerabilities, misconfigurations, and compliance issues.'
 ---
 
-# What it is
-Codepure’s Container Security feature scans your Docker images and containerized applications for vulnerabilities, misconfigurations, and outdated software packages. This ensures that your containers are secure before they are deployed to production.
+# What is Container Security?
 
-# How it works
-When you run a Container Security scan, Codepure analyzes:
+Codepure's Container Security provides comprehensive scanning and protection for your entire container ecosystem. Whether you're using Docker, Kubernetes, Docker Compose, or other container orchestration platforms, our security scanner identifies vulnerabilities, misconfigurations, and compliance issues before they reach production.
 
-* Base images – checks if the underlying OS or framework has known vulnerabilities.
+## Supported Container Technologies
 
-* Installed packages – scans all packages and dependencies inside the container.
+### Docker
+* **Docker Images**: Scans local and registry-hosted images for vulnerabilities
+* **Dockerfiles**: Analyzes build instructions for security best practices
+* **Docker Registry**: Continuous monitoring of images in Docker Hub, Amazon ECR, Azure Container Registry, and private registries
+* **Multi-stage Builds**: Security analysis across all build stages
 
-* Configuration files – detects risky settings like running as root or exposing unnecessary ports.
+### Docker Compose
+* **Service Configuration**: Validates security settings across all services
+* **Network Policies**: Ensures proper network isolation between containers
+* **Volume Permissions**: Checks for insecure volume mounts and permissions
+* **Environment Variables**: Detects exposed secrets in compose files
 
-* Secrets in images – flags any hardcoded passwords, API keys, or tokens.
+### Kubernetes
+* **Pod Security**: Scans pod specifications and running containers
+* **RBAC Policies**: Validates role-based access control configurations
+* **Network Policies**: Ensures proper network segmentation
+* **Secrets Management**: Detects hardcoded secrets and improper secret usage
+* **Helm Charts**: Security analysis of Helm chart templates and values
+* **Admission Controllers**: Integration with Kubernetes admission controllers for runtime protection
 
-# Why it’s important
-Containers are lightweight and portable, but they can also introduce security risks if not regularly scanned. Container Security helps you:
+### Additional Platforms
+* **OpenShift**: Full support for Red Hat OpenShift container platform
+* **Amazon ECS/EKS**: Native integration with AWS container services
+* **Azure AKS**: Seamless scanning for Azure Kubernetes Service
+* **Google GKE**: Complete support for Google Kubernetes Engine
+* **Podman**: Security scanning for rootless container environments
 
-* Prevent vulnerabilities from reaching production.
+# How Container Security Works
 
-* Detect misconfigurations that could be exploited by attackers.
+## Comprehensive Scanning Approach
 
-* Ensure compliance with security standards like CIS Docker Benchmark, OWASP, and ISO 27001.
+When you initiate a Container Security scan, Codepure performs multi-layered analysis:
 
-# Example: Running a Container Security Scan
+### 1. Image Layer Analysis
+* **Base Image Vulnerabilities**: Identifies CVEs in OS and runtime layers
+* **Dependency Scanning**: Analyzes all installed packages, libraries, and frameworks
+* **Binary Analysis**: Detects vulnerabilities in compiled applications
+* **Distroless Image Support**: Specialized scanning for minimal container images
 
-1. Select and Scan
+### 2. Configuration Security
+* **Dockerfile Best Practices**: Validates against CIS Docker Benchmark
+* **Kubernetes Manifests**: Checks against Kubernetes security best practices
+* **Resource Limits**: Ensures proper CPU and memory constraints
+* **Security Contexts**: Validates user permissions, capabilities, and SELinux settings
+* **Network Exposure**: Identifies unnecessary open ports and services
 
-* From the dashboard, select the project you want to scan.
+### 3. Secret Detection
+* **Embedded Credentials**: Finds hardcoded passwords, API keys, and tokens
+* **Certificate Analysis**: Validates SSL/TLS certificates and their expiration
+* **Environment Variables**: Scans for sensitive data in environment configurations
+* **Configuration Files**: Detects secrets in application configuration
 
-* Choose Container Security and click Start Scanning.
+### 4. Compliance Validation
+* **CIS Benchmarks**: Automated checks against CIS Docker and Kubernetes benchmarks
+* **NIST Guidelines**: Compliance with NIST container security guidelines
+* **PCI DSS**: Container-specific PCI compliance requirements
+* **HIPAA/SOC2**: Healthcare and service organization compliance checks
+* **Custom Policies**: Define organization-specific security policies
+
+## Scanning Modes
+
+### Pre-Build Scanning
+Analyze Dockerfiles and configuration files before building images to catch issues early in the development cycle.
+
+### Build-Time Scanning
+Integrate with CI/CD pipelines to scan images automatically during the build process.
+
+### Registry Scanning
+Continuous monitoring of container registries to detect newly discovered vulnerabilities in stored images.
+
+### Runtime Protection
+Real-time monitoring of running containers in Kubernetes clusters for active threat detection.
+
+# Why Container Security is Critical
+
+Container adoption continues to grow, but with it comes unique security challenges:
+
+## Key Benefits
+
+### Shift-Left Security
+* Identify vulnerabilities during development, not in production
+* Reduce remediation costs by catching issues early
+* Integrate security into DevOps workflows seamlessly
+
+### Supply Chain Protection
+* Verify the integrity of base images and dependencies
+* Track the provenance of container components
+* Ensure only approved images are deployed
+
+### Compliance Assurance
+* Automated compliance reporting for audits
+* Continuous monitoring for policy violations
+* Evidence collection for regulatory requirements
+
+### Risk Reduction
+* Prevent container breakouts and privilege escalation
+* Eliminate hardcoded secrets and credentials
+* Ensure proper network segmentation and isolation
+
+# Getting Started with Container Security
+
+## Prerequisites
+
+Before running container security scans, ensure you have:
+* Container images available locally or in a registry
+* Proper authentication credentials for private registries
+* Network access to Codepure scanning infrastructure
+
+## Step-by-Step Scanning Guide
+
+### 1. Configure Your Environment
+
+First, set up your scanning environment by selecting the appropriate configuration:
+
+* **Docker Standalone**: For individual Docker hosts
+* **Docker Compose Project**: For multi-container applications
+* **Kubernetes Cluster**: For orchestrated container deployments
+* **Container Registry**: For centralized image scanning
 
 <Frame>
   <img src="/assets/container_security1.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-2. View Results
+### 2. Select Scan Target and Initiate Scan
 
-* When the scan finishes, click the project name.
+Choose your scanning target:
+* **Local Images**: Scan images on your Docker host
+* **Registry Images**: Scan images from Docker Hub, ECR, ACR, or private registries
+* **Running Containers**: Scan active containers in your environment
+* **Kubernetes Workloads**: Scan deployments, pods, and services
 
-* Click Full Result to view details of detected vulnerabilities and misconfigurations in your container image.
+From the dashboard, select your project, choose Container Security, and click Start Scanning.
+
+### 3. Review Scan Results
+
+After the scan completes, you'll see a comprehensive security report:
+
+* **Critical Vulnerabilities**: High-priority issues requiring immediate attention
+* **Configuration Issues**: Misconfigurations and policy violations
+* **Compliance Status**: Pass/fail status for various compliance frameworks
+* **Secret Exposures**: Detected credentials and sensitive data
+
+Click the project name and select Full Result to view detailed findings.
 
 <Frame>
   <img src="/assets/container_security-results.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-3. Fix the Vulnerability (Remediation)
+### 4. Analyze Individual Findings
 
-* Click Open on an Issue to view details.
+For each detected issue, Codepure provides:
+* **Severity Rating**: Critical, High, Medium, or Low
+* **CVSS Score**: Industry-standard vulnerability scoring
+* **Affected Components**: Specific packages or configurations
+* **Attack Vector**: How the vulnerability could be exploited
+* **Business Impact**: Potential consequences if exploited
 
-* On the right-hand side, you’ll see the Remediation section with instructions, such as updating the base image or removing unnecessary privileges.
+### 5. Implement Remediation
 
-* Apply the fix in your container configuration, then change the status to Fixed in Codepure.
+Click Open on any issue to access detailed remediation guidance:
+
+* **Quick Fixes**: Immediate actions to resolve the issue
+* **Best Practices**: Long-term improvements for security posture
+* **Alternative Solutions**: Different approaches based on your constraints
+* **Validation Steps**: How to verify the fix is effective
+
+The Remediation section provides specific instructions such as:
+* Updating base images to patched versions
+* Removing unnecessary privileges and capabilities
+* Implementing proper secret management
+* Applying security policies and network controls
+
+After applying fixes, update the issue status to Fixed in Codepure.
 
 <Frame>
   <img src="/assets/container_security-results1.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
+## Integration with CI/CD Pipelines
+
+### Jenkins Integration
+```groovy
+pipeline {
+    stage('Container Security Scan') {
+        steps {
+            codepureScan(
+                scanType: 'container',
+                imageName: '${IMAGE_NAME}:${BUILD_NUMBER}',
+                failOnCritical: true
+            )
+        }
+    }
+}
