@@ -1,0 +1,533 @@
+---
+title: "Cleartext Storage of Sensitive Information"
+sidebarTitle: "Cleartext Storage (CWE-312)"
+description: "Mitigation for storing sensitive data (credentials, PII, secrets) without encryption in databases, files, logs, or backups."
+icon: "database"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application stores **sensitive data** (such as passwords, credit card numbers, API keys, personal information, session identifiers) in **plain text (unencrypted)** in long-term storage locations like databases, configuration files, log files, backups, or even source code repositories. If an attacker gains access to this storage (e.g., through SQL Injection, server misconfiguration, backup theft, leaked source code), the sensitive data is immediately compromised. 💾🔓
+
+---
+
+## Business Impact
+
+Storing sensitive data in cleartext is a major security failure that can lead to:
+* **Massive Data Breaches:** An attacker gaining access to the storage gets *all* the sensitive data directly.
+* **Account Takeover:** If passwords or session tokens are stored in cleartext, attacker gains immediate access to user accounts.
+* **Identity Theft and Fraud:** Exposed PII or financial data can be used for malicious purposes.
+* **Compliance Violations:** Storing sensitive data unencrypted violates regulations like PCI-DSS, GDPR, HIPAA, leading to severe fines and legal action.
+* **Reputational Damage:** Breaches resulting from cleartext storage severely damage user trust and brand reputation.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-312](https://cwe.mitre.org/data/definitions/312.html) (Related: CWE-256, CWE-313, CWE-316)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design (Failure to protect data at rest) & A02:2021 - Cryptographic Failures
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a design and implementation flaw. **Never store sensitive data in cleartext.** Frameworks provide tools for *secure* storage, but developers must use them correctly.
+
+**Key Remediation Principles:**
+1.  **Hashing for Passwords:** **Never** store passwords. Store strong, salted hashes using modern algorithms (bcrypt, Argon2, PBKDF2). See `CWE-916` and `CWE-759`.
+2.  **Encryption for Other Sensitive Data:** Encrypt data like API keys, PII, health information, or connection strings using strong, standard algorithms (like AES-GCM).
+3.  **Secure Key Management:** Protect the encryption keys themselves. Do not hard-code them; use environment variables, secrets managers (Vault, KMS, Key Vault), or HSMs. See `CWE-321`.
+4.  **Data Minimization:** Don't store sensitive data if you don't absolutely need it. If you only need to verify PII, consider hashing it instead of storing it raw.
+5.  **Secure Logging:** Configure logging frameworks to avoid logging sensitive data (passwords, session tokens, credit card numbers) in cleartext. Mask or filter sensitive fields.
+6.  **Secure Backups:** Ensure database backups are encrypted.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Storing passwords directly in Django User models, saving API keys or PII unencrypted in database fields, or logging sensitive data.
+
+    #### Vulnerable Scenario 1: Storing Plaintext Password
+    A custom user model saves the password directly.
+    ```python
+    # models.py (Custom User)
+    class LegacyUser(models.Model):
+        username = models.CharField(max_length=150, unique=True)
+        # DANGEROUS: Password stored directly in the database.
+        password_cleartext = models.CharField(max_length=128)
+
+        def save(self, *args, **kwargs):
+            # No hashing is performed before saving.
+            super().save(*args, **kwargs)
+    ```
+
+    #### Vulnerable Scenario 2: Storing API Key in Database Field
+    ```python
+    # models.py (Service Integration)
+    class ServiceConfig(models.Model):
+        service_name = models.CharField(max_length=100)
+        # DANGEROUS: API key stored unencrypted.
+        api_key_cleartext = models.CharField(max_length=200)
+        # ... other config ...
+    ```
+
+    #### Mitigation and Best Practices
+    * Use Django's built-in `User` model or `AbstractUser` which handles password hashing automatically (`user.set_password()`).
+    * Use libraries like `django-cryptography` or implement encryption using `cryptography` (Fernet, AES-GCM) before saving sensitive fields to the database. Load the encryption key securely (see `CWE-321`).
+    * Configure logging filters to mask sensitive fields.
+
+    #### Secure Code Example
+    ```python
+    # models.py (Secure Password Hashing - Using AbstractUser)
+    from django.contrib.auth.models import AbstractUser
+
+    class SecureUser(AbstractUser):
+        # SECURE: Inherits secure password handling from Django.
+        # `password` field stores salted hash automatically via set_password().
+        pass
+
+    # models.py (Secure API Key Storage - Example using django-cryptography)
+    # Requires pip install django-cryptography
+    from cryptography.fernet import Fernet
+    from django_cryptography.fields import EncryptedCharField
+    import os
+
+    # SECURE: Key loaded from environment (NEVER hardcode)
+    # key = os.environ.get('FIELD_ENCRYPTION_KEY') # Ensure this is set
+    # fernet = Fernet(key.encode()) # Requires a valid Fernet key
+
+    class SecureServiceConfig(models.Model):
+        service_name = models.CharField(max_length=100)
+        # SECURE: Field encrypted at rest using AES.
+        # Requires proper key management for the FERNET_KEY.
+        api_key_encrypted = EncryptedCharField(max_length=500) # Length increases due to encryption/encoding
+        # ... other config ...
+    ```
+
+    #### Testing Strategy
+    Inspect the database directly. Check password fields (should be long hashes, not readable passwords). Check fields storing API keys, tokens, PII – they should be encrypted (appear as random-looking Base64 or binary data). Review log files for sensitive data. Check configuration files (`settings.py`) for cleartext secrets.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Saving plaintext passwords in User entities, storing sensitive configuration or PII unencrypted in database columns, logging sensitive data.
+
+    #### Vulnerable Scenario 1: Plaintext Password Field in Entity
+    ```java
+    // model/User.java
+    @Entity
+    public class User {
+        // ... id, username ...
+        // DANGEROUS: Password stored directly.
+        private String plainPassword;
+        // ... getters/setters ...
+    }
+    // Assume service layer saves this field directly without hashing.
+    ```
+
+    #### Vulnerable Scenario 2: Logging Sensitive Data
+    ```java
+    // service/PaymentService.java
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+
+    public class PaymentService {
+        private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+
+        public void processPayment(String creditCardNumber, String cvv, ...) {
+            // DANGEROUS: Logging full credit card number and CVV.
+            log.info("Processing payment for card: {}, CVV: {}", creditCardNumber, cvv);
+            // ... processing logic ...
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Use Spring Security's `PasswordEncoder` to hash passwords *before* saving the User entity. Store only the hash.
+    * Use JPA Attribute Converters or libraries like `jasypt-spring-boot` to automatically encrypt/decrypt sensitive fields (API keys, PII) when saving/loading entities. Load the encryption key securely.
+    * Configure logging framework (Logback, Log4j2) filters or use custom formatting to mask sensitive data patterns (credit cards, SSNs) or specific fields in log messages.
+
+    #### Secure Code Example
+    ```java
+    // model/User.java (Secure - Stores Hash)
+    @Entity
+    public class User {
+        // ... id, username ...
+        // SECURE: Store the hashed password.
+        private String passwordHash;
+        // NO plainPassword field!
+        // ... getters/setters for passwordHash ...
+    }
+
+    // service/UserService.java (Secure Hashing)
+    @Service
+    public class UserService {
+        @Autowired private PasswordEncoder passwordEncoder;
+        @Autowired private UserRepository userRepository;
+
+        public User registerUser(String username, String rawPassword) {
+            User user = new User();
+            user.setUsername(username);
+            // SECURE: Hash password before saving.
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            return userRepository.save(user);
+        }
+    }
+
+    // model/Config.java (Secure Encryption using Attribute Converter - Conceptual)
+    @Entity
+    public class Config {
+        @Id private Long id;
+        // SECURE: Apply converter to encrypt/decrypt this field automatically.
+        @Convert(converter = AesCryptoConverter.class)
+        private String sensitiveApiKey;
+    }
+    // Need to implement AesCryptoConverter using javax.crypto.Cipher
+    // and SECURELY manage the encryption key used by the converter.
+
+    // service/PaymentService.java (Secure Logging)
+    public class PaymentService {
+        private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+
+        public void processPayment(String creditCardNumber, String cvv, ...) {
+            // SECURE: Mask sensitive data before logging.
+            String maskedCard = maskCardNumber(creditCardNumber); // Implement masking logic
+            log.info("Processing payment for card ending in: {}", maskedCard); // Log only masked data
+            // DO NOT log CVV at all (PCI-DSS compliance)
+            // ... processing logic ...
+        }
+        // Implement maskCardNumber appropriately (e.g., show last 4 digits)
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the database directly. Check password columns (should be hashes). Check columns with API keys, PII (should be encrypted). Review application log files (`.log`) for any cleartext passwords, tokens, credit card numbers, etc.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Storing plaintext passwords in IdentityUser or custom user tables, saving sensitive data unencrypted in database columns, logging sensitive info via `ILogger`.
+
+    #### Vulnerable Scenario 1: Plaintext Password Property
+    ```csharp
+    // Models/LegacyUser.cs
+    public class LegacyUser
+    {
+        public int Id { get; set; }
+        public string Username { get; set; }
+        // DANGEROUS: Property to store password directly.
+        public string ClearTextPassword { get; set; }
+    }
+    // Assume DbContext saves this property directly.
+    ```
+
+    #### Vulnerable Scenario 2: Logging Request Body Containing Secrets
+    ```csharp
+    // Middleware/LoggingMiddleware.cs
+    public class LoggingMiddleware
+    {
+        private readonly RequestDelegate _next;
+        private readonly ILogger<LoggingMiddleware> _logger;
+
+        public LoggingMiddleware(RequestDelegate next, ILogger<LoggingMiddleware> logger) { /* ... */ }
+
+        public async Task InvokeAsync(HttpContext context)
+        {
+            context.Request.EnableBuffering(); // Allow reading body multiple times
+            var reader = new StreamReader(context.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            // DANGEROUS: Logging the raw request body might include passwords, API keys, etc.
+            _logger.LogInformation("Request Body: {RequestBody}", body);
+            context.Request.Body.Position = 0; // Reset stream position
+            await _next(context);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Use ASP.NET Core Identity's `UserManager<TUser>` which handles password hashing. Store only the `PasswordHash`.
+    * Encrypt sensitive data in the database. Options include SQL Server Always Encrypted, application-level encryption using `System.Security.Cryptography` (managing keys securely), or ORM extensions.
+    * Configure logging to exclude or mask sensitive fields. Avoid logging raw request/response bodies containing sensitive data.
+
+    #### Secure Code Example
+    ```csharp
+    // Models/ApplicationUser.cs (Secure - using Identity)
+    using Microsoft.AspNetCore.Identity;
+
+    // SECURE: Inherits from IdentityUser which manages PasswordHash securely.
+    public class ApplicationUser : IdentityUser
+    {
+        // Add custom properties if needed, but NOT password.
+    }
+
+    // Service saving data (Secure Hashing via UserManager)
+    // private readonly UserManager<ApplicationUser> _userManager;
+    // ...
+    // var user = new ApplicationUser { UserName = model.Email, Email = model.Email };
+    // var result = await _userManager.CreateAsync(user, model.Password); // Hashes password
+
+    // Models/Settings.cs (Secure Encryption - conceptual using AES)
+    public class Settings
+    {
+        public int Id { get; set; }
+        // Store encrypted value, e.g., as Base64 string or byte[]
+        public string EncryptedApiKey { get; set; }
+
+        // Use a service to handle encryption/decryption, managing keys securely
+        [NotMapped] // Tell EF not to map this property directly
+        public string ApiKey
+        {
+            get => EncryptionService.Decrypt(EncryptedApiKey); // Needs secure key management
+            set => EncryptedApiKey = EncryptionService.Encrypt(value);
+        }
+    }
+
+    // Middleware/LoggingMiddleware.cs (Secure Logging)
+    public async Task InvokeAsync(HttpContext context)
+    {
+        // SECURE: Avoid logging raw body for sensitive routes.
+        // Or implement robust filtering/masking logic if body logging is essential.
+        if (context.Request.Path.StartsWithSegments("/api/auth")) // Example check
+        {
+             _logger.LogInformation("Processing sensitive request to {Path}", context.Request.Path);
+             // DO NOT log body
+        }
+        else
+        {
+            // Log body safely if needed (e.g., using filtering)
+        }
+        await _next(context);
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect database tables. Check `AspNetUsers.PasswordHash` (should be hash), check columns containing secrets (should be encrypted). Review log outputs (files, console, Application Insights) for cleartext sensitive data.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Storing plaintext passwords in the `users` table, saving API keys unencrypted, logging sensitive data via Monolog.
+
+    #### Vulnerable Scenario 1: Plaintext Password Column
+    ```php
+    // database/migrations/..._create_users_table.php
+    Schema::create('users', function (Blueprint $table) {
+        // ... id, name, email ...
+        // DANGEROUS: Storing password directly.
+        $table->string('password_clear');
+        $table->rememberToken();
+        $table->timestamps();
+    });
+    // Assume Auth logic saves directly to 'password_clear'
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full Request Data
+    ```php
+    // app/Http/Middleware/LogRequestsMiddleware.php
+    use Illuminate\Support\Facades\Log;
+
+    public function handle(Request $request, Closure $next)
+    {
+        // DANGEROUS: Logging all request input might include passwords, tokens etc.
+        Log::info('Request Data:', $request->all());
+        return $next($request);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Use Laravel's `Hash::make()` before saving passwords to the `password` column (which should store the hash).
+    * Encrypt sensitive configuration or model attributes using `Crypt::encryptString()` before saving, and `Crypt::decryptString()` upon retrieval. Ensure `APP_KEY` is secure. Consider database-level encryption if available.
+    * Configure Monolog (via `config/logging.php`) to add processors or formatters that mask sensitive keys (like `password`, `token`, `credit_card`) in log context arrays. Avoid logging `$request->all()`.
+
+    #### Secure Code Example
+    ```php
+    // database/migrations/..._create_users_table.php (Secure)
+    Schema::create('users', function (Blueprint $table) {
+        // ... id, name, email ...
+        // SECURE: Standard Laravel password column for hash.
+        $table->string('password');
+        $table->rememberToken();
+        $table->timestamps();
+    });
+    // Use Hash::make() in registration/password set logic.
+
+    // app/Models/ServiceCredential.php (Secure Encryption using Attribute Casting)
+    use Illuminate\Database\Eloquent\Model;
+    use Illuminate\Contracts\Database\Eloquent\CastsAttributes; // Use correct interface if needed
+    use Illuminate\Contracts\Encryption\Encrypter; // Use correct interface if needed
+    use Illuminate\Support\Facades\Crypt; // Facade for Crypt service
+
+    class ServiceCredential extends Model
+    {
+        // SECURE: Automatically encrypt/decrypt 'api_secret' attribute.
+        protected $casts = [
+            'api_secret' => 'encrypted',
+        ];
+        // Ensure APP_KEY is strong and secret
+    }
+
+    // app/Http/Middleware/LogRequestsMiddleware.php (Secure Logging)
+    public function handle(Request $request, Closure $next)
+    {
+        // SECURE: Log specific, non-sensitive data or use masking.
+        $logData = $request->except(['password', 'password_confirmation', '_token']); // Exclude sensitive fields
+        Log::info('Filtered Request Data:', $logData);
+        // Or configure Monolog processors for masking globally (see config/logging.php)
+        return $next($request);
+    }
+    ```
+
+    #### Testing Strategy
+    Inspect the database. Ensure the `password` column contains hashes (e.g., starting with `$2y$`). Check columns storing secrets (should be long, encrypted strings). Review log files (`storage/logs/laravel.log`) for cleartext sensitive data.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Saving plaintext passwords in user documents (MongoDB) or rows (SQL), storing API keys unencrypted, logging sensitive object properties.
+
+    #### Vulnerable Scenario 1: Plaintext Password in Mongoose Schema
+    ```javascript
+    // models/User.js
+    const mongoose = require('mongoose');
+    const userSchema = new mongoose.Schema({
+        username: { type: String, required: true, unique: true },
+        // DANGEROUS: Password stored directly.
+        password_plaintext: { type: String, required: true }
+    });
+    module.exports = mongoose.model('User', userSchema);
+    // Assume route handler saves password_plaintext directly.
+    ```
+
+    #### Vulnerable Scenario 2: Logging Full User Object
+    ```javascript
+    // routes/profile.js
+    router.get('/me', ensureAuthenticated, (req, res) => {
+        // DANGEROUS: If the req.user object fetched from DB contains
+        // sensitive fields (e.g., password hash, tokens, PII) and is logged directly.
+        console.log('User profile requested:', req.user); // Logs potentially sensitive data
+        // Filter req.user before sending response too!
+        res.json({ username: req.user.username /* etc */ });
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * Use libraries like `bcrypt` to hash passwords *before* saving the user model. Store only the hash.
+    * Encrypt sensitive data before storing it, using Node's `crypto` module (e.g., AES-GCM). Manage encryption keys securely (environment variables, secrets manager).
+    * Use logging libraries (like Winston, Pino) with filtering or redaction features. Avoid logging entire sensitive objects; log only necessary, non-sensitive fields.
+
+    #### Secure Code Example
+    ```javascript
+    // models/User.js (Secure - Using bcrypt pre-save hook)
+    const mongoose = require('mongoose');
+    const bcrypt = require('bcrypt');
+    const saltRounds = 12;
+
+    const userSchema = new mongoose.Schema({
+        username: { type: String, required: true, unique: true },
+        // SECURE: Store hash, not plaintext.
+        passwordHash: { type: String, required: true }
+    });
+
+    // SECURE: Mongoose pre-save hook to hash password automatically
+    userSchema.pre('save', async function(next) {
+        // Only hash the password if it has been modified (or is new)
+        if (!this.isModified('passwordHash')) return next();
+        try {
+            const hash = await bcrypt.hash(this.passwordHash, saltRounds); // Assume raw password was temporarily put here
+            this.passwordHash = hash;
+            next();
+        } catch (error) {
+            next(error);
+        }
+    });
+    // Add method to compare password
+    userSchema.methods.comparePassword = async function(candidatePassword) {
+        return bcrypt.compare(candidatePassword, this.passwordHash);
+    };
+    module.exports = mongoose.model('User', userSchema);
+
+    // routes/profile.js (Secure Logging)
+    router.get('/me', ensureAuthenticated, (req, res) => {
+        // SECURE: Log only non-sensitive fields.
+        console.log(`User profile requested for ID: ${req.user.id}, Username: ${req.user.username}`);
+        // Ensure response also doesn't leak sensitive data
+        res.json({ id: req.user.id, username: req.user.username });
+    });
+    ```
+
+    #### Testing Strategy
+    Inspect database records (MongoDB documents, SQL rows). Check password fields (should be bcrypt hashes). Check fields with secrets (should be encrypted). Review console output and log files for cleartext sensitive data.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Saving plaintext passwords in Active Record models, storing API keys unencrypted, logging sensitive object attributes.
+
+    #### Vulnerable Scenario 1: Plaintext Password Attribute
+    ```ruby
+    # app/models/legacy_user.rb
+    class LegacyUser < ApplicationRecord
+      # DANGEROUS: Attribute stores password directly.
+      # attr_accessor :plain_password # Not needed if column exists
+      # Assume 'plain_password' column exists in DB and is saved directly.
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Logging User Object with Sensitive Data
+    ```ruby
+    # app/controllers/users_controller.rb
+    class UsersController < ApplicationController
+      def show
+        @user = User.find(params[:id])
+        # DANGEROUS: If User model has sensitive attributes (e.g., token,
+        # api_key) and the logger's default formatter outputs all attributes.
+        Rails.logger.info "Showing user: #{@user.inspect}"
+        render :show
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * Use `has_secure_password` in your model to handle password hashing (bcrypt).
+    * Use `attr_encrypted` gem or Rails encrypted attributes (newer versions) to encrypt sensitive model attributes. Manage keys via Rails credentials or environment variables.
+    * Configure Rails logging (`config.filter_parameters`) in `config/initializers/filter_parameter_logging.rb` to prevent sensitive parameters (like `:password`, `:token`) from being logged. Avoid logging full objects via `.inspect` if they contain sensitive data; log specific safe attributes.
+
+    #### Secure Code Example
+    ```ruby
+    # app/models/user.rb (Secure Password)
+    class User < ApplicationRecord
+      # SECURE: Handles password hashing via bcrypt.
+      has_secure_password
+      # Add other attributes, but NOT plaintext password
+    end
+
+    # app/models/api_credential.rb (Secure Encryption using attr_encrypted)
+    # gem 'attr_encrypted' # Add to Gemfile
+    class ApiCredential < ApplicationRecord
+      # SECURE: Load encryption key securely (e.g., from Rails credentials)
+      KEY = Rails.application.credentials.dig(:attr_encrypted_key) || ENV['ATTR_ENCRYPTED_KEY']
+      raise "Encryption key not set!" if KEY.blank?
+
+      # SECURE: Encrypts the api_secret attribute before saving to api_secret_encrypted column
+      attr_encrypted :api_secret, key: KEY
+      # Requires an `api_secret_encrypted` column in the database table.
+    end
+
+    # config/initializers/filter_parameter_logging.rb (Secure Logging)
+    # Be sure to restart your server when you modify this file.
+    Rails.application.config.filter_parameters += [
+      :password, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, # Default Rails filters
+      :api_key, :credit_card_number # Add custom sensitive parameters
+    ]
+
+    # app/controllers/users_controller.rb (Secure Logging)
+    def show
+        @user = User.find(params[:id])
+        # SECURE: Log only specific, non-sensitive attributes.
+        Rails.logger.info "Showing user ID: #{@user.id}, Username: #{@user.username}"
+        render :show
+    end
+    ```
+
+    #### Testing Strategy
+    Inspect database tables (`users.password_digest`, encrypted columns). Review log files (`log/*.log`) ensuring filtered parameters appear as `[FILTERED]`. Check console output.
+  </Tab>
+</Tabs>
