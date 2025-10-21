@@ -1,0 +1,592 @@
+---
+title: "Missing Authentication for Critical Function"
+sidebarTitle: "Missing Authentication (CWE-306)"
+description: "Mitigation for critical functions or endpoints lacking authentication checks, allowing anonymous access."
+icon: "user-slash"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when a **sensitive function, endpoint, or resource lacks any mechanism to verify that the user is authenticated** (i.e., logged in). Unlike authorization errors (`CWE-284`, `CWE-862`), where a logged-in user can do something they shouldn't, this flaw allows **completely anonymous users** to access functionality that should require login. This often happens when developers forget to apply authentication middleware or checks to newly added features or internal administrative endpoints. 🚪🚶‍♂️
+
+---
+
+## Business Impact
+
+Missing authentication for critical functions can be devastating:
+* **Unauthorized Data Access/Modification:** Anonymous users can view, modify, or delete sensitive data intended only for authenticated users (e.g., accessing `/admin` panels, user profiles, or sensitive APIs).
+* **Privilege Escalation:** If an administrative function lacks authentication, any anonymous user can potentially gain administrative control.
+* **Complete System Compromise:** Accessing internal functions like diagnostics, configuration management, or code deployment endpoints without authentication can lead to full server takeover.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-306](https://cwe.mitre.org/data/definitions/306.html)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a failure to apply the framework's standard authentication enforcement mechanisms. All major frameworks provide clear ways to protect endpoints (middleware, decorators, filters, attributes). The vulnerability is almost always an **oversight** by the developer.
+
+**Key Remediation Principles:**
+1.  **Deny by Default:** Configure the framework to require authentication for *all* endpoints by default, then explicitly mark public endpoints as exceptions. This is safer than requiring developers to remember to protect each new sensitive endpoint.
+2.  **Apply Authentication Checks:** Use the framework's standard mechanisms (`@login_required`, `[Authorize]`, `auth` middleware, `@PreAuthorize("isAuthenticated()")`, `before_action :authenticate_user!`) on all non-public controllers, views, routes, or methods.
+3.  **Regular Audits:** Periodically review application routes and endpoints to ensure appropriate authentication (and authorization) controls are applied.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Forgetting to add the `@login_required` decorator (Django function views), `LoginRequiredMixin` (Django class views), `@auth.login_required` (Flask-Login), or equivalent checks.
+
+    #### Vulnerable Scenario 1: Django Admin View without Decorator
+    ```python
+    # myapp/views.py
+    # DANGEROUS: No @login_required decorator.
+    # Anyone who finds /admin/dashboard/ can access it.
+    def admin_dashboard(request):
+        # ... logic for admin dashboard ...
+        return render(request, 'admin/dashboard.html')
+
+    # myproject/urls.py
+    path('admin/dashboard/', views.admin_dashboard, name='admin_dashboard'),
+    ```
+
+    #### Vulnerable Scenario 2: Flask API Endpoint Missing Check
+    ```python
+    # app.py (Flask)
+    from flask_login import current_user # Assuming Flask-Login is used
+
+    @app.route('/api/user/settings', methods=['POST'])
+    # DANGEROUS: Missing @login_required decorator.
+    # Anonymous users can POST here. It might fail later if it tries
+    # to use current_user, but the endpoint itself is accessible.
+    def update_user_settings():
+        if not current_user.is_authenticated: # Check done too late / might be forgotten
+             abort(401)
+        # ... update settings for current_user ...
+        return jsonify(success=True)
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Apply `@login_required` to function views, use `LoginRequiredMixin` as the first inherited class for Class-Based Views, or wrap URL patterns with `login_required()`. Use `permission_classes = [IsAuthenticated]` in DRF.
+    * **Flask:** Apply `@login_required` (from Flask-Login or similar) to routes that need authentication.
+
+    #### Secure Code Example
+    ```python
+    # myapp/views.py (Django - Secure Function View)
+    from django.contrib.auth.decorators import login_required, user_passes_test
+
+    # SECURE: Added login_required and admin check
+    @login_required
+    @user_passes_test(lambda u: u.is_staff)
+    def admin_dashboard(request):
+        # ... logic ...
+        return render(request, 'admin/dashboard.html')
+
+    # myapp/views.py (Django - Secure Class View)
+    from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+    from django.views.generic import TemplateView
+
+    class AdminDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+        template_name = 'admin/dashboard.html'
+        # SECURE: LoginRequiredMixin enforces login
+        # SECURE: UserPassesTestMixin enforces staff status
+        def test_func(self):
+            return self.request.user.is_staff
+    ```
+    ```python
+    # app.py (Flask - Secure)
+    from flask_login import login_required, current_user # Import decorator
+
+    @app.route('/api/user/settings-secure', methods=['POST'])
+    @login_required # SECURE: Decorator enforces login before function executes.
+    def update_user_settings_secure():
+        # current_user is guaranteed to be authenticated here
+        # ... update settings for current_user ...
+        return jsonify(success=True)
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session (incognito mode) or `curl` without session cookies. Attempt to directly access URLs that should require login (e.g., `/profile`, `/settings`, `/admin`, sensitive API endpoints). Verify that you are redirected to the login page or receive a `401 Unauthorized` / `403 Forbidden` error, rather than accessing the page content or API data. Automated scanners often check for unauthenticated access to common sensitive paths.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Forgetting to apply security constraints in `HttpSecurity` configuration or missing method-level security annotations (`@PreAuthorize`, `@Secured`) on controllers/methods that require authentication.
+
+    #### Vulnerable Scenario 1: Path Missing from `HttpSecurity`
+    ```java
+    // config/SecurityConfig.java
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+            .authorizeRequests()
+                .antMatchers("/admin/**").hasRole("ADMIN") // Secures admin paths
+                .antMatchers("/login", "/css/**").permitAll() // Allows public paths
+                // DANGEROUS: Forgot to add a rule for /user/profile.
+                // It falls through to NO explicit rule. Depending on other defaults
+                // (e.g., if default is permitAll), it might be accessible.
+                // If the default was denyAll, it would be safe but maybe unintended.
+                // If default is authenticated(), anonymous users can't access, but needs check.
+                .anyRequest().authenticated(); // Default for anything else (safe IF this is the intended catch-all)
+    }
+    ```
+    ```java
+    // controller/UserProfileController.java
+    @Controller
+    public class UserProfileController {
+        @GetMapping("/user/profile") // Path exists but isn't explicitly secured above
+        public String userProfile(Model model, Principal principal) {
+            // Logic assumes principal exists, might throw NullPointerException if accessed anonymously
+            // But the endpoint mapping itself might be accessible.
+            // ...
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Missing Method-Level Security
+    Global config might permit access based on URL pattern, but a specific method needs authentication.
+    ```java
+    // config/SecurityConfig.java - Allows all authenticated users to access /api/**
+    // .antMatchers("/api/**").authenticated()
+
+    // controller/ApiController.java
+    @RestController
+    @RequestMapping("/api")
+    public class ApiController {
+
+        @GetMapping("/public-info") // Publicly accessible via config (if permitAll)
+        public String getPublicInfo() { return "Public"; }
+
+        // DANGEROUS: Requires authentication, but no specific check.
+        // Relies solely on global .antMatchers("/api/**").authenticated().
+        // If that global rule was missing or wrong, this is unprotected.
+        @PostMapping("/update-data")
+        public String updateData(@RequestBody Data data, Principal principal) {
+             // Assumes principal is not null due to global config, risky.
+             // ... update logic ...
+             return "Updated";
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Deny by Default:** Configure `HttpSecurity` with `.anyRequest().authenticated()` (or stricter, like `.denyAll()`) as the *last* rule, ensuring any path not explicitly permitted requires authentication.
+    * **Explicit Protection:** Apply security rules (`.antMatchers(...).hasRole(...)` or `.authenticated()`) to all necessary paths.
+    * **Method Security:** Use `@PreAuthorize("isAuthenticated()")` or `@Secured("ROLE_USER")` on sensitive methods/controllers for defense-in-depth, especially if global rules are complex.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Secure - Deny by Default)
+    @Configuration
+    @EnableWebSecurity
+    @EnableGlobalMethodSecurity(prePostEnabled = true) // Enable method security
+    public class SecurityConfig extends WebSecurityConfigurerAdapter {
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http
+                .authorizeRequests()
+                    // SECURE: Explicitly permit public paths
+                    .antMatchers("/", "/home", "/login", "/css/**", "/js/**").permitAll()
+                    // SECURE: Explicitly define rules for authenticated sections
+                    .antMatchers("/user/**").authenticated()
+                    .antMatchers("/admin/**").hasRole("ADMIN")
+                    // SECURE: Deny anything not explicitly matched above (strictest)
+                    // .anyRequest().denyAll();
+                    // OR require authentication for anything else (more common)
+                    .anyRequest().authenticated()
+                .and()
+                .formLogin() // Configure login
+                    .loginPage("/login").permitAll()
+                .and()
+                .logout().permitAll();
+        }
+        // ... configure AuthenticationManagerBuilder ...
+    }
+
+    // controller/ApiController.java (Secure - Method Security)
+    @RestController
+    @RequestMapping("/api")
+    public class ApiController {
+        @GetMapping("/public-info")
+        public String getPublicInfo() { return "Public"; }
+
+        @PostMapping("/update-data")
+        @PreAuthorize("isAuthenticated()") // SECURE: Explicit check on the method
+        public String updateDataSecure(@RequestBody Data data, Principal principal) {
+             // principal is guaranteed non-null if security passed
+             // ... update logic ...
+             return "Updated";
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session or `curl`. Attempt to access every application endpoint/URL. Verify that all endpoints requiring login redirect to the login page or return a `401`/`403` status. Pay close attention to newly added features or administrative interfaces.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Forgetting to add the `[Authorize]` attribute to a Controller or Action method in ASP.NET Core MVC/API, or Razor Pages.
+
+    #### Vulnerable Scenario 1: Unprotected Controller
+    ```csharp
+    // Controllers/SettingsController.cs
+
+    // DANGEROUS: No [Authorize] attribute on the controller.
+    // All actions within are publicly accessible.
+    public class SettingsController : Controller
+    {
+        public IActionResult Index() { /* ... show settings form ... */ return View(); }
+
+        [HttpPost]
+        public async Task<IActionResult> Update(SettingsViewModel model)
+        {
+            // Anonymous user can POST here and change settings!
+            // ... update logic ...
+            return RedirectToAction("Index");
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unprotected Razor Page
+    A Razor Page model doesn't include `[Authorize]` or configure authorization via folder conventions.
+    ```csharp
+    // Pages/Admin/Index.cshtml.cs
+
+    // DANGEROUS: Missing [Authorize(Roles = "Admin")] attribute.
+    public class IndexModel : PageModel
+    {
+        public void OnGet()
+        {
+            // Anonymous user can access /Admin/Index
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Apply `[Authorize]`:** Add the `[Authorize]` attribute to controllers, Razor Pages, or specific action/handler methods that require authentication. Use roles (`[Authorize(Roles = "Admin")]`) or policies (`[Authorize(Policy = "CanEditSettings")]`) for authorization.
+    * **Global Filter (Deny by Default):** Configure a global authorization filter in `Startup.cs` that requires authentication for all endpoints by default, then use `[AllowAnonymous]` only on explicitly public endpoints (like Login, Home).
+
+    #### Secure Code Example
+    ```csharp
+    // Controllers/SettingsController.cs (Secure)
+    // SECURE: Attribute applied to the entire controller.
+    [Authorize]
+    public class SettingsController : Controller
+    {
+        public IActionResult Index() { /* ... */ return View(); }
+
+        [HttpPost]
+        // Optionally add role/policy check if needed beyond just login
+        // [Authorize(Policy = "CanUpdateSettings")]
+        public async Task<IActionResult> Update(SettingsViewModel model)
+        {
+            // ... update logic ...
+            return RedirectToAction("Index");
+        }
+    }
+
+    // Pages/Admin/Index.cshtml.cs (Secure)
+    // SECURE: Requires authenticated user in the "Admin" role.
+    [Authorize(Roles = "Admin")]
+    public class IndexModelSecure : PageModel
+    {
+        public void OnGet() { /* ... */ }
+    }
+
+    // Startup.cs (Secure - Global Filter Example)
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddControllersWithViews(options =>
+        {
+            // SECURE: Require authorization for all endpoints by default
+            var policy = new AuthorizationPolicyBuilder()
+                             .RequireAuthenticatedUser()
+                             .Build();
+            options.Filters.Add(new AuthorizeFilter(policy));
+        });
+        // ... Add Authentication, Authorization policies etc ...
+    }
+    // Now, explicitly public endpoints need [AllowAnonymous]
+    // [AllowAnonymous]
+    // public class HomeController : Controller { ... }
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session or `curl`. Attempt to access all application URLs, especially those intended for logged-in users or specific roles (e.g., `/Settings`, `/Admin`, `/Profile`). Verify redirection to login or `401`/`403` responses. Check controllers and Razor Pages for missing `[Authorize]` attributes.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Defining routes in Laravel (`routes/web.php`, `routes/api.php`) without applying the `auth` middleware, or writing plain PHP scripts without session checks.
+
+    #### Vulnerable Scenario 1: Laravel Route Outside `auth` Group
+    ```php
+    // routes/web.php
+
+    // DANGEROUS: This route is defined outside any auth middleware group.
+    // Anonymous users can access the user profile editing page.
+    Route::get('/profile/edit', [UserProfileController::class, 'edit']);
+    Route::post('/profile/update', [UserProfileController::class, 'update']);
+
+    // Secure routes are inside the group
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Plain PHP Script Missing Session Check
+    ```php
+    <?php
+    // admin_action.php
+    // DANGEROUS: No session_start() or check for logged-in user.
+
+    // Perform administrative action directly
+    delete_important_data(); // Executes for any visitor
+
+    echo "Action completed.";
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Ensure all routes requiring authentication are placed within a `Route::middleware('auth')` (or `auth:api`, `auth:sanctum`) group, or apply the middleware directly to the route/controller.
+    * **Plain PHP:** Start sessions (`session_start()`) at the top of every restricted script and immediately check for a valid session variable indicating login (e.g., `if (!isset($_SESSION['user_id'])) { header('Location: /login.php'); exit; }`).
+
+    #### Secure Code Example
+    ```php
+    // routes/web.php (Laravel - Secure)
+    use App\Http\Controllers\UserProfileController; // Added import
+    use App\Http\Controllers\DashboardController; // Added import
+
+    // Public routes
+    Route::get('/', [HomeController::class, 'index']); // Example home
+    Auth::routes(); // Login, register etc.
+
+    // SECURE: Routes requiring login are inside the middleware group.
+    Route::middleware(['auth'])->group(function () {
+        Route::get('/dashboard', [DashboardController::class, 'index']);
+        Route::get('/profile/edit', [UserProfileController::class, 'edit']);
+        Route::post('/profile/update', [UserProfileController::class, 'update']);
+        // Add other authenticated routes here
+    });
+    ```
+    ```php
+    <?php
+    // admin_action_secure.php (Plain PHP - Secure)
+    session_start(); // Start session handling
+
+    // SECURE: Check if user ID exists in session. Redirect if not logged in.
+    if (!isset($_SESSION['user_id'])) {
+        header('Location: /login.php'); // Redirect to login page
+        exit; // Stop script execution
+    }
+
+    // Optional: Add role check if needed
+    // if ($_SESSION['user_role'] !== 'admin') { die('Forbidden'); }
+
+    // Perform administrative action only if logged in
+    delete_important_data();
+    echo "Action completed.";
+    ?>
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session or `curl`. Attempt to access all application routes/scripts. Verify that accessing protected resources redirects to login or returns an error (401/403). Review `routes/web.php` and `routes/api.php` to ensure middleware is applied correctly. Check plain PHP scripts for session start and authentication checks at the beginning.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Defining routes in Express without applying authentication middleware (like Passport.js `ensureAuthenticated` or custom checks).
+
+    #### Vulnerable Scenario 1: Route Defined Before Auth Middleware
+    ```javascript
+    // app.js
+    const express = require('express');
+    const app = express();
+    // Assume session middleware is configured before routes
+
+    // DANGEROUS: Route defined before any global auth middleware.
+    app.get('/admin/panel', (req, res) => {
+        // Accessible to anyone.
+        res.send('Admin Panel Content (Public!)');
+    });
+
+    // Assume auth middleware is applied later, or only to specific routes
+    // app.use(passport.initialize());
+    // app.use(passport.session());
+    // app.use('/api', ensureAuthenticated, apiRoutes); // Only protects /api
+    ```
+
+    #### Vulnerable Scenario 2: Missing Route-Specific Middleware
+    ```javascript
+    // routes/settings.js
+    const router = require('express').Router();
+    // Assume ensureAuthenticated middleware exists
+
+    // This route is public (ok)
+    router.get('/info', (req, res) => { res.send('Public Info'); });
+
+    // DANGEROUS: This route modifies data but forgot middleware.
+    router.post('/update', (req, res) => {
+        // Accessible anonymously if the main app doesn't protect the mount point.
+        // Even if the main app requires login for this router, if this needs
+        // specific role, that check is missing too.
+        updateSettings(req.body); // Anonymous user can update settings
+        res.send('Settings Updated');
+    });
+
+    // This route is secure
+    router.get('/my-details', ensureAuthenticated, (req, res) => { /* ... */ });
+
+    module.exports = router;
+
+    // app.js (Mounting the router)
+    // const settingsRoutes = require('./routes/settings');
+    // app.use('/settings', settingsRoutes); // If no auth check here, /settings/update is open
+    ```
+
+    #### Mitigation and Best Practices
+    * **Global Protection:** Apply authentication middleware globally early in the stack (`app.use(ensureAuthenticated)`) and then explicitly exclude public routes if using an allow-list approach.
+    * **Route-Specific Protection:** Apply authentication middleware directly to sensitive routes or routers (`app.use('/admin', ensureAuthenticated, adminRoutes);` or `router.post('/update', ensureAuthenticated, ...)`).
+    * **Deny by Default:** Structure middleware so that authentication is required unless a route is explicitly marked public.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure - Global Protection Example)
+    const express = require('express');
+    const session = require('express-session'); // Example session middleware
+    const passport = require('passport'); // Example auth library
+    const app = express();
+
+    // Setup session and passport BEFORE routes needing auth
+    // ... app.use(session(...)); ...
+    // ... app.use(passport.initialize()); ...
+    // ... app.use(passport.session()); ...
+
+    // Define authentication check middleware
+    function ensureAuthenticated(req, res, next) {
+        if (req.isAuthenticated()) { // Passport method
+             return next();
+        }
+        res.redirect('/login'); // Or return 401 for APIs
+    }
+
+    // Public routes first
+    app.get('/', (req, res) => { res.send('Home'); });
+    app.get('/login', (req, res) => { /* Render login form */ });
+    app.post('/login', passport.authenticate('local', { /* ... */ }));
+
+    // SECURE: Apply auth middleware to all subsequent routes/routers
+    app.use(ensureAuthenticated);
+
+    // All routes defined below here require authentication
+    app.get('/dashboard', (req, res) => { res.send('Dashboard'); });
+    const adminRoutes = require('./routes/admin'); // Assume admin routes exist
+    // Add admin role check middleware if needed: app.use('/admin', ensureAdmin, adminRoutes);
+    app.use('/admin', adminRoutes);
+
+    app.listen(3000);
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session or `curl`. Attempt to access all application endpoints. Verify that protected endpoints redirect to login or return 401/403. Review middleware order in `app.js` and check individual route definitions for missing `ensureAuthenticated` calls.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Forgetting to add `before_action :authenticate_user!` (Devise) or equivalent filter to a Rails controller, or specific actions within it.
+
+    #### Vulnerable Scenario 1: Controller Missing Authentication Filter
+    ```ruby
+    # app/controllers/reports_controller.rb
+
+    # DANGEROUS: No before_action to check for login.
+    # Entire controller accessible anonymously.
+    class ReportsController < ApplicationController
+      def show
+        # Anonymous user can view reports
+        @report = Report.find(params[:id])
+        # ...
+      end
+
+      def create
+        # Anonymous user can create reports
+        # ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Action Bypassing Filter via `skip_before_action`
+    ```ruby
+    # app/controllers/posts_controller.rb
+    class PostsController < ApplicationController
+      # SECURE: Generally requires login
+      before_action :authenticate_user!
+
+      # DANGEROUS: Public allowed to view index, BUT also accidentally allows
+      # anonymous access to the 'destroy' action due to typo or mistake.
+      skip_before_action :authenticate_user!, only: [:index, :destroy] # ':destroy' should not be here
+
+      def index
+        @posts = Post.all
+      end
+
+      def destroy
+        # Anonymous user can destroy posts!
+        @post = Post.find(params[:id])
+        @post.destroy
+        redirect_to posts_path
+      end
+      # ... other actions like show, new, create require login ...
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * Apply `before_action :authenticate_user!` (or your auth gem's equivalent) in `ApplicationController` to protect everything by default. Then use `skip_before_action` only for truly public controllers/actions (like login, home page).
+    * If applying per-controller, ensure the `before_action` covers all sensitive actions (or use no `only`/`except` options to cover all). Be extremely careful with `skip_before_action`.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/application_controller.rb (Secure - Global Default)
+    class ApplicationController < ActionController::Base
+      # SECURE: Require authentication for all controllers inheriting from this,
+      # unless they explicitly skip it.
+      before_action :authenticate_user!
+    end
+
+    # app/controllers/home_controller.rb (Secure - Skipping for Public)
+    class HomeController < ApplicationController
+      # SECURE: Explicitly skip the global filter for the public index action.
+      skip_before_action :authenticate_user!, only: [:index]
+
+      def index
+        # Public homepage content
+      end
+    end
+
+    # app/controllers/reports_controller.rb (Secure - Inherits Global Filter)
+    class ReportsController < ApplicationController
+      # No need for before_action here, it's inherited from ApplicationController.
+      # Add authorization checks if needed (e.g., check role)
+      before_action :require_admin, only: [:create] # Example authorization
+
+      def show
+        # Requires login (inherited)
+        @report = current_user.reports.find(params[:id]) # Scope to user
+      end
+
+      def create
+        # Requires login (inherited) AND admin (explicit before_action)
+        # ... create logic ...
+      end
+      # ... private require_admin method ...
+    end
+    ```
+
+    #### Testing Strategy
+    Use an unauthenticated browser session or `curl`. Attempt to access all controller actions. Verify redirection to login or 401/403 errors for protected actions. Review `ApplicationController` and individual controllers for `before_action :authenticate_user!` and be very critical of any `skip_before_action` usage.
+  </Tab>
+</Tabs>
