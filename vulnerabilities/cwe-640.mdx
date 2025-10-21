@@ -383,15 +383,15 @@ Password recovery typically involves generating a **secure, random, single-use, 
     ```php
     // Using Laravel's Built-in Flow (Secure by default)
     // 1. Ensure User model uses CanResetPassword trait:
-    // use Illuminate\Foundation\Auth\User as Authenticatable;
-    // use Illuminate\Notifications\Notifiable;
-    // use Illuminate\Contracts\Auth\CanResetPassword; // Interface
-    // use Illuminate\Auth\Passwords\CanResetPassword as CanResetPasswordTrait; // Trait
+     use Illuminate\Foundation\Auth\User as Authenticatable;
+     use Illuminate\Notifications\Notifiable;
+     use Illuminate\Contracts\Auth\CanResetPassword; // Interface
+     use Illuminate\Auth\Passwords\CanResetPassword as CanResetPasswordTrait; // Trait
 
-    // class User extends Authenticatable implements CanResetPassword {
+     class User extends Authenticatable implements CanResetPassword {
     //    use Notifiable, CanResetPasswordTrait;
     //    // ...
-    // }
+     }
 
     // 2. Use default Auth controllers (ForgotPasswordController, ResetPasswordController)
     //    or ensure custom controllers call the Broker correctly.
@@ -401,17 +401,17 @@ Password recovery typically involves generating a **secure, random, single-use, 
     // config/app.php or .env should have correct APP_URL starting with https://
 
     // 4. Ensure ForgotPasswordController returns generic response (default behavior):
-    // app/Http/Controllers/Auth/ForgotPasswordController.php
-    // protected function sendResetLinkResponse(Request $request, $response) {
-    //     // Default returns view/redirect with generic status message
-    //     return back()->with('status', trans($response));
-    // }
-    // protected function sendResetLinkFailedResponse(Request $request, $response) {
+     app/Http/Controllers/Auth/ForgotPasswordController.php
+     protected function sendResetLinkResponse(Request $request, $response) {
+         // Default returns view/redirect with generic status message
+         return back()->with('status', trans($response));
+     }
+     protected function sendResetLinkFailedResponse(Request $request, $response) {
     //     // Default *also* returns view/redirect with generic status message,
     //     // using the same 'status' key but different translation string.
     //     // This prevents enumeration based on response type/key.
-    //     return back()->with('status', trans($response)); // Changed from withErrors
-    // }
+         return back()->with('status', trans($response)); // Changed from withErrors
+     }
     // NOTE: Check your Laravel version's exact default behavior. The goal is a generic success-style response always.
     ```
 
