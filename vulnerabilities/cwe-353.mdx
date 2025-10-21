@@ -1,0 +1,616 @@
+---
+title: "Missing Support for Integrity Check"
+sidebarTitle: "Data Integrity Missing (CWE-353)"
+description: "Mitigation for failing to use integrity checks (MACs, digital signatures) on data, allowing undetected tampering."
+icon: "shield-check"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application receives or retrieves data (such as cookies, session data, user-provided parameters, or files) but **fails to verify that the data has not been tampered with**. Even if data is encrypted, encryption alone (especially in modes like CBC without a MAC) does not prevent an attacker from modifying or corrupting the ciphertext, which may lead to predictable changes in the decrypted plaintext (e.g., a "bit-flipping" attack).
+
+This flaw also applies to plaintext data where integrity is crucial, like signed JWTs (where the signature must be checked) or cookies where a MAC (Message Authentication Code) should be used to prevent tampering.
+
+---
+
+## Business Impact
+
+Failure to check data integrity allows attackers to tamper with data undetected, leading to:
+* **Privilege Escalation:** Modifying a cookie or token (e.g., `user_role=user` to `user_role=admin`).
+* **Authentication Bypass:** Crafting or modifying session data to impersonate another user.
+* **Data Corruption:** Altering sensitive data in transit or at rest (e.g., changing transaction amounts).
+* **Code Execution:** Bit-flipping attacks against encrypted, serialized objects might lead to Insecure Deserialization (`CWE-502`).
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-353](https://cwe.mitre.org/data/definitions/353.html)
+  **Related CWEs:** CWE-345 (Data Authenticity), CWE-565 / CWE-784 (Cookie Integrity)
+  **OWASP Top 10 (2021):** A08:2021 - Software and Data Integrity Failures
+  **Severity:** High
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a design and implementation flaw. Modern frameworks often provide integrity checks by default on sensitive data like cookies and tokens, but custom implementations can easily miss this.
+
+**Key Remediation Principles:**
+1.  **Use Authenticated Encryption (AEAD):** Prefer modern encryption ciphers like **AES-GCM** or **ChaCha20-Poly1305** that bundle encryption (confidentiality) and a MAC (integrity/authenticity) together.
+2.  **Encrypt-then-MAC:** If using older ciphers (like AES-CBC), you **must** apply a strong MAC (like HMAC-SHA256) to the *ciphertext* and verify it *before* decrypting.
+3.  **Verify Signatures:** For signed data (like JWTs), **always** verify the signature using a secure key before trusting the payload (see `CWE-347`).
+4.  **Use Framework Defaults:** Rely on built-in framework mechanisms for session and cookie management (e.g., Django/Laravel encrypted cookies, ASP.NET Core Data Protection) as they typically include integrity checks.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using `cryptography` in AES-CBC mode without an HMAC, or rolling custom cookie mechanisms. Django's default session/cookie backends are secure.
+
+    #### Vulnerable Scenario 1: AES-CBC without MAC
+    Data is encrypted but can be tampered with via a "bit-flipping attack."
+    ```python
+    # utils/encryption_cbc.py
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad, unpad
+    from Crypto.Random import get_random_bytes
+    import base64
+
+    # (Assume KEY is loaded securely)
+
+    def encrypt_cbc_no_mac(data):
+        iv = get_random_bytes(AES.block_size)
+        cipher = AES.new(KEY, AES.MODE_CBC, iv)
+        padded_data = pad(data.encode(), AES.block_size)
+        ciphertext = cipher.encrypt(padded_data)
+        # DANGEROUS: Returning IV + Ciphertext without a MAC.
+        # An attacker can flip bits in the ciphertext, which will
+        # predictably garble the decrypted plaintext block.
+        return base64.b64encode(iv + ciphertext)
+
+    def decrypt_cbc_no_mac(encoded_data):
+        iv_and_ciphertext = base64.b64decode(encoded_data)
+        iv = iv_and_ciphertext[:AES.block_size]
+        ciphertext = iv_and_ciphertext[AES.block_size:]
+        cipher = AES.new(KEY, AES.MODE_CBC, iv)
+        # DANGEROUS: Decrypting without first verifying integrity.
+        # Attacker's bit-flipping will result in garbled data here.
+        padded_plaintext = cipher.decrypt(ciphertext)
+        plaintext = unpad(padded_plaintext, AES.block_size)
+        return plaintext.decode() # Might return corrupted data
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned Plaintext Cookie
+    ```python
+    # views.py (Django)
+    def set_prefs_unsafe(request):
+        # DANGEROUS: Storing user ID in a cookie without signing.
+        # Attacker can change 'user_id=123' to 'user_id=1' (admin).
+        response.set_cookie('user_prefs', 'user_id=123')
+        return response
+    ```
+
+    #### Mitigation and Best Practices
+    * **Encryption:** Use an AEAD mode like **AES-GCM**.
+    * **Cookies:** Use Django's signed cookies (`request.get_signed_cookie()`, `response.set_signed_cookie()`) or encrypted cookies (default session backend) which provide integrity.
+
+    #### Secure Code Example
+    ```python
+    # utils/encryption_gcm.py (Secure - AES-GCM)
+    from Crypto.Cipher import AES
+    from Crypto.Random import get_random_bytes
+    import base64
+
+    # (Assume KEY is loaded securely)
+
+    def encrypt_gcm(data):
+        # SECURE: AES-GCM provides authenticated encryption (AEAD).
+        nonce = get_random_bytes(12) # GCM recommended nonce size
+        cipher = AES.new(KEY, AES.MODE_GCM, nonce=nonce)
+        ciphertext, tag = cipher.encrypt_and_digest(data.encode())
+        # SECURE: Store nonce + tag + ciphertext.
+        return base64.b64encode(nonce + tag + ciphertext)
+
+    def decrypt_gcm(encoded_data):
+        data = base64.b64decode(encoded_data)
+        nonce = data[:12]
+        tag = data[12:28] # 16-byte tag
+        ciphertext = data[28:]
+        cipher = AES.new(KEY, AES.MODE_GCM, nonce=nonce)
+        try:
+            # SECURE: decrypt_and_verify() checks the tag (integrity).
+            # Throws ValueError if tag/data is tampered with.
+            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+            return plaintext.decode()
+        except (ValueError, KeyError) as e:
+            # Integrity check failed!
+            print(f"Decryption/Verification Failed: {e}")
+            return None
+    ```
+    ```python
+    # views.py (Django Secure Cookie)
+    def set_prefs_secure(request):
+        response = HttpResponse("Prefs set")
+        # SECURE: Uses Django's signing mechanism (based on SECRET_KEY)
+        response.set_signed_cookie('user_id', 123, salt='my-salt-value')
+        return response
+
+    def get_prefs_secure(request):
+        try:
+            # SECURE: Fails with BadSignature if tampered.
+            user_id = request.get_signed_cookie('user_id', salt='my-salt-value')
+            return HttpResponse(f"User ID: {user_id}")
+        except signing.BadSignature:
+            return HttpResponse("Invalid cookie signature", status=400)
+    ```
+
+    #### Testing Strategy
+    Identify data passed between client/server or stored/retrieved that requires integrity (encrypted data, session cookies, tokens).
+    * **Encrypted Data:** If using CBC, attempt to flip bits in the ciphertext and observe the decrypted result. If using AEAD (GCM), modify any part of the nonce, tag, or ciphertext; verify decryption fails.
+    * **Cookies:** Modify the value of a signed cookie (like Django's `sessionid` or a manually signed cookie). Verify the application rejects it (`BadSignature`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `AES/CBC/PKCS5Padding` without a MAC (like HMAC-SHA256).
+
+    #### Vulnerable Scenario 1: AES-CBC without MAC
+    Encrypting data for transport or storage without an integrity check.
+    ```java
+    // service/EncryptionService.java
+    public byte[] encryptCbcNoMac(byte[] keyBytes, byte[] data) throws Exception {
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        byte[] iv = new byte[16]; // Generate random IV (CWE-329)
+        new SecureRandom().nextBytes(iv);
+        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        cipher.init(Cipher.ENCRYPT_MODE, key, ivSpec);
+        byte[] ciphertext = cipher.doFinal(data);
+        // DANGEROUS: Returning IV + Ciphertext. No integrity check.
+        // Attacker can flip bits in 'ciphertext' part.
+        // ... (code to combine iv + ciphertext) ...
+        return combinedIvAndCiphertext;
+    }
+
+    public byte[] decryptCbcNoMac(byte[] keyBytes, byte[] ivAndCiphertext) throws Exception {
+        // ... (code to split iv from ciphertext) ...
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        IvParameterSpec ivSpec = new IvParameterSpec(iv);
+        cipher.init(Cipher.DECRYPT_MODE, key, ivSpec);
+        // DANGEROUS: Decrypts tampered data. Result might be garbled,
+        // but the garbling is predictable (bit-flipping).
+        return cipher.doFinal(ciphertext);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned State Parameter (e.g., OAuth)
+    An OAuth redirect handler receives a `state` parameter but only checks its value, not its integrity/origin. (This is more `CWE-345`).
+
+    #### Mitigation and Best Practices
+    **Use AES-GCM (`AES/GCM/NoPadding`)**. This AEAD cipher mode handles encryption and integrity verification in one step. If CBC *must* be used, implement an **Encrypt-then-MAC** scheme (compute HMAC-SHA256 on the *ciphertext* + *IV*, append HMAC, and verify HMAC *before* decrypting).
+
+    #### Secure Code Example
+    ```java
+    // service/EncryptionService.java (Secure AES-GCM)
+    import javax.crypto.Cipher;
+    import javax.crypto.spec.GCMParameterSpec;
+    import javax.crypto.spec.SecretKeySpec;
+    import java.security.SecureRandom;
+    import java.util.Arrays; // Added import
+
+    // (See CWE-327 example for encryptAesGcm - it includes GCM integrity)
+
+    public byte[] decryptAesGcm(byte[] keyBytes, byte[] nonceAndCiphertext) throws Exception {
+        SecretKeySpec key = new SecretKeySpec(keyBytes, "AES");
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+
+        // Assume nonce is first 12 bytes
+        byte[] nonce = Arrays.copyOfRange(nonceAndCiphertext, 0, 12);
+        byte[] ciphertextWithTag = Arrays.copyOfRange(nonceAndCiphertext, 12, nonceAndCiphertext.length);
+        GCMParameterSpec spec = new GCMParameterSpec(128, nonce); // 128-bit tag
+
+        cipher.init(Cipher.DECRYPT_MODE, key, spec);
+
+        // SECURE: doFinal() verifies the GCM authentication tag.
+        // Throws AEADBadTagException if integrity check fails.
+        try {
+            return cipher.doFinal(ciphertextWithTag);
+        } catch (javax.crypto.AEADBadTagException e) {
+            System.err.println("Integrity check failed! Data tampered.");
+            throw new SecurityException("Data integrity compromised", e);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify where encryption is used. If the algorithm is `AES/CBC/...`, check if an HMAC is also being calculated and verified. If not, it's vulnerable. If `AES/GCM/...` is used, it's generally secure by default. Test by intercepting the encrypted payload (e.g., in a cookie or API request) and modifying one or more bytes. The secure implementation (`AES-GCM` or CBC+HMAC) should fail decryption with an integrity/tag/MAC error, not just return garbled data.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `AesCryptoServiceProvider` in CBC mode without an HMAC. ASP.NET Core Data Protection (used for cookies) handles this securely by default.
+
+    #### Vulnerable Scenario 1: AES-CBC without MAC
+    ```csharp
+    // Services/EncryptionHelper.cs
+    public byte[] EncryptCbcNoMac(byte[] key, byte[] data)
+    {
+        using (var aes = Aes.Create())
+        {
+            aes.Key = key;
+            aes.Mode = CipherMode.CBC; // CBC mode
+            aes.GenerateIV(); // Good, random IV
+            byte[] iv = aes.IV;
+            // ... (create encryptor, memory stream, crypto stream) ...
+            // DANGEROUS: Output is just IV + Ciphertext. No HMAC.
+            // Attacker can flip bits in the ciphertext part.
+            return iv.Concat(ciphertextStream.ToArray()).ToArray();
+        }
+    }
+
+    public byte[] DecryptCbcNoMac(byte[] key, byte[] ivAndCiphertext)
+    {
+        using (var aes = Aes.Create())
+        {
+            aes.Key = key;
+            aes.Mode = CipherMode.CBC;
+            byte[] iv = ivAndCiphertext.Take(16).ToArray();
+            byte[] ciphertext = ivAndCiphertext.Skip(16).ToArray();
+            aes.IV = iv;
+            // DANGEROUS: Decrypts directly without verifying integrity.
+            // ... (create decryptor, memory stream, crypto stream) ...
+            // Returns predictably garbled data if ciphertext was tampered.
+            return decryptedStream.ToArray();
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned ViewState (ASP.NET Web Forms)
+    If `EnableViewStateMac="false"`, the ViewState is not integrity-checked. (Also related to CWE-502 if `LosFormatter` is used).
+
+    #### Mitigation and Best Practices
+    * **Use `AesGcm`:** Available in .NET Core 3.0+ and .NET 5+, `AesGcm` is an AEAD cipher that provides integrity.
+    * **Encrypt-then-MAC:** If CBC must be used, compute an HMAC (e.g., `HMACSHA256`) of the IV + Ciphertext, append it, and verify the HMAC *before* decryption.
+    * **Use Data Protection:** Rely on ASP.NET Core's Data Protection APIs, which handle encryption, integrity, and key management securely.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/EncryptionHelper.cs (Secure - AES-GCM)
+    using System.Security.Cryptography;
+    using System;
+
+    public byte[] EncryptAesGcm(byte[] key, byte[] data)
+    {
+        // (See CWE-327 example for EncryptAesGcm - it includes integrity)
+        // ... (Generate nonce, tag, ciphertext using AesGcm) ...
+        // SECURE: Return nonce + tag + ciphertext
+        return combinedNonceTagAndCiphertext;
+    }
+
+    public byte[] DecryptAesGcm(byte[] key, byte[] combinedData)
+    {
+        using (var aes = new AesGcm(key))
+        {
+            // Extract nonce, tag, and ciphertext from combinedData
+            byte[] nonce = combinedData[0..12]; // Assume 12-byte nonce
+            byte[] tag = combinedData[12..28]; // Assume 16-byte tag
+            byte[] ciphertext = combinedData[28..];
+
+            var plaintextBytes = new byte[ciphertext.Length];
+            try
+            {
+                // SECURE: Decrypt verifies the tag (integrity) automatically.
+                aes.Decrypt(nonce, ciphertext, tag, plaintextBytes);
+                return plaintextBytes;
+            }
+            catch (CryptographicException ex)
+            {
+                // Thrown if tag is invalid (tampering detected)
+                Console.WriteLine($"Integrity Check Failed: {ex.Message}");
+                throw new SecurityException("Data integrity compromised", ex);
+            }
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify encryption usage. If `CipherMode.CBC` is used, check if `HMAC` is also used and verified *before* decryption. If `AesGcm` is used, it's generally secure. Intercept and modify encrypted payloads (cookies, API data). Verify that tampered payloads cause a `CryptographicException` (e.g., "Authentication tag mismatch") rather than returning garbled data.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `openssl_encrypt` with `aes-256-cbc` without a MAC. Laravel's `Crypt::encryptString` (which uses AES-CBC) includes a MAC by default and is secure.
+
+    #### Vulnerable Scenario 1: `openssl_encrypt` (CBC) without MAC
+    ```php
+    <?php
+    // crypto.php
+    $key = 'my_secret_key'; // Assume loaded securely
+
+    function encrypt_cbc_no_mac($data, $key) {
+        $cipher = 'aes-256-cbc';
+        $ivlen = openssl_cipher_iv_length($cipher);
+        $iv = openssl_random_pseudo_bytes($ivlen); // Good random IV
+        $ciphertext = openssl_encrypt($data, $cipher, $key, OPENSSL_RAW_DATA, $iv);
+        // DANGEROUS: Returning IV + Ciphertext, no integrity check.
+        return base64_encode($iv . $ciphertext);
+    }
+
+    function decrypt_cbc_no_mac($encoded_data, $key) {
+        $cipher = 'aes-256-cbc';
+        $ivlen = openssl_cipher_iv_length($cipher);
+        $raw = base64_decode($encoded_data);
+        $iv = substr($raw, 0, $ivlen);
+        $ciphertext = substr($raw, $ivlen);
+        // DANGEROUS: Decrypting without verifying integrity first.
+        $plaintext = openssl_decrypt($ciphertext, $cipher, $key, OPENSSL_RAW_DATA, $iv);
+        return $plaintext; // Might be garbled due to tampering
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned Cookie
+    Setting a cookie with sensitive data directly, without using Laravel's signed/encrypted cookie helpers. (See CWE-614/CWE-1004 examples).
+
+    #### Mitigation and Best Practices
+    * **Use `openssl_encrypt` with AEAD:** Use `aes-256-gcm` (PHP 7.1+) which provides integrity.
+    * **Use Laravel's `Crypt`:** `Crypt::encryptString()` and `Crypt::decryptString()` use an Encrypt-then-MAC scheme by default and are secure against tampering.
+    * **Manual Encrypt-then-MAC:** If CBC must be used, calculate an HMAC (`hash_hmac('sha256', $iv . $ciphertext, $hmac_key, true)`) and append it. Verify the HMAC *before* decrypting.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // crypto.php (Secure - AES-GCM, PHP 7.1+)
+    $key = 'my_secret_32_byte_key_example'; // Assume loaded securely
+
+    function encrypt_gcm($data, $key) {
+        $cipher = 'aes-256-gcm';
+        $ivlen = openssl_cipher_iv_length($cipher); // 12 bytes for GCM
+        $iv = openssl_random_pseudo_bytes($ivlen);
+        $tag = ""; // Tag is populated by reference
+        $ciphertext = openssl_encrypt($data, $cipher, $key, OPENSSL_RAW_DATA, $iv, $tag, "", 16); // 16-byte tag
+        // SECURE: Store IV + Tag + Ciphertext
+        return base64_encode($iv . $tag . $ciphertext);
+    }
+
+    function decrypt_gcm($encoded_data, $key) {
+        $cipher = 'aes-256-gcm';
+        $ivlen = openssl_cipher_iv_length($cipher);
+        $taglen = 16;
+        $raw = base64_decode($encoded_data);
+        $iv = substr($raw, 0, $ivlen);
+        $tag = substr($raw, $ivlen, $taglen);
+        $ciphertext = substr($raw, $ivlen + $taglen);
+
+        // SECURE: openssl_decrypt with GCM verifies the $tag.
+        // Returns false if integrity check fails.
+        $plaintext = openssl_decrypt($ciphertext, $cipher, $key, OPENSSL_RAW_DATA, $iv, $tag);
+        if ($plaintext === false) {
+             throw new Exception("Decryption failed: Data tampered or invalid key/tag.");
+        }
+        return $plaintext;
+    }
+
+    // Secure - Using Laravel's Crypt
+    // use Illuminate\Support\Facades\Crypt;
+    // $encrypted = Crypt::encryptString('Hello world');
+    // $decrypted = Crypt::decryptString($encrypted); // Throws DecryptException if tampered
+    ?>
+    ```
+
+    #### Testing Strategy
+    Identify encryption usage. If `openssl_encrypt` uses CBC mode, check if HMAC is manually applied and verified. If GCM mode is used, it's generally secure. Test by intercepting and modifying the Base64 encoded payload (IV, tag, or ciphertext parts). Verify that `openssl_decrypt` (GCM) returns `false` or `Crypt::decryptString` throws a `DecryptException`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using `crypto.createCipheriv` with `aes-256-cbc` mode without implementing an HMAC check.
+
+    #### Vulnerable Scenario 1: AES-CBC without MAC
+    ```javascript
+    // utils/encryption_cbc.js
+    const crypto = require('crypto');
+    const ALGORITHM = 'aes-256-cbc';
+    // const KEY = ... // Assume 32-byte key loaded securely
+
+    function encrypt(text) {
+        const iv = crypto.randomBytes(16); // Good random IV
+        const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        // DANGEROUS: Returning IV + Ciphertext, no integrity check (MAC).
+        return iv.toString('hex') + ':' + encrypted;
+    }
+
+    function decrypt(text) {
+        try {
+            const parts = text.split(':');
+            const iv = Buffer.from(parts.shift(), 'hex');
+            const encryptedText = Buffer.from(parts.join(':'), 'hex');
+            const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
+            // DANGEROUS: Decrypts potentially tampered data.
+            let decrypted = decipher.update(encryptedText);
+            decrypted = Buffer.concat([decrypted, decipher.final()]);
+            return decrypted.toString();
+        } catch (e) {
+            console.error("Decryption error (might be tampered):", e.message);
+            return null; // Might fail here, but integrity wasn't *checked* first
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned Cookie (Manual)
+    Setting a cookie with `res.cookie` containing sensitive state (e.g., `userId: 1`) without signing it. (Express cookie-session middleware signs by default).
+
+    #### Mitigation and Best Practices
+    * **Use `aes-256-gcm`:** This AEAD mode provides integrity (authentication tag) automatically.
+    * **Encrypt-then-MAC:** If CBC must be used, compute an HMAC (`crypto.createHmac`) over the IV + Ciphertext, append it, and verify the HMAC *before* decrypting.
+    * **Signed Cookies:** Use middleware like `cookie-parser` with a secret and set `signed: true` when setting cookies, then read via `req.signedCookies`.
+
+    #### Secure Code Example
+    ```javascript
+    // utils/encryption_gcm.js (Secure - AES-GCM)
+    const crypto = require('crypto');
+    const ALGORITHM = 'aes-256-gcm';
+    // const KEY = ... // Assume 32-byte key loaded securely
+
+    function encryptGcm(text) {
+        const iv = crypto.randomBytes(12); // 96-bit nonce (12 bytes) recommended for GCM
+        const cipher = crypto.createCipheriv(ALGORITHM, KEY, iv);
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        const tag = cipher.getAuthTag(); // Get the integrity tag
+        // SECURE: Store IV + Tag + Ciphertext
+        return iv.toString('hex') + ':' + tag.toString('hex') + ':' + encrypted;
+    }
+
+    function decryptGcm(text) {
+        try {
+            const parts = text.split(':');
+            const iv = Buffer.from(parts.shift(), 'hex');
+            const tag = Buffer.from(parts.shift(), 'hex');
+            const encryptedText = Buffer.from(parts.join(':'), 'hex');
+
+            const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
+            // SECURE: Set the authentication tag obtained from the data
+            decipher.setAuthTag(tag);
+
+            // SECURE: Decrypting. Will throw error if tag is invalid (tampered).
+            let decrypted = decipher.update(encryptedText);
+            decrypted = Buffer.concat([decrypted, decipher.final()]);
+            return decrypted.toString();
+        } catch (e) {
+            // Catches "Unsupported state or bad tag" if integrity check fails
+            console.error("Decryption/Integrity Check Failed:", e.message);
+            return null;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Identify encryption usage. If `aes-*-cbc` is used, check for `crypto.createHmac` usage and verification *before* `createDecipheriv`. If `aes-*-gcm` is used, check that `setAuthTag()` is called on the decipher before `final()` or data processing. Intercept and modify encrypted payloads (IV, tag, or ciphertext parts) and verify that decryption fails with an integrity error, not just garbled output.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `OpenSSL::Cipher` with `aes-256-cbc` mode without a MAC. Rails' `ActiveSupport::MessageEncryptor` (used for encrypted cookies/credentials) **is secure** as it uses an Encrypt-then-MAC (AES-CBC + HMAC) scheme by default.
+
+    #### Vulnerable Scenario 1: `OpenSSL::Cipher` (CBC) without MAC
+    ```ruby
+    # lib/encryption.rb
+    require 'openssl'
+
+    def encrypt_cbc_no_mac(key, data)
+      cipher = OpenSSL::Cipher.new('aes-256-cbc')
+      cipher.encrypt
+      cipher.key = key
+      iv = cipher.random_iv # Good random IV
+      encrypted = cipher.update(data) + cipher.final
+      # DANGEROUS: Returning IV + Ciphertext, no integrity check (MAC).
+      return iv + encrypted
+    end
+
+    def decrypt_cbc_no_mac(key, iv_and_ciphertext)
+      cipher = OpenSSL::Cipher.new('aes-256-cbc')
+      iv_len = cipher.iv_len
+      iv = iv_and_ciphertext[0...iv_len]
+      encrypted_data = iv_and_ciphertext[iv_len..-1]
+
+      cipher.decrypt
+      cipher.key = key
+      cipher.iv = iv
+      # DANGEROUS: Decrypting without verifying integrity.
+      decrypted = cipher.update(encrypted_data) + cipher.final
+      return decrypted
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Unsigned Cookie
+    ```ruby
+    # app/controllers/legacy_controller.rb
+    def set_pref
+      # DANGEROUS: Plain cookie, value can be tampered by client.
+      cookies[:user_role] = 'user'
+    end
+
+    def check_pref
+      # DANGEROUS: Trusts the value read from the cookie.
+      # Attacker modifies cookie to user_role=admin
+      if cookies[:user_role] == 'admin'
+        # ... grant admin access ...
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use `ActiveSupport::MessageEncryptor`:** For encrypting data, rely on Rails' built-in `MessageEncryptor` which provides authenticated encryption (AEAD, Encrypt-then-MAC).
+    * **Use `aes-256-gcm`:** If using `OpenSSL::Cipher` manually, switch to GCM mode which includes integrity.
+    * **Use Signed/Encrypted Cookies:** Use `cookies.signed[:key]` (provides integrity) or `cookies.encrypted[:key]` (provides integrity + confidentiality) for storing sensitive data in cookies.
+
+    #### Secure Code Example
+    ```ruby
+    # lib/encryption.rb (Secure - AES-GCM)
+    require 'openssl'
+    require 'base64' # For easier transport
+
+    def encrypt_gcm(key, data)
+      cipher = OpenSSL::Cipher.new('aes-256-gcm')
+      cipher.encrypt
+      cipher.key = key
+      iv = cipher.random_iv # 12 bytes
+      cipher.auth_data = "" # Optional AAD
+      encrypted = cipher.update(data) + cipher.final
+      tag = cipher.auth_tag # 16 bytes
+      # SECURE: Store IV + Tag + Ciphertext
+      Base64.strict_encode64(iv + tag + encrypted)
+    end
+
+    def decrypt_gcm(key, encoded_data)
+      raw = Base64.strict_decode64(encoded_data)
+      cipher = OpenSSL::Cipher.new('aes-256-gcm')
+      iv_len = cipher.iv_len # 12 bytes
+      tag_len = 16 # Assuming 16-byte tag
+      iv = raw[0...iv_len]
+      tag = raw[iv_len...(iv_len + tag_len)]
+      encrypted_data = raw[(iv_len + tag_len)..-1]
+
+      cipher.decrypt
+      cipher.key = key
+      cipher.iv = iv
+      cipher.auth_tag = tag # Set the expected tag
+      cipher.auth_data = "" # Must match AAD from encryption
+
+      # SECURE: final() will raise OpenSSL::Cipher::CipherError if tag doesn't match
+      begin
+        decrypted = cipher.update(encrypted_data) + cipher.final
+        return decrypted
+      rescue OpenSSL::Cipher::CipherError => e
+        puts "Decryption failed! Data tampered or invalid key/tag."
+        return nil
+      end
+    end
+
+    # app/controllers/cookie_controller.rb (Secure Cookie)
+    def set_pref_secure
+      # SECURE: Uses encrypted cookie store (integrity + confidentiality)
+      # Requires a secret_key_base or per-cookie secret.
+      cookies.encrypted[:user_role] = 'user'
+      # Or signed cookie (integrity only):
+      # cookies.signed[:user_role] = 'user'
+      render plain: "Secure preference set"
+    end
+
+    def check_pref_secure
+      # SECURE: Returns nil if cookie is tampered with or invalid.
+      role = cookies.encrypted[:user_role]
+      if role == 'admin'
+         # This check is safe, as role could not be tampered with
+         # ... grant admin access (after server-side authorization!) ...
+      end
+      # ...
+    end
+    ```
+
+    #### Testing Strategy
+    Identify encryption usage. If `aes-*-cbc` mode is used manually, check for HMAC verification. If `aes-*-gcm` is used, check `auth_tag` is set/verified. Intercept encrypted data (cookies, payloads) and modify bytes; verify decryption fails with an integrity error. Modify signed/encrypted cookies (`_my_app_session`, custom ones) and verify they are rejected as invalid.
+  </Tab>
+</Tabs>
