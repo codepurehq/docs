@@ -81,7 +81,8 @@
         "vulnerabilities/cwe-916",
         "vulnerabilities/cwe-759",
         "vulnerabilities/cwe-259",
-        "vulnerabilities/cwe-321"
+        "vulnerabilities/cwe-321",
+        "vulnerabilities/cwe-330"
       ]
     },
     {
