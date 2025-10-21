@@ -1,0 +1,420 @@
+---
+title: "Exposure of Sensitive Information Through Environmental Variables"
+sidebarTitle: "Env Var Exposure (CWE-526)"
+description: "Mitigation for leaking sensitive environment variables via debug pages, phpinfo(), or misconfigured server settings."
+icon: "server"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when **sensitive information stored in environment variables** (like database passwords, API keys, secret keys) is **exposed to unauthorized parties**. This often happens due to misconfigurations that reveal server environment details, such as:
+* Enabling debug modes that display all environment variables on error pages (e.g., Django debug page, Laravel Ignition).
+* Accidentally exposing diagnostic script outputs (like `phpinfo()`).
+* Misconfigured serverless function bindings or logging that include the full environment.
+* Client-side JavaScript accessing environment variables that were incorrectly bundled or exposed during the build process (common in frontend frameworks). 🖥️➡️🔓
+
+---
+
+## Business Impact
+
+Leaked environment variables directly expose critical secrets, leading to:
+* **Database Compromise:** Attackers get database credentials.
+* **API Abuse:** Attackers get API keys for third-party services, potentially incurring costs or accessing sensitive data.
+* **Application Key Compromise:** Leakage of `SECRET_KEY` (Django), `APP_KEY` (Laravel), or JWT secrets allows attackers to forge sessions, bypass CSRF protection, or decrypt data.
+* **Full System Takeover:** Exposure of cloud provider credentials or other infrastructure secrets.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-526](https://cwe.mitre.org/data/definitions/526.html)
+  **Related CWEs:** CWE-11 (Debug Enabled), CWE-209 (Sensitive Errors), CWE-16 (Configuration)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is primarily a **configuration and deployment** issue. While frameworks rely on environment variables for secure configuration, the leak happens when the environment itself is exposed.
+
+**Key Remediation Principles:**
+1.  **Disable Debug Modes in Production:** Ensure `DEBUG=False`, `APP_DEBUG=false`, `ASPNETCORE_ENVIRONMENT=Production`, `NODE_ENV=production`, etc. (See `CWE-11`).
+2.  **Remove Diagnostic Scripts:** Never leave scripts like `phpinfo()` accessible on production servers.
+3.  **Secure Logging:** Configure logging to avoid dumping all environment variables.
+4.  **Restrict Server Info:** Configure web servers (Nginx, Apache) not to reveal detailed version or environment information in headers or error pages.
+5.  **Secure Frontend Builds:** **Never** embed server-side secrets directly into client-side JavaScript bundles. Use server-side rendering or dedicated API endpoints to handle sensitive operations. Prefix environment variables intended for the browser (e.g., `NEXT_PUBLIC_`, `VITE_`) and ensure only non-sensitive values are exposed this way.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Django's debug page (`DEBUG = True`) displays all settings, including those loaded from environment variables. Flask debug mode can also expose environment details.
+
+    #### Vulnerable Scenario 1: Django Debug Page Exposure
+    ```python
+    # settings.py (Production)
+    import os
+    SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') # Loaded securely
+    DB_PASSWORD = os.environ.get('DB_PASSWORD') # Loaded securely
+
+    # DANGEROUS: If True, the error page displays all settings, including SECRET_KEY and DB_PASSWORD.
+    DEBUG = True
+    ```
+
+    #### Vulnerable Scenario 2: Accidental Logging
+    ```python
+    # some_utility.py
+    import os
+    import logging
+
+    def perform_action():
+        # DANGEROUS: Logging the entire os.environ dictionary.
+        logging.info(f"Current environment: {os.environ}")
+        # ... perform action ...
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `DEBUG = False` in Django production settings.
+    * Set `FLASK_DEBUG = 0` (or unset) and `FLASK_ENV = production`.
+    * Avoid logging `os.environ` directly. Log specific, non-sensitive variables if needed.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django Production - Secure)
+    import os
+    SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD')
+
+    # SECURE: Debug mode disabled in production.
+    DEBUG = False
+    ALLOWED_HOSTS = ['yourdomain.com']
+    # Configure LOGGING appropriately.
+    ```
+
+    #### Testing Strategy
+    Check production `settings.py` or environment variables to ensure `DEBUG` is `False`. Trigger an error in production and verify the generic error page appears, not the detailed Django debug page. Review application logs to ensure `os.environ` or sensitive individual variables are not being logged.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Spring Boot's Actuator `/env` endpoint (if unsecured) or detailed error pages (`server.error.include-stacktrace=always`) can expose environment variables and system properties.
+
+    #### Vulnerable Scenario 1: Unsecured Actuator `/env` Endpoint
+    ```properties
+    # application.properties
+    # Load secrets from env vars (good practice)
+    db.password=${DB_PASSWORD}
+    aws.secret.key=${AWS_SECRET_ACCESS_KEY}
+
+    # DANGEROUS: Exposing all actuator endpoints without security.
+    management.endpoints.web.exposure.include=*
+    # management.endpoint.env.enabled=true (Default)
+    # If Spring Security is misconfigured or not applied to /actuator/**
+    ```
+    *Attacker browses to `/actuator/env` and sees all environment variables, including `DB_PASSWORD` and `AWS_SECRET_ACCESS_KEY`.*
+
+    #### Vulnerable Scenario 2: Leaking via Error Message (Less Direct)
+    While less common for direct env var dumps, verbose stack traces enabled by `server.error.include-stacktrace=always` might sometimes reveal configuration property values derived from environment variables within the trace details.
+
+    #### Mitigation and Best Practices
+    * **Secure Actuator:** Set `management.endpoints.web.exposure.include` to expose only necessary endpoints (e.g., `health`, `info`) and **secure** sensitive ones (like `env`, `heapdump`) using Spring Security. Set specific credentials for the actuator endpoints.
+    * Disable detailed errors: `server.error.include-stacktrace=never`.
+    * Avoid logging `System.getenv()` or sensitive properties directly.
+
+    #### Secure Code Example
+    ```properties
+    # application-production.properties (Secure Actuator Config)
+    # Expose only health and info publicly
+    management.endpoints.web.exposure.include=health,info
+    # Expose others via a different port or path secured by Spring Security
+    # management.server.port=9090 # Example separate port
+    # management.endpoint.env.enabled=true # Keep enabled if needed for secured access
+
+    # Secure error handling
+    server.error.include-stacktrace=never
+    server.error.whitelabel.enabled=false
+    ```
+    ```java
+    // config/SecurityConfig.java (Example securing Actuator)
+    // Add configuration to require ADMIN role for /actuator/** endpoints,
+    // potentially using a separate WebSecurityConfigurerAdapter with @Order.
+    @Configuration
+    @Order(1) // Example order
+    public class ActuatorSecurityConfig extends WebSecurityConfigurerAdapter {
+        @Override
+        protected void configure(HttpSecurity http) throws Exception {
+            http.requestMatcher(EndpointRequest.toAnyEndpoint()) // Selects actuator endpoints
+                .authorizeRequests()
+                    .requestMatchers(EndpointRequest.to("health", "info")).permitAll() // Allow health/info
+                    .anyRequest().hasRole("ACTUATOR_ADMIN") // Secure others
+                .and()
+                .httpBasic(); // Use basic auth for actuator access
+        }
+        // Configure users/authentication for ACTUATOR_ADMIN role separately
+    }
+    ```
+
+    #### Testing Strategy
+    Check `application.properties` for `management.endpoints.web.exposure.include`. Try accessing `/actuator/env` and other sensitive actuator endpoints in production – they should require authentication or be disabled. Trigger errors to ensure stack traces are suppressed. Review logs for environment variable dumps.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    ASP.NET Core Developer Exception Page (`app.UseDeveloperExceptionPage()`) shows request details, which might include environment variables under certain conditions (less common than direct display). Misconfigured logging or direct dumping of `IConfiguration` can also leak info.
+
+    #### Vulnerable Scenario 1: Developer Exception Page in Production
+    As covered in `CWE-11`, if `ASPNETCORE_ENVIRONMENT=Development`, the detailed error page is shown. While it doesn't *directly* list all environment variables like Django's, it reveals a lot of internal state that might indirectly expose configuration sourced from environment variables.
+    ```csharp
+    // Startup.cs - Configure()
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // DANGEROUS: If env is Development in production.
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage(); // Shows rich debug info
+        } else { /* ... */ }
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Logging `IConfiguration`
+    A developer logs the entire configuration object for debugging.
+    ```csharp
+    // Some Service Constructor or Method
+    public MyService(IConfiguration config, ILogger<MyService> logger)
+    {
+        // DANGEROUS: Logging the entire configuration tree,
+        // which includes values from appsettings.json, environment variables, Key Vault etc.
+        logger.LogDebug("Current Configuration: {ConfigSnapshot}", config.AsEnumerable());
+        // ...
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Ensure `ASPNETCORE_ENVIRONMENT=Production` and `UseExceptionHandler` is used (See `CWE-11`).
+    * Avoid logging the entire `IConfiguration` object. Log specific, non-sensitive configuration keys if necessary.
+    * Use secrets management tools (User Secrets, Key Vault) which integrate with `IConfiguration` but keep secrets out of easily viewable environment variables where possible.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs - Configure() (Secure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            // SECURE: Use generic handler in production.
+            app.UseExceptionHandler("/Home/Error");
+            app.UseHsts();
+        }
+        // ...
+    }
+    // Ensure ASPNETCORE_ENVIRONMENT=Production
+
+    // Secure Logging Example
+    public MyService(IConfiguration config, ILogger<MyService> logger)
+    {
+        // SECURE: Log only specific, non-sensitive config values if needed.
+        var serviceUrl = config["ExternalService:Url"];
+        logger.LogInformation("External Service URL configured: {ServiceUrl}", serviceUrl);
+        // DO NOT log config["Db:Password"] or similar secrets.
+    }
+    ```
+
+    #### Testing Strategy
+    Check `ASPNETCORE_ENVIRONMENT` in production. Trigger errors and ensure the developer exception page is not shown. Review logging code and output to ensure `IConfiguration` or sensitive individual config values sourced from environment variables are not logged.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Laravel's Ignition debug page (`APP_DEBUG=true`) displays environment variables loaded from `.env`. Plain PHP `phpinfo()` function dumps all environment information.
+
+    #### Vulnerable Scenario 1: Laravel `APP_DEBUG=true` in Production
+    ```ini
+    # .env (Production)
+    APP_ENV=production
+    # DANGEROUS: Ignition error page will show .env contents and server variables.
+    APP_DEBUG=true
+
+    DB_PASSWORD=ProdDbPassword!
+    AWS_SECRET_ACCESS_KEY=ProdAwsSecretKey
+    ```
+
+    #### Vulnerable Scenario 2: Accessible `phpinfo()` Script
+    A developer uploads a file `info.php` containing `<?php phpinfo(); ?>` to the server for debugging and forgets to remove it.
+    ```php
+    // info.php (DANGEROUS if accessible on production server)
+    <?php
+    // This function outputs extensive information including all
+    // environment variables, PHP settings, server variables, etc.
+    phpinfo();
+    ?>
+    ```
+    *Attacker browses to `https://yourdomain.com/info.php`*
+
+    #### Mitigation and Best Practices
+    * Set `APP_DEBUG=false` in Laravel production `.env`.
+    * **Never** leave `phpinfo()` accessible on a production server. Delete any diagnostic scripts after use.
+    * Configure web server (Nginx/Apache) to prevent access to `.env` files directly via HTTP.
+    * Configure PHP (`php.ini`) to disable potentially revealing functions if not needed (`expose_php = Off`).
+
+    #### Secure Code Example
+    ```ini
+    # .env (Laravel Production - Secure)
+    APP_ENV=production
+    APP_DEBUG=false # SECURE
+    LOG_CHANNEL=stack
+    # Secrets are loaded but not exposed by debug screens
+    DB_PASSWORD=ProdDbPassword!
+    AWS_SECRET_ACCESS_KEY=ProdAwsSecretKey
+    ```
+    ```nginx
+    # Nginx config (Secure - Deny access to dotfiles)
+    location ~ /\. {
+        deny all;
+    }
+    ```
+    ```apache
+    # .htaccess or Apache config (Secure - Deny access to .env)
+    <Files .env>
+        Require all denied
+    </Files>
+    ```
+
+    #### Testing Strategy
+    Check `APP_DEBUG` setting in production `.env`. Trigger errors in Laravel; ensure Ignition debug page is replaced by the generic error view. Scan the web root for files containing `phpinfo()` and attempt to access them. Check web server config denies access to `.env`.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Error handling middleware sending `process.env` in debug mode, or frontend builds incorrectly bundling server-side environment variables.
+
+    #### Vulnerable Scenario 1: Leaking `process.env` in Error Handler
+    ```javascript
+    // app.js (Error Handler)
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    app.use((err, req, res, next) => {
+        console.error(err); // Log server-side
+
+        // DANGEROUS: Sending the whole process.env in development mode,
+        // which might accidentally run in production if NODE_ENV isn't set correctly.
+        res.status(err.status || 500).json({
+            message: err.message,
+            // Exposing all environment variables is risky even in dev, let alone prod.
+            environment: isProd ? undefined : process.env
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Bundling Server Secrets into Frontend Code
+    Using frontend frameworks (React, Vue, Angular) with build tools (Webpack, Vite) where server-side environment variables (like `API_SECRET`) are not correctly excluded and get embedded in the compiled JavaScript sent to the browser.
+    ```javascript
+    // webpack.config.js (Example - Incorrect Usage)
+    const webpack = require('webpack');
+    // DANGEROUS: Directly embedding a sensitive server-side key into client bundle.
+    // Attacker can just view the source of the JS file.
+    module.exports = {
+      // ... other config ...
+      plugins: [
+        new webpack.DefinePlugin({
+          'process.env.API_SECRET': JSON.stringify(process.env.API_SECRET_SERVER_ONLY)
+        })
+      ]
+    };
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `NODE_ENV=production`.
+    * Configure error handlers never to send `process.env` or sensitive parts of it to the client.
+    * **Crucially for frontends:** Only expose non-sensitive, public configuration variables to the frontend build. Use naming conventions (like `REACT_APP_`, `VITE_`, `NEXT_PUBLIC_`) enforced by the build tools. Secrets needed for API calls must **remain on the server**; the frontend should call backend endpoints that use the secrets internally.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Error Handler)
+    const isProd = (process.env.NODE_ENV === 'production');
+    app.use((err, req, res, next) => {
+        console.error(err);
+        res.status(err.status || 500).json({
+             // SECURE: Send only a generic message in production.
+             message: isProd ? "An error occurred." : err.message
+             // NEVER send process.env
+        });
+    });
+
+    // webpack.config.js / .env for frontend (Secure)
+    // Use framework conventions for exposing PUBLIC env vars only
+    // Example for Create React App / Vite:
+    // .env file:
+    // REACT_APP_API_BASE_URL=[https://api.example.com](https://api.example.com)
+    // VITE_API_BASE_URL=[https://api.example.com](https://api.example.com)
+    // SERVER_API_SECRET=keep_this_secret_on_server // NOT PREFIXED, NOT exposed to client
+
+    // Frontend code: Access only prefixed variables
+    // const apiUrl = process.env.REACT_APP_API_BASE_URL; // Or import.meta.env.VITE_API_BASE_URL
+    ```
+
+    #### Testing Strategy
+    Check `NODE_ENV` in production. Trigger errors and inspect responses for environment data. **Inspect the bundled JavaScript** files sent to the browser (view source, check network tab). Search the JS code for any hardcoded API keys, secrets, or environment variables that should be server-side only. Check build configurations (`webpack.config.js`, `vite.config.js`) for incorrect injection of server-side variables.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Rails debug exceptions page (`config.consider_all_requests_local = true`) shows request environment details, which can include server environment variables. Accidentally exposing `ENV` in logs or views.
+
+    #### Vulnerable Scenario 1: Rails Debug Page in Production
+    ```ruby
+    # config/environments/production.rb
+    # DANGEROUS: Shows detailed error page including request headers
+    # and potentially environment variables passed via CGI/Rack.
+    config.consider_all_requests_local = true
+    ```
+
+    #### Vulnerable Scenario 2: Dumping `ENV` in a View or Log
+    ```ruby
+    # app/controllers/debug_controller.rb
+    class DebugController < ApplicationController
+      before_action :require_admin # Even if admin-only, logging ENV is risky
+
+      def show_env
+        # DANGEROUS: Displaying or logging all environment variables.
+        @environment_variables = ENV.to_h
+        Rails.logger.info "Current ENV: #{@environment_variables.inspect}" # Risky logging
+        render :show_env # Assume view displays @environment_variables
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * Set `config.consider_all_requests_local = false` in production.
+    * Avoid logging or displaying the entire `ENV` hash. Access specific, expected variables (`ENV['MY_VAR']`).
+    * Filter sensitive environment variables from logs if necessary, although it's better not to log them at all.
+
+    #### Secure Code Example
+    ```ruby
+    # config/environments/production.rb (Secure)
+    Rails.application.configure do
+      # SECURE: Ensures generic public error pages are shown.
+      config.consider_all_requests_local = false
+      config.log_level = :info
+    end
+
+    # app/controllers/debug_controller.rb (Secure Logging)
+    class DebugController < ApplicationController
+       before_action :require_admin
+
+       def show_safe_config
+         # SECURE: Only access/display specific, non-sensitive variables.
+         @app_version = ENV['APP_VERSION']
+         @deploy_env = ENV['DEPLOY_ENV']
+         Rails.logger.info "Displaying safe config: Version=#{@app_version}, Env=#{@deploy_env}"
+         render :show_safe_config # Assume view only uses these safe variables
+       end
+    end
+    ```
+
+    #### Testing Strategy
+    Check `config/environments/production.rb` for `consider_all_requests_local = false`. Trigger errors and verify the generic error page is shown. Review code and logs for any dumps of the `ENV` hash or sensitive individual environment variables.
+  </Tab>
+</Tabs>
