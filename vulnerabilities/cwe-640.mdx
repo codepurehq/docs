@@ -390,7 +390,7 @@ Password recovery typically involves generating a **secure, random, single-use, 
 
      class User extends Authenticatable implements CanResetPassword {
         use Notifiable, CanResetPasswordTrait;
-    //    // ...
+         ...
      }
 
     // 2. Use default Auth controllers (ForgotPasswordController, ResetPasswordController)
@@ -407,9 +407,9 @@ Password recovery typically involves generating a **secure, random, single-use, 
          return back()->with('status', trans($response));
      }
      protected function sendResetLinkFailedResponse(Request $request, $response) {
-    //     // Default *also* returns view/redirect with generic status message,
-    //     // using the same 'status' key but different translation string.
-    //     // This prevents enumeration based on response type/key.
+         // Default *also* returns view/redirect with generic status message,
+         // using the same 'status' key but different translation string.
+         // This prevents enumeration based on response type/key.
          return back()->with('status', trans($response)); // Changed from withErrors
      }
     // NOTE: Check your Laravel version's exact default behavior. The goal is a generic success-style response always.
