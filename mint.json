@@ -93,6 +93,7 @@
         "vulnerabilities/sql-injection",
         "vulnerabilities/xss",
         "vulnerabilities/command-injection",
+        "vulnerabilities/cwe-94",
         "vulnerabilities/ldap-injection"
       ]
     },

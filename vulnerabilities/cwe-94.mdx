@@ -1,0 +1,497 @@
+---
+title: "Code Injection"
+sidebarTitle: "Code Injection (CWE-94)"
+description: "Mitigation for vulnerabilities where attacker-controlled data is executed as code (e.g., eval(), unsafe deserialization, template injection)."
+icon: "code"
+iconType: "solid"
+---
+
+## Overview
+
+Code Injection occurs when an application incorporates untrusted data into dynamically evaluated or executed code. This allows an attacker to inject malicious code (e.g., PHP, Python, JavaScript, shell commands depending on the context) that gets executed by the server or, in some cases, the client. Common sinks include functions like `eval()`, template engines processing user input unsafely, and unsafe deserialization. 💻💥
+
+---
+
+## Business Impact
+
+Successful Code Injection often leads to **Remote Code Execution (RCE)**, giving the attacker full control over the server hosting the application. They can steal data, install malware, deface the website, use the server for further attacks, or completely destroy the system. It is one of the most critical web vulnerabilities.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-94](https://cwe.mitre.org/data/definitions/94.html)
+  **OWASP Top 10 (2021):** A03:2021 - Injection
+  **Severity:** Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This vulnerability usually stems from the misuse of powerful, dynamic language features or libraries. The core principle for prevention is to **never pass untrusted user input directly into functions that execute code or interpret strings as code**. Use safer alternatives, structured data formats (like JSON), and always validate/sanitize input.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using functions like `eval()`, `exec()`, or unsafe use of `pickle` for deserialization. Server-Side Template Injection (SSTI) in engines like Jinja2 if user input isn't properly handled.
+
+    #### Vulnerable Scenario 1: Using `eval()` with User Input
+    An endpoint takes a mathematical expression from the user and evaluates it.
+    ```python
+    # calculator/views.py
+    from django.http import HttpResponse
+
+    def calculate(request):
+        expression = request.GET.get('expr')
+        if expression:
+            try:
+                # DANGEROUS: eval() executes any Python code.
+                # Attacker input: '__import__("os").system("rm -rf /")'
+                result = eval(expression, {"__builtins__": {}}) # Limiting builtins is not enough!
+                return HttpResponse(f"Result: {result}")
+            except Exception as e:
+                return HttpResponse(f"Error: {e}", status=400)
+        return HttpResponse("Enter expression via ?expr=")
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe Deserialization with `pickle`
+    Loading user session data or preferences stored using `pickle`.
+    ```python
+    # session_handler.py
+    import pickle
+    import base64
+
+    def load_user_prefs(request):
+        prefs_cookie = request.COOKIES.get('user_prefs_pickle')
+        if prefs_cookie:
+            try:
+                # DANGEROUS: pickle.loads() can execute arbitrary code
+                # embedded in the pickled data by an attacker.
+                prefs_data = base64.b64decode(prefs_cookie)
+                prefs = pickle.loads(prefs_data)
+                return prefs
+            except Exception as e:
+                print(f"Error loading prefs: {e}")
+        return {}
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `eval()` or `exec()` with untrusted input.** Use safe parsers (like `ast.literal_eval` for simple literals or specific math parsers). **Never use `pickle` with untrusted data.** Use safe serialization formats like JSON. For templates, ensure user input is always properly escaped and not used in template logic directly.
+
+    #### Secure Code Example
+    ```python
+    # calculator/views.py (Secure - using a safe math parser)
+    # Assume 'safe_math_eval' is a function using a library like 'numexpr'
+    # or a carefully crafted parser using 'ast'.
+    def calculate_safe(request):
+        expression = request.GET.get('expr')
+        if expression:
+            try:
+                # SECURE: Using a dedicated, safe evaluation method.
+                result = safe_math_eval(expression)
+                return HttpResponse(f"Result: {result}")
+            except Exception as e: # Catch specific parsing errors
+                return HttpResponse(f"Invalid expression: {e}", status=400)
+        # ...
+
+    # session_handler.py (Secure - using JSON)
+    import json
+    import base64
+
+    def load_user_prefs_secure(request):
+        prefs_cookie = request.COOKIES.get('user_prefs_json')
+        if prefs_cookie:
+            try:
+                # SECURE: json.loads() only parses data, doesn't execute code.
+                prefs_data = base64.b64decode(prefs_cookie)
+                prefs = json.loads(prefs_data)
+                return prefs
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                print(f"Error loading prefs: {e}")
+        return {}
+    ```
+
+    #### Testing Strategy
+    Scan code for `eval()`, `exec()`, `pickle.loads()`. Review template code for places where user input might be interpreted as template directives (SSTI). Test endpoints by providing input designed to execute OS commands or reveal internal state (e.g., `{{ 7*7 }}` in templates, `__import__('os').system('ls')` for `eval`).
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using `javax.script.ScriptEngineManager` to evaluate languages like JavaScript, unsafe Java deserialization (e.g., `ObjectInputStream`), or Server-Side Template Injection (SSTI) in engines like Thymeleaf or FreeMarker if configured insecurely.
+
+    #### Vulnerable Scenario 1: Using `ScriptEngine` with User Input
+    An endpoint evaluates JavaScript code provided by the user.
+    ```java
+    // controller/ScriptController.java
+    import javax.script.ScriptEngine;
+    import javax.script.ScriptEngineManager;
+    import javax.script.ScriptException;
+
+    @PostMapping("/eval-script")
+    public String evalScript(@RequestBody String script) {
+        ScriptEngineManager manager = new ScriptEngineManager();
+        // Use Nashorn or GraalJS
+        ScriptEngine engine = manager.getEngineByName("JavaScript");
+        try {
+            // DANGEROUS: Executes arbitrary JavaScript code provided by user.
+            // Can access Java classes via `Java.type('java.io.File')` etc.
+            Object result = engine.eval(script);
+            return "Result: " + result;
+        } catch (ScriptException e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe Deserialization
+    Reading an object from an untrusted source using `ObjectInputStream`.
+    ```java
+    // util/SerializationUtil.java
+    import java.io.*;
+
+    public Object deserializeUnsafe(byte[] serializedData) throws IOException, ClassNotFoundException {
+        // DANGEROUS: Reading from ObjectInputStream without validation
+        // can trigger code execution via specially crafted objects (gadgets).
+        ByteArrayInputStream bais = new ByteArrayInputStream(serializedData);
+        ObjectInputStream ois = new ObjectInputStream(bais);
+        Object obj = ois.readObject();
+        ois.close();
+        return obj;
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Avoid executing user-provided scripts.** If absolutely necessary, use sandboxing mechanisms (like `graal-js` sandboxing options), but it's very hard to get right. **Avoid Java serialization with untrusted data.** Use safe formats like JSON (with libraries like Jackson or Gson). For templates, ensure user input is properly escaped and context-aware auto-escaping is enabled.
+
+    #### Secure Code Example
+    ```java
+    // controller/SafeController.java (Using JSON instead of ScriptEngine)
+    // Assume we process structured data instead of evaluating code.
+    @PostMapping("/process-data")
+    public String processData(@RequestBody Map<String, Object> data) {
+        // SECURE: Process the data structure safely. No code execution.
+        // Example: Perform calculations based on known fields in 'data'.
+        // ... safe processing logic ...
+        return "Processed: " + data.toString();
+    }
+
+    // util/SerializationUtil.java (Using JSON)
+    import com.fasterxml.jackson.databind.ObjectMapper;
+    import java.io.IOException;
+
+    public MyDataObject deserializeSafe(byte[] jsonData) throws IOException {
+        // SECURE: Jackson parses JSON into a specific object, no code execution.
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.readValue(jsonData, MyDataObject.class); // Specify target class
+    }
+    ```
+
+    #### Testing Strategy
+    Scan code for `ScriptEngine.eval()`, `ObjectInputStream.readObject()`. Test endpoints by submitting code snippets designed to interact with the underlying OS or Java runtime. Use tools like `ysoserial` to generate payloads for Java deserialization testing. Check template engines for SSTI vulnerabilities.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using older features like `System.CodeDom` to compile and run code, unsafe deserialization (e.g., `BinaryFormatter`, `LosFormatter`, `ObjectStateFormatter`), or SSTI in certain templating engines.
+
+    #### Vulnerable Scenario 1: Dynamic Code Compilation (Rare)
+    Using `CSharpCodeProvider` to compile and execute code from a string.
+    ```csharp
+    // Services/DynamicCodeService.cs
+    using Microsoft.CSharp;
+    using System.CodeDom.Compiler;
+    // ... other imports ...
+
+    public object ExecuteCode(string userCode)
+    {
+        // DANGEROUS: Compiling and executing untrusted code.
+        CSharpCodeProvider provider = new CSharpCodeProvider();
+        CompilerParameters parameters = new CompilerParameters();
+        // ... add necessary references ...
+        CompilerResults results = provider.CompileAssemblyFromSource(parameters,
+            $"public class DynCode {{ public static object Run() {{ return {userCode}; }} }}");
+
+        if (results.Errors.HasErrors) { /* Handle error */ }
+
+        Assembly assembly = results.CompiledAssembly;
+        object instance = assembly.CreateInstance("DynCode");
+        MethodInfo method = instance.GetType().GetMethod("Run");
+        return method.Invoke(instance, null);
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe Deserialization (`BinaryFormatter`)
+    Deserializing data from an untrusted source using the insecure `BinaryFormatter`.
+    ```csharp
+    // Utils/StateLoader.cs
+    using System.IO;
+    using System.Runtime.Serialization.Formatters.Binary;
+
+    public object LoadState(byte[] stateBytes)
+    {
+        // DANGEROUS: BinaryFormatter is insecure and can lead to RCE.
+        // It's deprecated in modern .NET.
+        var formatter = new BinaryFormatter();
+        using (var ms = new MemoryStream(stateBytes))
+        {
+            return formatter.Deserialize(ms);
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    **Avoid dynamic code compilation/execution with user input.** **Never use `BinaryFormatter`, `LosFormatter`, or `ObjectStateFormatter` with untrusted data.** Use safe serializers like `System.Text.Json` or `Newtonsoft.Json`. Ensure template engines correctly escape user input.
+
+    #### Secure Code Example
+    ```csharp
+    // Services/SafeProcessingService.cs (No dynamic code)
+    // Redesign to avoid executing user code. Process structured data instead.
+
+    // Utils/StateLoader.cs (Secure - Using System.Text.Json)
+    using System.IO;
+    using System.Text.Json; // Use modern JSON serializer
+
+    public T LoadState<T>(byte[] stateBytes) where T : class
+    {
+        // SECURE: System.Text.Json is safe against code execution vulnerabilities.
+        try
+        {
+            return JsonSerializer.Deserialize<T>(stateBytes);
+        }
+        catch (JsonException ex)
+        {
+            // Log error, return null or throw custom exception
+            Console.WriteLine($"JSON Deserialization Error: {ex.Message}");
+            return null;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Scan code for `CSharpCodeProvider`, `BinaryFormatter`, `LosFormatter`, `ObjectStateFormatter`. Test endpoints by providing code snippets or serialized object payloads designed to execute commands (e.g., using `ysoserial.net`). Check template rendering for SSTI.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `eval()`, `assert()`, `create_function()`, `preg_replace` with the `/e` modifier, unsafe `unserialize()`, or SSTI in template engines like Twig if misconfigured.
+
+    #### Vulnerable Scenario 1: Using `eval()`
+    An endpoint evaluates a string passed via query parameter.
+    ```php
+    // calculate.php
+    <?php
+    if (isset($_GET['expression'])) {
+        $expression = $_GET['expression'];
+        // DANGEROUS: eval() executes arbitrary PHP code.
+        // Input: `system('id')`
+        eval("\$result = " . $expression . ";");
+        echo "Result: " . $result;
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe `unserialize()`
+    Loading user data from a cookie or database that was serialized using `serialize()`.
+    ```php
+    // profile.php
+    <?php
+    if (isset($_COOKIE['user_profile'])) {
+        // DANGEROUS: unserialize() can instantiate arbitrary objects
+        // and trigger magic methods (__wakeup, __destruct) leading to RCE.
+        $profile = unserialize(base64_decode($_COOKIE['user_profile']));
+        echo "Welcome back, " . htmlspecialchars($profile['name']);
+    }
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `eval()`, `assert()` (with string args), `create_function()`, or `preg_replace` `/e`.** **Avoid `unserialize()` with untrusted input.** Use `json_decode()` instead. Ensure template engines (Twig) have auto-escaping enabled and don't render user input directly within template logic tags.
+
+    #### Secure Code Example
+    ```php
+    // calculate_safe.php (Using a safe math library)
+    // Assume MathParser is a safe library for evaluating math expressions.
+    <?php
+    if (isset($_GET['expression'])) {
+        $expression = $_GET['expression'];
+        try {
+            // SECURE: Using a dedicated math parser, not eval().
+            $result = MathParser::evaluate($expression);
+            echo "Result: " . $result;
+        } catch (ParseException $e) {
+            echo "Invalid expression.";
+        }
+    }
+    ?>
+
+    // profile_safe.php (Using JSON)
+    <?php
+    if (isset($_COOKIE['user_profile_json'])) {
+        // SECURE: json_decode() only parses data, doesn't execute code.
+        $profile = json_decode(base64_decode($_COOKIE['user_profile_json']), true); // true for assoc array
+        if ($profile && isset($profile['name'])) {
+             echo "Welcome back, " . htmlspecialchars($profile['name']);
+        }
+    }
+    ?>
+    ```
+
+    #### Testing Strategy
+    Scan code for `eval()`, `assert()`, `create_function()`, `preg_replace` `/e`, `unserialize()`. Test endpoints by providing PHP code snippets (e.g., `system('id')`, `phpinfo()`) or serialized object payloads (e.g., generated with `PHPGGC`). Check template rendering for SSTI.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using `eval()`, `new Function()`, `setTimeout`/`setInterval` with string arguments, `vm.runInThisContext()`, or SSTI in template engines (e.g., EJS, Handlebars if not escaping properly).
+
+    #### Vulnerable Scenario 1: Using `eval()`
+    An API endpoint that takes JavaScript code and executes it.
+    ```javascript
+    // api/eval.js
+    router.post('/calculate', (req, res) => {
+        const { expression } = req.body;
+        try {
+            // DANGEROUS: eval() executes arbitrary JavaScript code.
+            // Input: require('child_process').execSync('rm -rf /').toString()
+            const result = eval(expression);
+            res.send({ result });
+        } catch (e) {
+            res.status(400).send({ error: e.message });
+        }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Server-Side Template Injection (EJS example)
+    Rendering user-provided content without escaping in EJS.
+    ```javascript
+    // server.js
+    const ejs = require('ejs');
+    // ... setup express app ...
+
+    app.get('/greet', (req, res) => {
+        const name = req.query.name || 'Guest';
+        const template = `<h1>Hello <%= name %></h1>`; // Safe: uses <%= %> for escaping
+
+        const unsafeTemplate = `<h1>Hello <%- name %></h1>`; // DANGEROUS: uses <%- %> (unescaped)
+        // If name is "<script>alert(1)</script>", it runs in browser (XSS)
+        // If name is "<%= global.process.mainModule.require('child_process').execSync('id') %>"
+        // EJS might evaluate it server-side leading to RCE! (Depends on EJS version/config)
+
+        // Assume name contains the malicious template injection payload
+        try {
+             let rendered = ejs.render(unsafeTemplate, { name: name });
+             res.send(rendered);
+        } catch(e) { /* ... */ }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `eval()`, `new Function()`, or string arguments in `setTimeout`/`setInterval` with untrusted input.** Use safe data formats (JSON) and parsers. Ensure template engines auto-escape output by default (`<%= %>` in EJS, `{{ }}` in Handlebars) and avoid unescaped output tags (`<%- %>`, `{{{ }}}`) with user input.
+
+    #### Secure Code Example
+    ```javascript
+    // api/safe_calc.js (Using a safe math parser library)
+    const safeEval = require('safe-evaluate-expression'); // Example library
+
+    router.post('/calculate-safe', (req, res) => {
+        const { expression } = req.body;
+        try {
+            // SECURE: Using a library designed for safe evaluation.
+            const result = safeEval(expression);
+            res.send({ result });
+        } catch (e) {
+            res.status(400).send({ error: e.message });
+        }
+    });
+
+    // server.js (Secure EJS rendering)
+    app.get('/greet-safe', (req, res) => {
+        const name = req.query.name || 'Guest';
+        // SECURE: Use <%= %> which escapes HTML by default in EJS.
+        // This prevents XSS and server-side evaluation of template tags.
+        const template = `<h1>Hello <%= name %></h1>`;
+        let rendered = ejs.render(template, { name: name });
+        res.send(rendered);
+    });
+    ```
+
+    #### Testing Strategy
+    Scan code for `eval()`, `new Function()`, `vm.run...`. Review template rendering, especially where user input is displayed. Look for unescaped output tags (`<%- %>` in EJS, `{{{ }}}` in Handlebars). Test endpoints with template injection payloads (`<%= ... %>`, `{{ ... }}`) and JavaScript code execution attempts.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `eval()`, `instance_eval()`, `class_eval()` with untrusted strings, unsafe YAML parsing (`YAML.load`), or SSTI in template engines (ERB, Slim, Haml if user input controls template logic).
+
+    #### Vulnerable Scenario 1: Using `eval()`
+    Evaluating a mathematical expression passed as a string.
+    ```ruby
+    # app/controllers/calculator_controller.rb
+    class CalculatorController < ApplicationController
+      def calculate
+        expression = params[:expr]
+        begin
+          # DANGEROUS: eval() executes arbitrary Ruby code.
+          # Input: `Kernel.system('id')`
+          @result = eval(expression)
+        rescue Exception => e
+          @error = e.message
+        end
+        render :show
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Unsafe YAML Loading
+    Loading configuration or data from a YAML source controlled by a user.
+    ```ruby
+    # app/services/config_loader.rb
+    require 'yaml'
+
+    def load_user_config(yaml_data)
+      # DANGEROUS: YAML.load (or YAML.unsafe_load in newer Ruby) can
+      # instantiate arbitrary objects and lead to RCE via YAML tags like !ruby/object.
+      config = YAML.load(yaml_data)
+      return config
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    **Never use `eval()` or its variants with untrusted input.** Use safe expression parsers if needed. **Use `YAML.safe_load`** instead of `YAML.load`/`unsafe_load` when dealing with untrusted YAML. For templates (ERB), ensure user input is HTML-escaped (`<%=h ... %>` or rely on Rails auto-escaping) and not used within `<% ... %>` code blocks.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/calculator_controller.rb (Secure - using a safe parser)
+    # Assume SafeCalculator is a library or class that safely parses math
+    class CalculatorController < ApplicationController
+      def calculate
+        expression = params[:expr]
+        begin
+          # SECURE: Using a dedicated, safe math evaluation library.
+          @result = SafeCalculator.evaluate(expression)
+        rescue ParseError => e # Catch specific errors
+          @error = e.message
+        end
+        render :show
+      end
+    end
+
+    # app/services/config_loader.rb (Secure YAML Loading)
+    require 'yaml'
+
+    def load_user_config_safe(yaml_data)
+      begin
+        # SECURE: YAML.safe_load only parses basic types, preventing
+        # arbitrary object instantiation. Requires Ruby >= 2.1 (for basic safety)
+        # or use YAML.safe_load(yaml_data, permitted_classes: [Symbol], aliases: true) etc. in newer versions
+        # depending on required features. Safest is minimal types.
+        config = YAML.safe_load(yaml_data, permitted_classes: []) # Allow only basic types
+        return config
+      rescue Psych::Exception => e # Catch YAML parsing errors
+         puts "YAML parsing error: #{e.message}"
+         return nil
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Scan code for `eval`, `instance_eval`, `class_eval`, `YAML.load`, `YAML.unsafe_load`. Test endpoints by providing Ruby code snippets (e.g., `Kernel.system('id')`) or malicious YAML payloads. Check ERB templates for user input inside `<% ... %>`.
+  </Tab>
+</Tabs>
