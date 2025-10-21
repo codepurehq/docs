@@ -389,7 +389,7 @@ Password recovery typically involves generating a **secure, random, single-use, 
      use Illuminate\Auth\Passwords\CanResetPassword as CanResetPasswordTrait; // Trait
 
      class User extends Authenticatable implements CanResetPassword {
-    //    use Notifiable, CanResetPasswordTrait;
+        use Notifiable, CanResetPasswordTrait;
     //    // ...
      }
 
@@ -401,7 +401,7 @@ Password recovery typically involves generating a **secure, random, single-use, 
     // config/app.php or .env should have correct APP_URL starting with https://
 
     // 4. Ensure ForgotPasswordController returns generic response (default behavior):
-     app/Http/Controllers/Auth/ForgotPasswordController.php
+    // app/Http/Controllers/Auth/ForgotPasswordController.php
      protected function sendResetLinkResponse(Request $request, $response) {
          // Default returns view/redirect with generic status message
          return back()->with('status', trans($response));
