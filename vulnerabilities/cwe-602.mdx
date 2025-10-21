@@ -1,0 +1,679 @@
+---
+title: "Client-Side Enforcement of Server-Side Security"
+sidebarTitle: "Client-Side Security (CWE-602)"
+description: "Mitigation for relying on client-side controls (JavaScript, hidden fields) for security decisions instead of server-side validation."
+icon: "computer-mouse"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application relies on **client-side controls** (e.g., JavaScript validation, hidden form fields, disabled buttons, client-side permission checks) to enforce security rules, rather than performing authoritative checks on the **server-side**. Attackers can easily bypass client-side controls by modifying the HTML/JavaScript in their browser, intercepting and modifying requests with a proxy (like Burp Suite), or crafting raw HTTP requests directly to the server. 💻➡️🧍‍♂️➡️🔥
+
+---
+
+## Business Impact
+
+Relying on client-side security leads to critical vulnerabilities:
+* **Authorization Bypass:** Attackers can modify hidden fields or JavaScript checks to gain access to functions or data intended for administrators or other users.
+* **Data Tampering:** Prices in shopping carts, target account numbers for transfers, or user roles can be modified before submission, leading to fraud or unauthorized changes.
+* **Input Validation Bypass:** Constraints enforced only by JavaScript (e.g., length limits, character restrictions) can be bypassed, leading to injection attacks or data corruption if the server doesn't re-validate.
+
+**Rule of Thumb:** Never trust the client. All security decisions and validations **must** be enforced server-side.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-602](https://cwe.mitre.org/data/definitions/602.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design
+  **Severity:** High to Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is a fundamental design flaw, independent of specific frameworks, although frameworks provide the tools for **server-side** validation which must be used. Client-side validation is useful for improving user experience (providing immediate feedback) but **must never** be the *only* line of defense.
+
+**Key Remediation Principles:**
+1.  **Duplicate Validation:** Perform all critical validation checks (type, format, range, business rules) on the server, even if they are already done on the client.
+2.  **Server Authority:** Base security decisions (permissions, pricing, targets) only on trusted server-side data (e.g., user session, database records), not on hidden fields or parameters submitted by the client.
+3.  **Secure Session Management:** Store sensitive user state (like role, ID) securely in server-side sessions or signed/encrypted tokens, not in client-modifiable locations.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Relying on JavaScript form validation or hidden fields in HTML forms without equivalent checks in Django views/forms or Flask routes.
+
+    #### Vulnerable Scenario 1: Hidden Price Field
+    A shopping cart form uses a hidden field for the item price, validated only by JavaScript.
+    ```html
+    <form action="/checkout" method="post">
+      {% csrf_token %}
+      <p>Item: T-Shirt</p>
+      <p>Price: $10.00</p>
+      <input type="hidden" name="item_id" value="tshirt-01">
+      <input type="hidden" name="price" value="10.00" id="item-price">
+      <button type="submit">Checkout</button>
+    </form>
+    ```
+    ```python
+    # views/checkout.py (Django)
+    @login_required
+    def process_checkout(request):
+        if request.method == 'POST':
+            item_id = request.POST.get('item_id')
+            # DANGEROUS: Trusting the price sent from the client's hidden field.
+            # Attacker can change this value to 0.01 using browser dev tools.
+            price = Decimal(request.POST.get('price', '0.00'))
+            # ... charge user based on the submitted 'price' ...
+            charge_user(request.user, price) # Charges potentially incorrect amount
+            return HttpResponse("Charged!")
+        # ...
+    ```
+
+    #### Vulnerable Scenario 2: Client-Side Admin Check
+    JavaScript hides an admin button, but the server endpoint doesn't re-verify admin privileges.
+    ```html
+    <button id="delete-users-btn" style="display: none;">Delete All Users</button>
+    <script>
+      // DANGEROUS: Security check only happens client-side.
+      if (currentUser.isAdmin) {
+        document.getElementById('delete-users-btn').style.display = 'block';
+        document.getElementById('delete-users-btn').onclick = () => {
+          fetch('/api/admin/delete-all-users', { method: 'POST' }); // Assume CSRF handled via header
+        };
+      }
+    </script>
+    ```
+    ```python
+    # api/admin_views.py (Django/DRF)
+    from rest_framework.decorators import api_view, permission_classes
+    from rest_framework.permissions import IsAuthenticated # Missing IsAdminUser!
+
+    @api_view(['POST'])
+    @permission_classes([IsAuthenticated]) # DANGEROUS: Only checks if logged in, not role.
+    def delete_all_users(request):
+        # Attacker bypasses JS and sends request directly.
+        # Server executes this because IsAuthenticated passes.
+        User.objects.all().delete()
+        return Response(status=204)
+    ```
+
+    #### Mitigation and Best Practices
+    * **Prices/Critical Data:** Always retrieve prices, product details, and permissions from the server-side (database) based on the item ID or user session *after* submission. Do not trust values in hidden fields.
+    * **Permissions:** Re-validate user roles and permissions on the server for every sensitive action. Use framework decorators (`@permission_required`, `@user_passes_test`, DRF `permission_classes = [IsAdminUser]`).
+
+    #### Secure Code Example
+    ```python
+    # views/checkout.py (Secure)
+    @login_required
+    def process_checkout_secure(request):
+        if request.method == 'POST':
+            item_id = request.POST.get('item_id')
+            # SECURE: Retrieve product and its price from the database server-side.
+            try:
+                product = Product.objects.get(pk=item_id)
+                price = product.price # Use authoritative price from DB
+            except Product.DoesNotExist:
+                return HttpResponse("Invalid item", status=400)
+
+            # ... charge user based on the server-retrieved 'price' ...
+            charge_user(request.user, price) # Charges correct amount
+            return HttpResponse("Charged!")
+        # ...
+
+    # api/admin_views.py (Secure)
+    from rest_framework.permissions import IsAdminUser # Use correct permission
+
+    @api_view(['POST'])
+    @permission_classes([IsAdminUser]) # SECURE: Checks if user is admin on server.
+    def delete_all_users_secure(request):
+        User.objects.all().delete()
+        return Response(status=204)
+    ```
+
+    #### Testing Strategy
+    Use browser developer tools or an intercepting proxy (like Burp Suite) to modify client-side data before it's submitted: change values in hidden fields (prices, user IDs, roles), re-enable disabled buttons, remove `readonly` attributes, modify JavaScript variables influencing submission. Check if the server accepts and processes the manipulated data or if it correctly rejects/ignores it based on server-side validation and state.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Relying on JavaScript validation or hidden fields in forms submitted to Spring MVC controllers.
+
+    #### Vulnerable Scenario 1: Modifiable Price in Form
+    Similar to Python, a hidden field holds the price.
+    ```html
+    <form:form action="/checkout" method="post" modelAttribute="order">
+       <p>Item: Gadget</p>
+       <p>Price: <span id="displayPrice">$50.00</span></p>
+       <input type="hidden" name="productId" value="gadget-xyz"/>
+       <input type="hidden" name="orderTotal" value="50.00" />
+       <button type="submit">Place Order</button>
+    </form:form>
+    ```
+    ```java
+    // controller/CheckoutController.java
+    @PostMapping("/checkout")
+    public String processCheckout(@ModelAttribute("order") OrderForm orderForm, Principal principal) {
+        // DANGEROUS: Trusting orderTotal from the hidden field.
+        BigDecimal total = orderForm.getOrderTotal();
+        String username = principal.getName();
+        // ... find user, charge card based on client-provided 'total' ...
+        paymentService.charge(username, total); // Charges potentially wrong amount
+        return "orderConfirmation";
+    }
+    ```
+
+    #### Vulnerable Scenario 2: JavaScript Role Check
+    JavaScript enables an admin feature based on a client-side flag.
+    ```javascript
+    // admin.js (Client-Side)
+    // DANGEROUS: Role check only client-side.
+    if (userRole === 'ADMIN') {
+        $('#admin-action-button').show().click(function() {
+            $.post('/admin/perform-action', { /* data */ }); // Assume CSRF handled
+        });
+    }
+    ```
+    ```java
+    // controller/AdminController.java
+    @PostMapping("/admin/perform-action")
+    // DANGEROUS: Missing @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> performAdminAction(@RequestBody ActionData data, Principal principal) {
+        // Server only checks if user is logged in (via global config perhaps),
+        // but not if they have the ADMIN role. Attacker bypasses JS.
+        adminService.executeSensitiveAction(data);
+        return ResponseEntity.ok().build();
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Critical Data:** Ignore submitted totals/prices. Recalculate totals and fetch prices from the database server-side based on submitted product IDs and quantities.
+    * **Permissions:** Use Spring Security annotations (`@PreAuthorize("hasRole('ADMIN')")`, `@Secured("ROLE_ADMIN")`) or `HttpSecurity` configurations to enforce authorization checks on the server for every request.
+
+    #### Secure Code Example
+    ```java
+    // controller/CheckoutController.java (Secure)
+    @PostMapping("/checkout")
+    public String processCheckoutSecure(@RequestParam String productId, Principal principal) {
+        String username = principal.getName();
+        // SECURE: Fetch product and price from server-side data source.
+        Product product = productService.getProductById(productId);
+        if (product == null) { /* Handle error */ return "errorPage"; }
+        BigDecimal authoritativeTotal = product.getPrice(); // Get price from DB
+
+        // ... charge card based on server-retrieved 'authoritativeTotal' ...
+        paymentService.charge(username, authoritativeTotal); // Charges correct amount
+        return "orderConfirmation";
+    }
+
+    // controller/AdminController.java (Secure)
+    import org.springframework.security.access.prepost.PreAuthorize; // Import
+    // ... other imports ...
+    @PostMapping("/admin/perform-action")
+    @PreAuthorize("hasRole('ADMIN')") // SECURE: Server-side authorization check.
+    public ResponseEntity<?> performAdminActionSecure(@RequestBody ActionData data, Principal principal) {
+        adminService.executeSensitiveAction(data);
+        return ResponseEntity.ok().build();
+    }
+    ```
+
+    #### Testing Strategy
+    Use browser developer tools or an intercepting proxy to modify hidden field values (prices, IDs), remove `disabled` attributes, or directly send POST/PUT requests to endpoints that should be protected. Verify that the server relies on its own data and permission checks, rejecting or ignoring the client-manipulated values.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Relying on JavaScript validation, hidden form fields (`<input type="hidden">`), or client-side UI logic (e.g., hiding buttons) in Razor Pages/MVC without server-side checks in the Controller actions or PageModel handlers.
+
+    #### Vulnerable Scenario 1: Hidden Discount Code Value
+    The discount amount is calculated client-side and submitted via a hidden field.
+    ```html
+    <form method="post" asp-page-handler="ApplyDiscount">
+        <input type="text" id="discountCode" />
+        <button type="button" onclick="calculateDiscount()">Apply</button>
+        <input type="hidden" name="discountAmount" id="discountAmountHidden" value="0.00" />
+        <button type="submit">Submit Order With Discount</button>
+    </form>
+    <script>
+        function calculateDiscount() {
+            // Assume fetches discount and sets hidden field value
+            // Attacker can manually set hidden field to any value before submit.
+            document.getElementById('discountAmountHidden').value = '999.99'; // Example attack
+        }
+    </script>
+    ```
+    ```csharp
+    // Pages/Cart.cshtml.cs (PageModel)
+    public async Task<IActionResult> OnPostApplyDiscountAsync(decimal discountAmount)
+    {
+        // DANGEROUS: Trusting the discountAmount sent from client.
+        var currentCart = // ... get cart ...
+        currentCart.ApplyDiscount(discountAmount); // Applies potentially fake discount
+        // ... save cart ...
+        return Page();
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Client-Side Permission Flag
+    A hidden field indicates if the user *should* be allowed to perform an action.
+    ```html
+    <form method="post">
+        @if (Model.CurrentUserCanEdit) // Flag set based on server check initially
+        {
+            <input type="text" name="itemName" value="@Model.ItemName" />
+            <input type="hidden" name="canEdit" value="true" />
+            <button type="submit">Save</button>
+        } else {
+             <p>Read only</p>
+             <input type="hidden" name="canEdit" value="false" /> // Attacker can change this to true
+        }
+    </form>
+    ```
+    ```csharp
+    // EditItem.cshtml.cs (PageModel)
+    public async Task<IActionResult> OnPostAsync(string itemName, bool canEdit) // bool from hidden field
+    {
+        // DANGEROUS: Relying on 'canEdit' flag submitted from client.
+        if (canEdit)
+        {
+            // Attacker sets canEdit=true and bypasses server check
+            var item = await _context.Items.FindAsync(Model.ItemId); // Assume ItemId is safe
+            item.Name = itemName;
+            await _context.SaveChangesAsync();
+            return RedirectToPage(...);
+        }
+        else
+        {
+            // Error or redirect
+            return Forbid(); // Should have checked server-side earlier
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sensitive Values:** Always recalculate prices, discounts, totals, etc., on the server based on submitted IDs and authoritative data (database). Ignore monetary values submitted from hidden fields.
+    * **Permissions:** Re-validate user permissions using server-side checks (e.g., `User.IsInRole("Admin")`, authorization policies) within the action method or handler. Do not trust hidden fields indicating permission.
+
+    #### Secure Code Example
+    ```csharp
+    // Pages/Cart.cshtml.cs (Secure Discount)
+    public async Task<IActionResult> OnPostApplyDiscountSecureAsync(string discountCode) // Submit the CODE, not the amount
+    {
+        var currentCart = // ... get cart ...
+        // SECURE: Server calculates discount based on code and cart contents.
+        decimal actualDiscount = _discountService.CalculateDiscount(discountCode, currentCart);
+        currentCart.ApplyDiscount(actualDiscount); // Apply server-calculated discount
+        // ... save cart ...
+        return Page();
+    }
+
+    // EditItem.cshtml.cs (Secure Permission Check)
+    [Authorize] // Basic authentication
+    public async Task<IActionResult> OnPostSecureAsync(string itemName) // Don't bind 'canEdit'
+    {
+        var item = await _context.Items.FindAsync(Model.ItemId); // Assume ItemId is safe
+        // SECURE: Re-validate permission on the server.
+        var isAllowed = await _authorizationService.AuthorizeAsync(User, item, "EditPolicy");
+        if (!isAllowed.Succeeded)
+        {
+            return Forbid(); // Or Challenge()
+        }
+
+        // Proceed with update only if authorized server-side
+        item.Name = itemName;
+        await _context.SaveChangesAsync();
+        return RedirectToPage(...);
+    }
+    ```
+
+    #### Testing Strategy
+    Use browser developer tools or an intercepting proxy to change hidden field values (prices, permissions, IDs). Send requests directly to endpoints, bypassing client-side UI logic (like disabled buttons). Verify the server ignores manipulated sensitive data and re-validates permissions based on the authenticated user's session/claims.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Relying on JavaScript validation or hidden fields in Blade/HTML forms without server-side validation in the Controller or using Laravel's Request Validation.
+
+    #### Vulnerable Scenario 1: Hidden Price in Form
+    ```html
+    <form action="{{ route('order.place') }}" method="post">
+        @csrf
+        Product: Laptop (<span id="priceDisplay">$1200.00</span>)
+        <input type="hidden" name="product_id" value="laptop-xyz">
+        <input type="hidden" name="final_price" value="1200.00">
+        <button type="submit">Buy Now</button>
+    </form>
+    ```
+    ```php
+    // app/Http/Controllers/OrderController.php
+    public function placeOrder(Request $request)
+    {
+        $productId = $request->input('product_id');
+        // DANGEROUS: Trusting the price from the hidden field.
+        $price = $request->input('final_price');
+        $user = auth()->user();
+
+        // ... charge the user based on $price ...
+        PaymentGateway::charge($user->stripe_id, $price); // Charges wrong amount
+
+        return redirect()->route('order.success');
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Client-Side Role Submitted
+    A form for editing user roles submits the intended role via a hidden field, assuming only admins can see the form.
+    ```html
+    <form action="{{ route('admin.user.update', $user) }}" method="post">
+        @csrf
+        @method('PUT')
+        <select name="role_selector"> <option value="user" @selected($user->role == 'user')>User</option>
+            <option value="admin" @selected($user->role == 'admin')>Admin</option>
+        </select>
+        <input type="hidden" name="role" value="{{ $user->role }}">
+        <button type="submit">Update User</button>
+    </form>
+    ```
+    ```php
+    // app/Http/Controllers/AdminUserController.php
+    public function update(Request $request, User $user)
+    {
+         // DANGEROUS: Controller might trust 'role' from hidden field
+         // if attacker modifies it, even if Select is ignored.
+         // Assume only admin middleware checked access to the route, not the input value.
+         $newRole = $request->input('role');
+
+         // Validation should happen here!
+         // Example: if (!in_array($newRole, ['user', 'admin'])) { abort(400); }
+
+         $user->role = $newRole; // Assigns potentially manipulated role
+         $user->save();
+
+         return redirect()->route('admin.users.index');
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sensitive Data:** Always fetch prices/permissions/etc., from the database on the server-side based on submitted IDs (`product_id`) and the authenticated user's session. Ignore submitted prices or role flags.
+    * **Validation:** Use Laravel's Request Validation (`php artisan make:request`) to validate *all* incoming data server-side, including checking roles or permissions required for the action.
+
+    #### Secure Code Example
+    ```php
+    // app/Http/Controllers/OrderController.php (Secure)
+    public function placeOrder(Request $request)
+    {
+        $validated = $request->validate([
+            'product_id' => 'required|exists:products,id' // Validate ID exists
+        ]);
+        $productId = $validated['product_id'];
+        $user = auth()->user();
+
+        // SECURE: Get price from the database.
+        $product = Product::findOrFail($productId);
+        $price = $product->price;
+
+        PaymentGateway::charge($user->stripe_id, $price); // Charges correct amount
+
+        return redirect()->route('order.success');
+    }
+
+    // app/Http/Controllers/AdminUserController.php (Secure)
+    use Illuminate\Validation\Rule; // For Rule::in
+
+    public function update(Request $request, User $user)
+    {
+        // SECURE: Validate input server-side, only accept valid roles.
+        $validated = $request->validate([
+            'role_selector' => ['required', Rule::in(['user', 'admin'])] // Validate the SELECTOR value
+        ]);
+
+        // Use the validated value from the selector, ignore any hidden 'role' field
+        $newRole = $validated['role_selector'];
+
+        // Optional: Add Gate/Policy check to ensure current admin isn't demoting themselves
+        // if ($user->id === auth()->id() && $newRole !== 'admin') { abort(403); }
+
+        $user->role = $newRole;
+        $user->save();
+
+        return redirect()->route('admin.users.index');
+    }
+    ```
+
+    #### Testing Strategy
+    Use browser dev tools or a proxy to modify hidden field values (`final_price`, `role`) before submitting forms. Send direct requests to the endpoints, bypassing JavaScript validation. Check if the server correctly ignores or rejects the manipulated data and relies on its own authoritative sources and validation.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Relying on client-side JavaScript calculations or form properties (hidden fields, disabled status) without re-validating in Express route handlers.
+
+    #### Vulnerable Scenario 1: Price from Hidden Field
+    ```html
+    <form action="/process-payment" method="post">
+        Item ID: <input type="text" name="itemId" value="widget-1" readonly>
+        Price: <input type="hidden" name="amount" value="25.50">
+        <button type="submit">Pay</button>
+    </form>
+    ```
+    ```javascript
+    // app.js (Express route)
+    app.post('/process-payment', ensureAuthenticated, (req, res) => {
+        const { itemId, amount } = req.body; // Untrusted amount from client
+        const user = req.user;
+
+        // DANGEROUS: Trusting 'amount' from the hidden field.
+        // Attacker changes it to 0.01.
+        paymentService.chargeUser(user.id, amount) // Charges wrong amount
+            .then(() => res.send("Payment successful!"))
+            .catch(err => res.status(500).send("Payment failed"));
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Action Determined by Client Flag
+    JavaScript determines which action to call based on user interaction, sending an `action` parameter. The server trusts this parameter.
+    ```javascript
+    // client-side.js
+    $('#approve-button').click(() => {
+        $.post('/api/items/update', { itemId: currentItemId, action: 'approve' }); // Sends 'approve'
+    });
+    $('#reject-button').click(() => {
+        $.post('/api/items/update', { itemId: currentItemId, action: 'reject' }); // Sends 'reject'
+    });
+    // Assume UI only shows 'approve' to managers, but attacker sends raw request.
+    ```
+    ```javascript
+    // app.js (Express route)
+    app.post('/api/items/update', ensureAuthenticated, async (req, res) => {
+        const { itemId, action } = req.body; // Untrusted action from client
+        const user = req.user;
+
+        // DANGEROUS: Server trusts the 'action' parameter.
+        // A regular user could send action='approve' directly, bypassing UI logic.
+        // Server needs to check if req.user has permission for the given 'action'.
+        try {
+            if (action === 'approve') {
+                // Vulnerable if user doesn't have approval permission
+                await ItemService.approve(itemId, user.id);
+            } else if (action === 'reject') {
+                await ItemService.reject(itemId, user.id);
+            } else {
+                return res.status(400).send('Invalid action');
+            }
+            res.send('Action successful');
+        } catch (err) { res.status(500).send('Action failed'); }
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sensitive Values:** Ignore prices/amounts from the client. Fetch the item from the database using the submitted `itemId`, get its authoritative price, and use that for charging.
+    * **Permissions/Actions:** Validate the requested `action` against the user's permissions on the server-side *before* executing it. Do not rely on the client only sending actions it *should* be allowed to perform. Use separate endpoints for different privilege levels if possible.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Payment)
+    app.post('/process-payment-secure', ensureAuthenticated, async (req, res) => {
+        const { itemId } = req.body; // Only trust the ID
+        const user = req.user;
+
+        try {
+            // SECURE: Get authoritative price from server-side data source.
+            const item = await ItemService.getItem(itemId);
+            if (!item) { return res.status(404).send('Item not found'); }
+            const amount = item.price; // Use price from DB
+
+            await paymentService.chargeUser(user.id, amount); // Charges correct amount
+            res.send("Payment successful!");
+        } catch (err) { res.status(500).send("Payment failed"); }
+    });
+
+    // app.js (Secure Action Handling)
+    app.post('/api/items/update-secure', ensureAuthenticated, async (req, res) => {
+        const { itemId, action } = req.body;
+        const user = req.user;
+
+        try {
+            // SECURE: Server-side permission check before executing.
+            if (action === 'approve') {
+                if (!AuthService.userCanApprove(user)) { // Check user role/perms
+                    return res.status(403).send('Forbidden');
+                }
+                await ItemService.approve(itemId, user.id);
+            } else if (action === 'reject') {
+                // Assume all authenticated users can reject (or add check)
+                await ItemService.reject(itemId, user.id);
+            } else {
+                return res.status(400).send('Invalid action');
+            }
+            res.send('Action successful');
+        } catch (err) { res.status(500).send('Action failed'); }
+    });
+    ```
+
+    #### Testing Strategy
+    Use an intercepting proxy or developer tools to modify hidden fields, disabled fields, or JavaScript variables that affect form submissions. Send direct HTTP requests to endpoints, manipulating parameters like `amount`, `role`, `action`, `userId`, etc. Verify that the server ignores or rejects invalid/unauthorized data and relies on its own state and validation.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Relying on JavaScript validation, hidden fields (`form.hidden_field`), or client-side UI logic (hiding links/buttons) in Rails views without server-side validation in the controller action or model.
+
+    #### Vulnerable Scenario 1: Hidden Price Field
+    ```erb
+    <%= form_with(model: @order, url: create_order_path) do |form| %>
+      <%= form.hidden_field :product_id, value: @product.id %>
+      <%= form.hidden_field :total_price, value: @product.price %>
+      <%= form.submit "Place Order" %>
+    <% end %>
+    ```
+    ```ruby
+    # app/controllers/orders_controller.rb
+    class OrdersController < ApplicationController
+      before_action :authenticate_user!
+
+      def create
+        # DANGEROUS: Trusting total_price from the client.
+        # Attacker modifies the hidden field value to 0.01.
+        @order = current_user.orders.build(order_params)
+
+        # Assumes order_params permits :total_price
+        # payment_success = PaymentService.charge(current_user, @order.total_price) # Charges wrong amount
+
+        if payment_success # && @order.save
+           redirect_to @order, notice: 'Order placed.'
+        else
+           render :new
+        end
+      end
+
+      private
+      def order_params
+        # If :total_price is permitted here, it's vulnerable
+        params.require(:order).permit(:product_id, :total_price)
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: JavaScript Permission Check Only
+    ```erb
+    <% if current_user.admin? %> <%= link_to 'Delete Everything', delete_everything_path, method: :post,
+            data: { confirm: 'Are you sure?' }, id: 'delete-link', style: 'display:none;' %>
+      <script>
+        // DANGEROUS: Assumes this JS always runs and is sufficient.
+        // Attacker can bypass this JS and send the POST request directly.
+        document.addEventListener('DOMContentLoaded', () => {
+             document.getElementById('delete-link').style.display = 'inline';
+        });
+      </script>
+    <% end %>
+    ```
+    ```ruby
+    # app/controllers/admin_controller.rb
+    class AdminController < ApplicationController
+      # DANGEROUS: Missing before_action to check for admin role here.
+      # Relies only on the link being hidden in the view.
+      before_action :authenticate_user! # Only checks login
+
+      def delete_everything
+        # Attacker sends POST request directly, bypassing view logic.
+        # Server executes because only authentication was checked.
+        SystemData.destroy_all
+        redirect_to admin_dashboard_path, notice: 'Data deleted.'
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Sensitive Values:** Ignore submitted prices/totals. Fetch the `Product` based on `product_id` on the server and use `product.price`. Do not permit sensitive fields like `:total_price` in `strong_parameters`.
+    * **Permissions:** Always re-validate user permissions on the server-side using `before_action` filters (with authorization checks like checking `current_user.admin?`) or authorization gems like Pundit/CanCanCan.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/orders_controller.rb (Secure)
+    class OrdersController < ApplicationController
+      before_action :authenticate_user!
+
+      def create
+        # SECURE: Only permit the ID, not the price.
+        permitted_params = params.require(:order).permit(:product_id)
+        product = Product.find(permitted_params[:product_id]) # Find product server-side
+
+        # SECURE: Use price from the database record.
+        price = product.price
+        @order = current_user.orders.build(product: product, total_price: price)
+
+        payment_success = PaymentService.charge(current_user, price) # Charges correct amount
+
+        if payment_success && @order.save
+           redirect_to @order, notice: 'Order placed.'
+        else
+           # Handle payment failure or save error
+           flash.now[:alert] = "Order failed."
+           render :new
+        end
+      rescue ActiveRecord::RecordNotFound
+          flash.now[:alert] = "Invalid product."
+          render :new
+      end
+    end
+
+    # app/controllers/admin_controller.rb (Secure)
+    class AdminController < ApplicationController
+      before_action :authenticate_user!
+      # SECURE: Server-side check ensures only admins can access actions.
+      before_action :require_admin
+
+      def delete_everything
+        SystemData.destroy_all
+        redirect_to admin_dashboard_path, notice: 'Data deleted.'
+      end
+
+      private
+      def require_admin
+        redirect_to root_path, alert: "Access Denied" unless current_user.admin?
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Use browser developer tools or an intercepting proxy to modify hidden fields (`order[total_price]`) or submit forms directly to controller actions, bypassing client-side UI logic (like hidden links). Verify that the server ignores manipulated sensitive values (prices) and enforces permission checks based on the server-side session (`current_user`).
+  </Tab>
+</Tabs>
