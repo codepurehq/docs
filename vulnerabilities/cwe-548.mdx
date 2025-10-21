@@ -1,0 +1,244 @@
+---
+title: "Exposure of Information Through Directory Listing"
+sidebarTitle: "Directory Listing (CWE-548)"
+description: "Mitigation for web server misconfiguration that allows attackers to list files in directories without an index file."
+icon: "folder-tree"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when a web server is configured to **show a listing of all files and subdirectories** within a directory if no default index file (like `index.html`, `index.php`, `default.aspx`) is present. Attackers can browse these listings to discover sensitive files, configuration files, source code backups, temporary files, or other resources not intended for public access. 📂🔍
+
+---
+
+## Business Impact
+
+Directory listing provides attackers with a map of the web server's structure and potentially sensitive files:
+* **Discovery of Sensitive Files:** Attackers can find configuration files (`.env`, `web.config`), source code backups (`.bak`, `.old`), temporary data, user uploads, or hidden administrative interfaces.
+* **Information Leakage:** Exposes the application's file structure, potentially revealing technology choices or custom script locations.
+* **Reconnaissance:** Helps attackers identify targets for other vulnerabilities like Path Traversal or File Inclusion.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-548](https://cwe.mitre.org/data/definitions/548.html)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration
+  **Severity:** Low to Medium (provides information, severity depends on what files are exposed)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is purely a **web server configuration** issue, not directly related to application frameworks like Django, Spring, Rails, etc. The vulnerability lies in the configuration of the server software handling the HTTP requests (e.g., Apache, Nginx, IIS).
+
+**Remediation:**
+* **Disable Directory Listing:** Configure the web server to forbid directory browsing.
+* **Use Index Files:** Ensure every directory served has a default index file (even if it's just a blank `index.html`) to prevent the server from generating a listing.
+* **Restrict Access:** Use server configuration to restrict access to sensitive directories altogether.
+
+---
+
+<Tabs>
+  <Tab title="Nginx">
+    #### Framework Context
+    Nginx configuration (`nginx.conf` or site-specific files in `sites-available`).
+
+    #### Vulnerable Scenario 1: `autoindex on;`
+    The `autoindex` directive is explicitly enabled within a `location` block.
+    ```nginx
+    # /etc/nginx/sites-available/myapp
+    server {
+        listen 80;
+        server_name myapp.com;
+        root /var/www/myapp;
+
+        location /files/ {
+            # DANGEROUS: Allows listing files in the /files/ directory
+            # if no index.html (or other index file) exists there.
+            autoindex on;
+        }
+        # ... other locations ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Default Behavior (Implicit)
+    In some Nginx versions or default configurations, if `autoindex` is not specified, it might still be enabled implicitly or inherited from a higher-level configuration block. Relying on implicit disabling is risky.
+
+    #### Mitigation and Best Practices
+    Explicitly set `autoindex off;` within server or relevant location blocks. Ensure sensitive directories are not served directly or have stricter access controls.
+
+    #### Secure Code Example
+    ```nginx
+    # /etc/nginx/sites-available/myapp (Secure)
+    server {
+        listen 80;
+        server_name myapp.com;
+        root /var/www/myapp;
+        index index.html index.htm index.php; # Define default files
+
+        location / {
+            # SECURE: Explicitly disable directory listing for the root
+            autoindex off;
+            try_files $uri $uri/ /index.php?$query_string; # Example for PHP app
+        }
+
+        location /files/ {
+            # SECURE: Disable listing for this specific directory too
+            autoindex off;
+            # Add access control if needed, e.g., internal only
+            # allow 192.168.1.0/24;
+            # deny all;
+        }
+        # ... other locations ...
+    }
+    ```
+
+    #### Testing Strategy
+    Use a web browser or `curl` to navigate to directories within your web application that you know (or suspect) do not have an index file (e.g., `/images/`, `/uploads/`, `/css/`). If you see a file listing instead of a "403 Forbidden" error or the site's standard 404 page, directory listing is enabled.
+  </Tab>
+  <Tab title="Apache">
+    #### Framework Context
+    Apache configuration (`httpd.conf`, `.htaccess`, or site configuration files).
+
+    #### Vulnerable Scenario 1: `Options +Indexes`
+    The `Indexes` option is enabled for a directory.
+    ```apache
+    # /etc/apache2/sites-available/myapp.conf or .htaccess
+    <Directory /var/www/myapp/uploads>
+        # DANGEROUS: Allows directory listing for /uploads
+        Options +Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+    ```
+
+    #### Vulnerable Scenario 2: Default Behavior (Implicit)
+    If `Options` directive is missing or doesn't explicitly remove `Indexes` (`Options -Indexes`), it might be inherited from a parent directory or the server default configuration, potentially enabling listings.
+
+    #### Mitigation and Best Practices
+    Explicitly use `Options -Indexes` in relevant `<Directory>` blocks or `.htaccess` files to disable listing for specific directories. Set it globally if possible and only enable specific options as needed.
+
+    #### Secure Code Example
+    ```apache
+    # /etc/apache2/sites-available/myapp.conf (Secure)
+    <Directory /var/www/myapp>
+        Options FollowSymLinks # Base options, Indexes is NOT included
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/myapp/uploads>
+        # SECURE: Explicitly disable directory listing
+        Options -Indexes
+        # Add other options if needed, e.g., +FollowSymLinks
+        AllowOverride None
+        Require all granted
+        # Optional: Prevent script execution in uploads directory
+        <FilesMatch "\.(php|phtml|php3|php4|php5|pl|py|cgi|asp|aspx)$">
+             Require all denied
+        </FilesMatch>
+    </Directory>
+    ```
+
+    #### Testing Strategy
+    Similar to Nginx: Use a browser or `curl` to access directories without index files (e.g., `/uploads/`, `/assets/`). Look for a generated file listing page. If found, check the Apache configuration (`Options` directive) for the relevant directory.
+  </Tab>
+  <Tab title="IIS">
+    #### Framework Context
+    Internet Information Services (IIS) configuration, managed via IIS Manager GUI or `web.config` files.
+
+    #### Vulnerable Scenario 1: Directory Browsing Enabled in GUI
+    In IIS Manager, selecting a website or directory and enabling the "Directory Browsing" feature in the center pane.
+
+    #### Vulnerable Scenario 2: `directoryBrowse enabled="true"` in `web.config`
+    The `web.config` file for the application or a subdirectory explicitly enables directory browsing.
+    ```xml
+    <configuration>
+      <system.webServer>
+        <directoryBrowse enabled="true" />
+        </system.webServer>
+    </configuration>
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure the "Directory Browsing" feature is **Disabled** in IIS Manager for the website and all subdirectories. If using `web.config`, ensure the `directoryBrowse` element is set to `enabled="false"` or removed entirely (as 'false' is often the default).
+
+    #### Secure Code Example
+    ```xml
+    <configuration>
+      <system.webServer>
+        <directoryBrowse enabled="false" />
+        <handlers>
+          </handlers>
+      </system.webServer>
+    </configuration>
+    ```
+
+    #### Testing Strategy
+    Use a browser or `curl` to access directories known or suspected to lack a default document (e.g., `/content/`, `/images/`, `/App_Data/` - though the latter should ideally be blocked entirely). If a file listing appears, check the "Directory Browsing" setting in IIS Manager or the relevant `web.config` file.
+  </Tab>
+  <Tab title="Other Servers / CDNs">
+    #### Framework Context
+    Applies to any HTTP server software (Node.js `express.static` with `{ index: false }`, Python `http.server`, cloud storage buckets, CDNs).
+
+    #### Vulnerable Scenario 1: Cloud Storage Bucket Misconfiguration
+    An AWS S3 bucket, Azure Blob Storage container, or Google Cloud Storage bucket used to host static assets might have permissions configured to allow `ListBucket` / `List Contents` actions for anonymous users.
+
+    #### Vulnerable Scenario 2: Node.js `express.static` without Index
+    Serving a directory where index file lookup is disabled.
+    ```javascript
+    // app.js (Node.js/Express)
+    const express = require('express');
+    const path = require('path');
+    const app = express();
+
+    // DANGEROUS: If 'files' directory has no index.html,
+    // setting index:false might trigger listing (or just 404, depending on exact setup).
+    // The main risk is exposing a directory that shouldn't be browsable.
+    app.use('/user-files', express.static(path.join(__dirname, 'user-files'), { index: false }));
+
+    app.listen(3000);
+    ```
+
+    #### Mitigation and Best Practices
+    * **Cloud Storage:** Configure bucket policies and ACLs to deny public list access. Only grant public read access to specific objects if needed.
+    * **Node.js `express.static`:** Avoid setting `index: false` unless explicitly desired and the directory contains no sensitive files. Ensure served directories don't contain source code, configuration, etc. Add index files.
+    * **General:** Always review the default configuration of any software serving files over HTTP. Assume directory listing might be enabled by default and disable it explicitly if unsure.
+
+    #### Secure Code Example
+    ```json
+    // AWS S3 Bucket Policy (Example denying public ListBucket)
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "DenyPublicListBucket",
+          "Effect": "Deny",
+          "Principal": "*",
+          "Action": "s3:ListBucket",
+          "Resource": "arn:aws:s3:::your-bucket-name"
+        },
+        { // Allow public GetObject ONLY if needed for specific public files
+          "Sid": "AllowPublicGetObject",
+          "Effect": "Allow",
+          "Principal": "*",
+          "Action": "s3:GetObject",
+          "Resource": "arn:aws:s3:::your-bucket-name/public/*" // Example path
+        }
+      ]
+    }
+    ```
+    ```javascript
+    // app.js (Node.js/Express - Secure)
+    // SECURE: Serve only a dedicated 'public' directory
+    app.use(express.static(path.join(__dirname, 'public')));
+    // Do not serve sensitive directories like 'user-files' directly via static.
+    // Access them via controlled routes if necessary.
+    ```
+
+    #### Testing Strategy
+    For cloud storage, use tools provided by the cloud vendor or third-party scanners to check for public list permissions. For custom servers, use browser/`curl` tests as described for Nginx/Apache.
+  </Tab>
+</Tabs>

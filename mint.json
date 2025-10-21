@@ -116,7 +116,14 @@
     {
       "group": "A05:2021 – Security Misconfiguration",
       "pages": [
-        "vulnerabilities/xxe"
+        "vulnerabilities/xxe",
+        "vulnerabilities/cwe-548",
+        "vulnerabilities/cwe-501",
+        "vulnerabilities/cwe-602",
+        "vulnerabilities/cwe-799",
+        "vulnerabilities/cwe-840",
+        "vulnerabilities/cwe-312",
+        "vulnerabilities/cwe-257"
       ]
     },
     {
