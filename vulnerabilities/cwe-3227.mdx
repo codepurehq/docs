@@ -12,7 +12,7 @@ This vulnerability occurs when an application uses cryptographic algorithms that
 ## Business Impact
 Using broken cryptography provides a false sense of security. 🛡️ Attackers can often break this weak protection easily, leading to the compromise of sensitive data like passwords, PII, or financial information. If password hashes are cracked, attackers gain access to user accounts. If encryption is broken, all encrypted data is exposed.
 
-<Card title="Reference Details" icon="book-open" iconType:="solid">
+<Card title="Reference Details" icon="book-open" iconType="solid">
   **CWE ID:** [CWE-327](https://cwe.mitre.org/data/definitions/327.html)
   **OWASP Top 10 (2021):** A02:2021 - Cryptographic Failures
   **Severity:** High
@@ -54,7 +54,7 @@ The fix is to **always use current, industry-standard algorithms** recommended b
         # DANGEROUS: DES has a small key size (56-bit) and is broken.
         cipher = DES.new(key, DES.MODE_ECB) # ECB mode is also insecure
         return cipher.encrypt(pad(data.encode(), DES.block_size)) # Added encode() and block_size
-        
+
     def encrypt_data_aes_ecb(key, data):
         # DANGEROUS: AES itself is strong, but ECB mode leaks patterns.
         cipher = AES.new(key, AES.MODE_ECB)
@@ -185,13 +185,15 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     ```csharp
     // Startup.cs (ConfigureServices)
     using Microsoft.AspNetCore.Identity; // Added namespace
+    using Microsoft.Extensions.DependencyInjection; // Added for IServiceCollection
+    using Microsoft.EntityFrameworkCore; // Added for DbContext example
     // ... other using statements ...
-    services.AddIdentity<ApplicationUser, IdentityRole>(options => {
+    services.AddIdentity<IdentityUser, IdentityRole>(options => { // Assuming IdentityUser, replace if needed
         // DANGEROUS: V2 uses SHA1, V3 uses PBKDF2. Avoid V2.
         options.Password.RequireDigit = false; // Example option
         options.PasswordHasherCompatibilityMode = PasswordHasherCompatibilityMode.IdentityV2;
-    }) // Removed semicolon and added chaining if needed
-    .AddEntityFrameworkStores<ApplicationDbContext>(); // Example chaining
+    })
+    .AddEntityFrameworkStores<ApplicationDbContext>(); // Example chaining, assuming ApplicationDbContext
     ```
 
     #### Vulnerable Scenario 2: Using Weak Algorithm (DES/TripleDES)
@@ -228,14 +230,22 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     #### Secure Code Example
     ```csharp
     // Startup.cs (ConfigureServices - Secure Default)
-    using Microsoft.AspNetCore.Identity; // Added namespace
-    using Microsoft.EntityFrameworkCore; // Added namespace for DbContext example
+    using Microsoft.AspNetCore.Identity;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.DependencyInjection; // Added namespace for IServiceCollection
     // ... other using statements ...
-    services.AddDefaultIdentity<IdentityUser>(options => { // Assuming IdentityUser, replace if needed
-        // Default hasher is secure (PBKDF2 HMAC-SHA256)
-        options.SignIn.RequireConfirmedAccount = true;
-    })
-    .AddEntityFrameworkStores<ApplicationDbContext>(); // Assuming ApplicationDbContext
+    // Assuming ApplicationDbContext and IdentityUser exist
+    public void ConfigureServices(IServiceCollection services) // Example method signature
+    {
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"))); // Example DBContext
+
+        services.AddDefaultIdentity<IdentityUser>(options => {
+            // Default hasher is secure (PBKDF2 HMAC-SHA256)
+            options.SignIn.RequireConfirmedAccount = true;
+        })
+        .AddEntityFrameworkStores<ApplicationDbContext>();
+    }
 
     // Services/EncryptionService.cs (Secure AES-GCM)
     using System.Security.Cryptography;
@@ -284,7 +294,6 @@ The fix is to **always use current, industry-standard algorithms** recommended b
     // app/Http/Controllers/RegisterController.php
     use App\Models\User; // Added namespace
     use Illuminate\Http\Request; // Added namespace for type hinting if needed
-    use Illuminate\Support\Facades\Hash; // Use Hash facade correctly
     // ... other imports ...
 
     protected function create(array $data)
@@ -344,6 +353,7 @@ The fix is to **always use current, industry-standard algorithms** recommended b
              return Crypt::decryptString($encrypted_data);
         } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
              // Handle exception: log error, return null, etc.
+             \Log::error("Decryption failed: " . $e->getMessage()); // Example logging
              return null;
         }
     }
@@ -494,7 +504,10 @@ The fix is to **always use current, industry-standard algorithms** recommended b
       tag = cipher.auth_tag # Get the authentication tag (16 bytes recommended)
 
       # Return IV + Tag + Ciphertext (ensure consistent lengths)
-      { iv: iv, tag: tag, ciphertext: encrypted }
+      # Ensure proper encoding/decoding when storing/retrieving (e.g., Base64)
+      { iv: Base64.strict_encode64(iv),
+        tag: Base64.strict_encode64(tag),
+        ciphertext: Base64.strict_encode64(encrypted) }
     end
     ```
 
