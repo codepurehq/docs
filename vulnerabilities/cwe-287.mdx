@@ -900,7 +900,6 @@ While modern frameworks provide robust authentication libraries (Django Auth, Sp
           # Add rate limiting (CWE-307)
           flash.now[:alert] = "Invalid email or password."
           render :new, status: :unprocessable_entity # Use standard 422 status for failed form
-        }
     end
     ```
 
