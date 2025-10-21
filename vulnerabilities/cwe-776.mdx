@@ -1,0 +1,572 @@
+---
+title: "XML Entity Expansion (XML Bomb)"
+sidebarTitle: "XML Bomb (CWE-776)"
+description: "Mitigation for XML Denial of Service (DoS) caused by exponential entity expansion (Billion Laughs Attack)."
+icon: "bomb"
+iconType: "solid"
+---
+
+## Overview
+
+XML Entity Expansion, often called an "XML Bomb" or "Billion Laughs Attack," is a **Denial of Service (DoS)** vulnerability. It occurs when an XML parser attempts to resolve nested or recursive entity references defined within a Document Type Definition (DTD). An attacker can craft a small XML document with internal entities that refer to each other exponentially. When the parser tries to expand these entities, it consumes a massive amount of memory and CPU resources, potentially crashing the parser, the application, or even the entire server. 💣💥
+
+---
+
+## Business Impact
+
+Successful XML Entity Expansion attacks lead to Denial of Service:
+* **Application Unavailability:** The application becomes unresponsive or crashes as the XML parser exhausts server memory and CPU.
+* **System Instability:** In severe cases, the entire server can become unstable or unresponsive.
+* **Resource Consumption:** Even if the server doesn't crash, the attack consumes significant resources, degrading performance for legitimate users.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-776](https://cwe.mitre.org/data/definitions/776.html)
+  **Related CWEs:** CWE-611 (XXE), CWE-400 (Resource Exhaustion)
+  **OWASP Top 10 (2021):** A05:2021 - Security Misconfiguration (Insecure parser defaults)
+  **Severity:** High (for DoS impact)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+Like XXE (`CWE-611`), this vulnerability lies in the **XML parser library configuration**. Parsers that process DTDs and expand internal entities are potentially vulnerable.
+
+**Key Remediation Principles:**
+1.  **Disable DTD Processing:** This is the most effective defense, as it prevents the parser from processing the entity definitions in the first place. This also prevents most XXE attacks.
+2.  **Limit Entity Expansion:** If DTDs *must* be processed, configure the parser to limit the total size or number of entity expansions. Many modern parsers have built-in limits or flags for this.
+3.  **Use Secure Parser Defaults:** Keep XML parsing libraries updated, as newer versions often have safer defaults.
+4.  **Resource Limits:** Implement general resource limits (memory, CPU) at the application or server level as a defense-in-depth measure.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Using built-in `xml.etree.ElementTree`, `xml.dom.minidom`, or `lxml`. `lxml` provides specific options against entity expansion bombs.
+
+    #### Vulnerable Scenario 1: `ElementTree` with DTD Processing
+    While `ElementTree` is generally safer against *external* entities by default, its handling of *internal* entity expansion can vary. Explicitly disabling DTDs is best.
+    ```python
+    # parser/xml_parser.py
+    import xml.etree.ElementTree as ET
+
+    def process_xml(xml_data):
+        try:
+            # DANGEROUS: Default parser might still expand internal entities
+            # if a DTD is present, potentially leading to DoS.
+            # Explicitly disabling DTDs/entities is safer.
+            root = ET.fromstring(xml_data)
+            # ... process ...
+        except ET.ParseError as e:
+            print(f"XML Parse Error: {e}")
+        # Billion Laughs Attack Payload:
+        # <?xml version="1.0"?>
+        # <!DOCTYPE lolz [
+        #  <!ENTITY lol "lol">
+        #  <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+        #  <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+        #  <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+        #  <!ENTITY lol4 "&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;">
+        #  <!ENTITY lol5 "&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;">
+        #  <!ENTITY lol6 "&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;">
+        #  <!ENTITY lol7 "&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;">
+        #  <!ENTITY lol8 "&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;">
+        #  <!ENTITY lol9 "&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;">
+        # ]>
+        # <lolz>&lol9;</lolz>
+    ```
+
+    #### Vulnerable Scenario 2: `lxml` without `huge_tree=True` protection (less common)
+    While `lxml` has protections, extremely large expansions or specific configurations might still pose a risk if limits aren't hit. Disabling DTDs is still preferred.
+
+    #### Mitigation and Best Practices
+    * **`ElementTree` / `minidom`:** Explicitly disable entity resolution using `XMLParser(resolve_entities=False)`. This generally prevents DTD-based entity expansion.
+    * **`lxml`:** Rely on defaults which are generally safe. For extra safety, use `etree.XMLParser(resolve_entities=False)`. `lxml` also has built-in protection against quadratic expansion and limits total entity size, often preventing the classic "Billion Laughs".
+
+    #### Secure Code Example
+    ```python
+    # parser/xml_parser.py (Secure ElementTree)
+    import xml.etree.ElementTree as ET
+
+    def process_xml_secure(xml_data):
+        try:
+            # SECURE: Explicitly disable entity resolution, prevents DTD processing needed for the attack.
+            parser = ET.XMLParser(resolve_entities=False)
+            root = ET.fromstring(xml_data, parser=parser)
+            # ... process XML safely ...
+        except ET.ParseError as e:
+            print(f"XML Parse Error: {e}") # Error should occur safely if Billion Laughs DTD is present
+        except Exception as e:
+             print(f"Error: {e}")
+
+    # parser/lxml_parser.py (Secure lxml)
+    from lxml import etree
+
+    def process_lxml_secure(xml_data):
+        try:
+            # SECURE: Use default lxml parser or explicitly disable entity resolution.
+            # lxml has internal protections against entity bombs too.
+            parser = etree.XMLParser(resolve_entities=False)
+            root = etree.fromstring(xml_data, parser=parser)
+            # ... process ...
+        except etree.XMLSyntaxError as e:
+            # lxml might raise an error like "Detected an entity expansion attack"
+            print(f"lxml Parse Error: {e}")
+        except Exception as e:
+             print(f"Error: {e}")
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" XML payload (or variations with fewer nested entities if the full one is blocked by infrastructure) to all XML parsing endpoints. Observe the application's response time and server resource usage (CPU, memory). A vulnerable application will likely hang, crash, or become unresponsive. Secure parsers should reject the input quickly with an error related to DTDs, entities, or resource limits.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Using standard Java XML parsers (`DocumentBuilderFactory`, `SAXParserFactory`, `XMLInputFactory`) without disabling DTDs or limiting entity expansion.
+
+    #### Vulnerable Scenario 1: Default `DocumentBuilderFactory`
+    As with XXE, older or misconfigured defaults might allow DTD processing and entity expansion.
+    ```java
+    // parser/XmlProcessor.java
+    import javax.xml.parsers.DocumentBuilder;
+    import javax.xml.parsers.DocumentBuilderFactory;
+    import org.w3c.dom.Document;
+    import org.xml.sax.InputSource;
+    import java.io.StringReader;
+
+    public Document parseXml(String xmlData) throws Exception {
+        // DANGEROUS: Default settings might allow DTD processing and
+        // unbounded internal entity expansion ("Billion Laughs").
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        // Parsing the Billion Laughs payload here could consume huge memory/CPU.
+        return builder.parse(new InputSource(new StringReader(xmlData)));
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `XMLInputFactory` (StAX) without Limits
+    Defaults might allow entity expansion leading to DoS.
+    ```java
+    // parser/StaxProcessor.java
+    import javax.xml.stream.XMLInputFactory;
+    import javax.xml.stream.XMLStreamReader;
+    import java.io.StringReader;
+
+    public void processXmlStax(String xmlData) throws Exception {
+        // DANGEROUS: Defaults might allow entity expansion.
+        XMLInputFactory factory = XMLInputFactory.newInstance();
+        XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xmlData));
+        // Iterating through events might hang or crash on Billion Laughs payload.
+        while(reader.hasNext()){ reader.next(); }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Explicitly **disable DTD processing** using factory features. This is the primary defense against both XXE and XML bombs. If DTDs are needed, additionally **disable general entity expansion** (`setExpandEntityReferences(false)`) or rely on `FEATURE_SECURE_PROCESSING`.
+
+    #### Secure Code Example
+    ```java
+    // parser/XmlProcessor.java (Secure DOM Parser)
+    import javax.xml.parsers.DocumentBuilderFactory;
+    import javax.xml.XMLConstants; // For FEATURE_SECURE_PROCESSING
+
+    public Document parseXmlSecure(String xmlData) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+
+        // SECURE: Disable DTDs entirely (Prevents XXE and Entity Bombs via DTD).
+        factory.setFeature("[http://apache.org/xml/features/disallow-doctype-decl](http://apache.org/xml/features/disallow-doctype-decl)", true);
+
+        // SECURE: Disable external entities (Defense-in-depth for XXE)
+        factory.setFeature("[http://xml.org/sax/features/external-general-entities](http://xml.org/sax/features/external-general-entities)", false);
+        factory.setFeature("[http://xml.org/sax/features/external-parameter-entities](http://xml.org/sax/features/external-parameter-entities)", false);
+
+        // SECURE: Prevent entity expansion (Defense-in-depth for XML Bombs).
+        // Note: Disabling DTDs often makes this redundant, but explicit is good.
+        factory.setExpandEntityReferences(false);
+
+        // Optional: Use FEATURE_SECURE_PROCESSING (often recommended)
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+
+        // ... configure other features, create builder, set error handler ...
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        builder.setErrorHandler(new SimpleErrorHandler()); // Prevent errors going to stderr
+        return builder.parse(new InputSource(new StringReader(xmlData)));
+    }
+
+    // parser/StaxProcessor.java (Secure StAX Parser)
+    import javax.xml.stream.XMLInputFactory;
+
+    public void processXmlStaxSecure(String xmlData) throws Exception {
+        XMLInputFactory factory = XMLInputFactory.newInstance();
+
+        // SECURE: Disable DTDs entirely.
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        // SECURE: Disable external entity support (defense-in-depth for XXE).
+        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+        // SECURE: Prevent internal entity expansion (for XML bombs).
+        factory.setProperty(XMLInputFactory.IS_REPLACING_ENTITY_REFERENCES, false);
+
+        XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xmlData));
+        while(reader.hasNext()){ reader.next(); } // Should now parse safely or error quickly
+    }
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" XML payload to endpoints parsing XML. Monitor server CPU and memory usage closely. A vulnerable application will show a significant spike and likely become unresponsive. A secure application should reject the input quickly with a parsing error (e.g., DTDs disallowed, entity limits exceeded) without consuming excessive resources.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Using `System.Xml.XmlDocument`, `System.Xml.XmlReader`, `System.Xml.Linq.XDocument`. Modern .NET versions have **secure defaults** that prohibit DTDs (`DtdProcessing.Prohibit`) and limit entity expansion. Vulnerabilities occur in older versions or if defaults are overridden insecurely.
+
+    #### Vulnerable Scenario 1: Older .NET Defaults or `DtdProcessing.Parse`
+    ```csharp
+    // parser/XmlParser.cs
+    using System.Xml;
+
+    public XmlDocument LoadXmlUnsafe(string xmlData)
+    {
+        var xmlDoc = new XmlDocument();
+        // DANGEROUS: In older .NET, XmlResolver might be enabled by default.
+        // Explicitly allowing DTD parsing also enables entity expansion bombs.
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Parse }; // DANGEROUS
+        // Need to create reader with settings and load via reader
+        using(var reader = XmlReader.Create(new StringReader(xmlData), settings)) {
+           xmlDoc.Load(reader); // Vulnerable loading
+        }
+        // Or directly (if defaults were unsafe):
+        // xmlDoc.LoadXml(xmlData);
+        return xmlDoc;
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `XmlReader` with High `MaxCharactersFromEntities`
+    Even with DTDs prohibited, if entities are resolved from other sources, limits matter.
+    ```csharp
+    // parser/XmlReaderParser.cs
+    using System.Xml;
+    using System.IO;
+
+    public void ProcessXmlReaderUnsafeLimits(string xmlData)
+    {
+        var settings = new XmlReaderSettings();
+        settings.DtdProcessing = DtdProcessing.Ignore; // DTDs ignored, but entities might still expand
+        // DANGEROUS: Setting an extremely high limit for entity expansion size.
+        settings.MaxCharactersFromEntities = 0; // 0 might mean unlimited in some contexts, or use long.MaxValue
+
+        using (var reader = XmlReader.Create(new StringReader(xmlData), settings))
+        {
+            // Parsing might still consume huge resources if internal entities expand massively.
+            while (reader.Read()) { /* ... */ }
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Rely on the **secure defaults** in modern .NET: `DtdProcessing = DtdProcessing.Prohibit` and `XmlResolver = null`. Avoid overriding these unless absolutely necessary and understood. Ensure `MaxCharactersFromEntities` retains its default, reasonably small limit.
+
+    #### Secure Code Example
+    ```csharp
+    // parser/XmlParser.cs (Secure XmlDocument/XmlReader)
+    using System.Xml;
+    using System.IO;
+
+    public XmlDocument LoadXmlSecure(string xmlData)
+    {
+        var xmlDoc = new XmlDocument();
+        // SECURE: Explicitly set resolver to null (often default).
+        xmlDoc.XmlResolver = null;
+        try {
+             // LoadXml generally doesn't process DTDs if XmlResolver is null.
+             xmlDoc.LoadXml(xmlData);
+             return xmlDoc;
+        } catch (XmlException ex) { /* Handle: Should error safely on DTDs */ return null;}
+    }
+
+    public void ProcessXmlReaderSecure(string xmlData)
+    {
+        var settings = new XmlReaderSettings();
+        // SECURE: Explicitly prohibit DTD processing (default in modern .NET).
+        settings.DtdProcessing = DtdProcessing.Prohibit;
+        // SECURE: Ensure resolver is null (default when DTDs prohibited).
+        settings.XmlResolver = null;
+        // SECURE: Keep default entity size limits.
+
+        try {
+            using (var reader = XmlReader.Create(new StringReader(xmlData), settings))
+            {
+                 while (reader.Read()) { /* process */ }
+            }
+        } catch (XmlException ex) { /* Handle: Should error safely */ }
+    }
+
+    // Secure XDocument (Defaults are generally safe)
+    using System.Xml.Linq;
+    public void ProcessXDocumentSecure(string xmlData)
+    {
+         try {
+              // SECURE: XDocument.Parse defaults prohibit DTDs.
+              XDocument doc = XDocument.Parse(xmlData, LoadOptions.None);
+         } catch (XmlException ex) { /* Handle */ }
+    }
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" payload. Verify that the parser (using secure defaults or explicit settings like `DtdProcessing.Prohibit`) rejects the input quickly with an appropriate `XmlException` (e.g., "DTD is prohibited") without consuming excessive memory or CPU. Check .NET framework version being used.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Using `SimpleXMLElement`, `DOMDocument`, etc. Disabling DTDs via `libxml_disable_entity_loader` is the primary defense.
+
+    #### Vulnerable Scenario 1: `simplexml_load_string` without Protection (PHP < 8.0)
+    ```php
+    <?php
+    // Assume PHP < 8.0 or explicit override enabling entities
+    $xmlData = file_get_contents('php://input'); // Read POST data
+
+    // DANGEROUS: Default simplexml_load_string might expand internal entities from DTD.
+    $xml = simplexml_load_string($xmlData); // Billion Laughs payload crashes this
+
+    if ($xml === false) { echo "Failed loading XML"; }
+    else { echo "Processing"; }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: `DOMDocument` without Protection
+    ```php
+    <?php
+    $xmlData = file_get_contents('php://input');
+    $dom = new DOMDocument();
+
+    // DANGEROUS: Default loadXML might expand internal entities.
+    $dom->loadXML($xmlData); // Billion Laughs payload crashes this
+
+    echo "Processing";
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    **Explicitly disable external entity loading** using `libxml_disable_entity_loader(true)` before parsing any untrusted XML. This prevents the processing of DTDs necessary for the attack. Use options like `LIBXML_NONET` and potentially `LIBXML_NOENT` (with caution) for defense-in-depth.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // Secure SimpleXML
+    $xmlData = file_get_contents('php://input');
+
+    // SECURE: Disable entity loader before parsing.
+    $previous_loader_state = libxml_disable_entity_loader(true);
+
+    // Parse the XML safely. LIBXML_NONET prevents network access too.
+    $xml = simplexml_load_string($xmlData, "SimpleXMLElement", LIBXML_NONET);
+
+    // SECURE: Restore previous loader state if necessary.
+    libxml_disable_entity_loader($previous_loader_state);
+
+    if ($xml === false) {
+        echo "Failed loading XML\n";
+        // Log libxml_get_errors()
+    } else {
+        echo "Processing Complete\n";
+    }
+
+    // Secure DOMDocument
+    $dom = new DOMDocument();
+
+    $previous_loader_state = libxml_disable_entity_loader(true);
+    // Use LIBXML_NONET for defense in depth
+    $loaded = $dom->loadXML($xmlData, LIBXML_NONET);
+    libxml_disable_entity_loader($previous_loader_state);
+
+    if ($loaded) {
+        echo "DOM Processing Complete\n";
+    } else {
+        echo "Failed loading DOM XML\n";
+         // Log libxml_get_errors()
+    }
+    ?>
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" payload to XML parsing endpoints. Verify that `libxml_disable_entity_loader(true)` is called before parsing. The parser should reject the input quickly (often returning `false` or throwing an exception related to DTDs/entities) without high resource usage. Check PHP version.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Using libraries like `libxmljs`, `xmldom`. Secure configuration is crucial.
+
+    #### Vulnerable Scenario 1: `libxmljs` Allowing DTDs/Entities
+    Older versions or configurations that don't explicitly disable DTDs.
+    ```javascript
+    // parser/libxmljs_parser.js
+    const libxmljs = require("libxmljs");
+
+    function parseXmlLibXml(xmlData) {
+      try {
+        // DANGEROUS: Defaults might allow DTD loading and entity expansion.
+        const xmlDoc = libxmljs.parseXml(xmlData); // Vulnerable to Billion Laughs
+        // ... process doc ...
+      } catch (e) { /* ... */ }
+    }
+    ```
+
+    #### Vulnerable Scenario 2: `xmldom` (DOMParser)
+    `xmldom` might process DTDs by default, leading to entity expansion.
+    ```javascript
+    // parser/xmldom_parser.js
+    const { DOMParser } = require('xmldom');
+
+    function parseXmlDom(xmlData) {
+        try {
+            const parser = new DOMParser();
+            // DANGEROUS: Default parsing might expand entities.
+            const doc = parser.parseFromString(xmlData, 'application/xml');
+            // Processing 'doc' could trigger expansion DoS.
+            // ... process doc ...
+        } catch (e) { /* ... */ }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    Explicitly configure the parser to **disable DTD loading and entity expansion**. Check library documentation for specific flags (`dtdload`, `noent`, `doctype`, etc.).
+
+    #### Secure Code Example
+    ```javascript
+    // parser/libxmljs_parser.js (Secure)
+    const libxmljs = require("libxmljs");
+
+    function parseXmlLibXmlSecure(xmlData) {
+      try {
+        // SECURE: Explicitly disable DTD loading and entity substitution.
+        const options = {
+            // dtdload: false, // Do not load external DTDs
+            doctype: false, // Do not process DOCTYPE declaration
+            noent: false,   // Do not substitute entities
+            nonet: true,    // Disable network access
+            // Add other safety options as per libxmljs docs
+        };
+        const xmlDoc = libxmljs.parseXml(xmlData, options);
+        // ... process doc ...
+      } catch (e) {
+        // Should catch errors related to DTDs/Entities being disallowed
+        console.error("libxmljs parse error:", e);
+      }
+    }
+
+    // parser/xmldom_parser.js (Secure - Requires checking options)
+    const { DOMParser } = require('xmldom');
+
+    function parseXmlDomSecure(xmlData) {
+        try {
+            // SECURE: Check xmldom documentation for options to disable DTDs/entities.
+            // It might involve providing custom handlers or flags.
+            // Example: Using error handler to detect/stop DTD processing.
+            let containsDoctype = false;
+            const parser = new DOMParser({
+                locator: {},
+                errorHandler: {
+                    warning: (w) => { /* Ignore */ },
+                    error: (e) => { throw e; },
+                    fatalError: (e) => { throw e; }
+                },
+                // Need to investigate specific options for entity control if they exist.
+                // The primary defense is often preventing DTD processing itself.
+            });
+             // Pre-check for DOCTYPE might be necessary if no direct flag exists
+            if (xmlData.toUpperCase().includes("<!DOCTYPE")) {
+                 throw new Error("DOCTYPE is forbidden.");
+            }
+            const doc = parser.parseFromString(xmlData, 'application/xml');
+            // ... process doc ...
+        } catch (e) {
+            console.error("xmldom parse error:", e); // Should catch DOCTYPE error
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" payload. Check library documentation for secure parsing options (`dtdload`, `noent`, etc.) and ensure they are used. Verify the parser rejects the malicious input quickly without consuming excessive resources.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Using `Nokogiri` or `REXML`. Nokogiri defaults are generally safe. REXML needs explicit configuration.
+
+    #### Vulnerable Scenario 1: `REXML` Defaults (Older Ruby)
+    ```ruby
+    # parser/rexml_parser.rb
+    require 'rexml/document'
+
+    def parse_rexml(xml_data)
+      begin
+        # DANGEROUS: Older Ruby/REXML might allow entity expansion by default.
+        doc = REXML::Document.new(xml_data) # Billion Laughs payload crashes this
+        # ... process doc ...
+      rescue REXML::ParseException => e
+        # ... handle error ...
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: `Nokogiri` with DTD Loading Enabled
+    Explicitly enabling DTD loading might reintroduce risk if internal limits are bypassed.
+    ```ruby
+    # parser/nokogiri_parser.rb
+    require 'nokogiri'
+
+    def parse_nokogiri_unsafe(xml_data)
+      begin
+        # DANGEROUS: Explicitly enabling DTD loading, although Nokogiri
+        # has some internal limits, this increases risk surface.
+        doc = Nokogiri::XML(xml_data) do |config|
+          config.strict.dtdload # Enable DTD loading
+        end
+        # ... process doc ...
+      rescue Nokogiri::XML::SyntaxError => e
+        # ...
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **`Nokogiri`:** Rely on the **secure defaults** (no DTD loading). Avoid enabling `dtdload` or related options.
+    * **`REXML`:** Explicitly **disable entity expansion** by setting `:entity_expansion_limit` to 0 or a small number.
+
+    #### Secure Code Example
+    ```ruby
+    # parser/rexml_parser.rb (Secure)
+    require 'rexml/document'
+
+    def parse_rexml_secure(xml_data)
+      begin
+        # SECURE: Explicitly disable entity expansion.
+        doc = REXML::Document.new(xml_data, { entity_expansion_limit: 0 })
+        # ... process doc ...
+      rescue REXML::ParseException => e
+        # Should error safely if DTD entities are present
+        puts "REXML Parse Error: #{e.message}"
+      rescue => e # Catch potential resource limit errors too
+        puts "Error: #{e.message}"
+      end
+    end
+
+    # parser/nokogiri_parser.rb (Secure)
+    require 'nokogiri'
+
+    def parse_nokogiri_secure(xml_data)
+      begin
+        # SECURE: Use default Nokogiri parser options (no DTD loading).
+        doc = Nokogiri::XML(xml_data)
+        # Or be explicit with safe options:
+        # doc = Nokogiri::XML(xml_data) { |config| config.strict.nonet } # NONET prevents network access
+        # ... process doc ...
+      rescue Nokogiri::XML::SyntaxError => e
+        # Nokogiri often raises errors like "Entity expansion detected"
+        puts "Nokogiri Parse Error: #{e.message}"
+      end
+    end
+    ```
+
+    #### Testing Strategy
+    Submit the "Billion Laughs" payload to XML parsing endpoints. Verify `REXML` (with limit 0) or `Nokogiri` (by default) rejects the input quickly with errors related to entities or resource limits, without consuming excessive CPU/memory.
+  </Tab>
+</Tabs>
