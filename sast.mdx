@@ -1,72 +1,90 @@
 ---
-title: 'SAST'
-description: 'Learn about Codepure’s Static Application Security Testing (SAST).'
+title: "Static Application Security Testing (SAST)"
+sidebarTitle: "SAST"
+description: "Learn how Codepure’s high-speed SAST engine finds and fixes vulnerabilities in your source code."
+icon: "shield-alt"
+iconType: "solid"
 ---
 
-# What it is
-Codepure’s Static Application Security Testing (SAST) scans your source code to find security issues before your application is deployed. It works during development, helping your team fix problems early when they are easier and cheaper to resolve.
+## What is Codepure SAST?
 
-# How it works
-SAST analyzes your code without running the application. It checks for dangerous coding patterns and insecure practices. This helps you catch vulnerabilities like:
+Static Application Security Testing (SAST) is a "white-box" security testing method that scans your application's source code to find vulnerabilities *before* it's ever run.
 
-* SQL Injection – attackers inserting harmful database queries.
+Codepure's SAST engine integrates directly into your development workflow, acting like a security-focused linter for your entire codebase. It analyzes the code paths, data flows, and configurations to identify dangerous coding patterns and flaws that could lead to a breach.
 
-* Cross-Site Scripting (XSS) – injecting malicious scripts into web pages.
+---
 
-* Path Traversal – attackers accessing files or directories outside the intended folder.
+## The "Shift Left" Advantage
 
-# Why it’s important
-By integrating SAST early in your development lifecycle (Shift Left), you ensure that security is built into your code from the start. This means:
+By integrating SAST early in your development lifecycle (a practice known as "shifting left"), you ensure that security is built into your code from the start, not bolted on at the end.
 
-* Early detection – find vulnerabilities before they reach production.
+* **Find Flaws Early:** Detect vulnerabilities during the coding phase, long before they can reach production.
+* **Lower Remediation Costs:** Fixing a bug is 10-100x cheaper in development than in production.
+* **Empower Developers:** Give your team immediate security feedback so they can learn and write more secure code over time.
 
-* Lower cost to fix – address issues during coding instead of after release.
+---
 
-* Improved security – reduce the risk of breaches and data leaks.
+## Key Benefits of Codepure's SAST
 
-# Key benefits of Codepure’s SAST
+While many tools run SAST, Codepure's engine is designed for the speed and accuracy modern development teams need.
 
-* Works with multiple programming languages and frameworks.
+<CardGroup cols={2}>
+  <Card title="Blazing Fast Scans" icon="bolt">
+    Our core SAST engine is built in **C++23** for maximum speed and efficiency. This means faster scan results that don't slow down your CI/CD pipeline.
+  </Card>
+  <Card title="High-Accuracy, Low Noise" icon="bullseye-arrow">
+    We focus on delivering high-confidence results. By minimizing false positives, your team can focus on fixing real vulnerabilities, not chasing ghosts.
+  </Card>
+  <Card title="Developer-First Remediation" icon="code-merge">
+    We don't just point out problems. Codepure provides clear, actionable guidance—often with code suggestions—on *how* to fix the vulnerability.
+  </Card>
+  <Card title="Seamless CI/CD Integration" icon="cogs">
+    Automate security checks on every commit or pull request. Codepure integrates with your existing CI/CD pipelines to make security an invisible part of your workflow.
+  </Card>
+</CardGroup>
 
-* Provides clear, actionable guidance for fixing vulnerabilities.
+---
 
-* Supports integration with CI/CD pipelines for automated scanning.
+## What Codepure SAST Finds
 
-* Helps meet compliance requirements and security standards.
+Codepure's SAST engine is trained to find a wide variety of vulnerability classes, including many from the **OWASP Top 10**. This provides broad protection against the most common and critical risks.
 
-# Example: Running a SAST Scan
+* **Injection Flaws (A03):** Detects patterns that could lead to [SQL Injection (CWE-89)](/vulnerabilities/sql-injection), [Command Injection (CWE-78)](/vulnerabilities/command-injection), and [EL Injection (CWE-917)](/vulnerabilities/cwe-917).
+* **Cryptographic Failures (A02):** Finds weak algorithms like [CWE-327](/vulnerabilities/cwe-327) or hard-coded secrets like [CWE-259](/vulnerabilities/cwe-259).
+* **Broken Access Control (A01):** Identifies flaws like [Path Traversal (CWE-22)](/vulnerabilities/path-traversal).
+* **Insecure Design (A04):** Catches risky coding patterns like the use of `eval()` or dangerous file uploads ([CWE-434](/vulnerabilities/cwe-434)).
+* **Security Misconfiguration (A05):** Discovers issues like disabling security features or insecure XML parsers ([CWE-611](/vulnerabilities/xxe)).
 
-1. Select and Scan
+---
 
-* From the dashboard, select the project you want to scan.
+## Dashboard Guide: Running Your First Scan
 
-* Choose SAST and click Start Scanning.
+Running a SAST scan in Codepure is a simple, three-step process.
+
+### Step 1: Start Your Scan
+
+From the dashboard, select the project you want to scan. In the project view, choose **SAST** and click **Start Scanning**.
 
 <Frame>
   <img src="/assets/sast2.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-2. View Results
+### Step 2: Triage Vulnerabilities
 
-* When the scan finishes, click the project name.
-
-* Click Full Result to view all findings. You can filter by CWE, OWASP, or PCI.
+When the scan finishes, click the project name to go to the results dashboard. Click **Full Result** to view all findings. You can use the filters to sort by severity, file, or vulnerability type (e.g., CWE, OWASP, PCI).
 
 <Frame>
   <img src="/assets/sast-1.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-3. Fix the Vulnerability (Remediation)
+### Step 3: Remediate and Resolve
 
-* Click Open on a vulnerability to view details.
+Click **Open** on any vulnerability to see the in-depth details. On the right-hand side, the **Remediation** tab provides clear, actionable guidance on how to fix the issue, often with secure code examples.
 
-* On the right-hand side, you’ll see the Remediation section with suggested code changes or instructions.
-
-* Apply the fix in your code, then change the status to Fixed in Codepure.
+Once you have applied the fix in your source code, you can change the vulnerability's status to **Fixed** in the dashboard.
 
 <Frame>
   <img src="/assets/sast-sqli.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-
-
+By following this "Scan, Triage, Remediate" loop, you can systematically reduce your application's security risk with each development cycle.
