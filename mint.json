@@ -101,6 +101,12 @@
       ]
     },
     {
+      "group": "A04:2021 – Insecure Design",
+      "pages": [
+        "vulnerabilities/scwe-209"
+      ]
+    },
+    {
       "group": "A05:2021 – Security Misconfiguration",
       "pages": [
         "vulnerabilities/xxe"

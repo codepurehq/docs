@@ -1,0 +1,500 @@
+---
+title: "Generation of Error Message Containing Sensitive Information"
+sidebarTitle: "Sensitive Error Messages (CWE-209)"
+description: "Mitigation for exposing sensitive system details, stack traces, or configuration via error messages."
+icon: "bug-slash"
+iconType: "solid"
+---
+
+## Overview
+
+This vulnerability occurs when an application reveals **sensitive information** through its error messages. This can include detailed stack traces, database error messages, internal file paths, framework versions, private IP addresses, or configuration details. Attackers deliberately trigger errors to gather this information, which helps them understand the application's technology stack, structure, and potential weaknesses. 🕵️‍♂️📜
+
+---
+
+## Business Impact
+
+Exposing sensitive information via errors provides attackers with valuable reconnaissance data.
+* **Technology Fingerprinting:** Reveals specific software versions (e.g., "Apache/2.4.54", "Python/3.9.1"), allowing attackers to look for known exploits.
+* **Internal Structure Disclosure:** Leaked file paths (`/var/www/app/models/user.py`) reveal the application's directory structure.
+* **Database Information:** SQL error messages can leak table names, column names, or data types, aiding SQL Injection attacks.
+* **Debugging Information:** Stack traces expose function names, variable names, and code logic, helping attackers find other flaws.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-209](https://cwe.mitre.org/data/definitions/209.html)
+  **OWASP Top 10 (2021):** A04:2021 - Insecure Design
+  **Severity:** Low to Medium (provides information, doesn't directly cause compromise)
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+This is primarily a **configuration** issue. Most modern web frameworks have a "debug" or "development" mode that intentionally shows detailed errors, and a "production" mode that shows generic error pages. The vulnerability is almost always caused by deploying to production **without disabling debug mode**.
+
+The fix involves:
+1.  **Disabling Debug Mode:** Ensure the framework's production setting is active.
+2.  **Custom Error Pages:** Configure user-friendly, generic error pages (e.g., for 404 Not Found, 500 Internal Server Error) that do not reveal internal details.
+3.  **Logging:** Log detailed errors server-side for developers, but do not display them to users.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Mainly controlled by the `DEBUG` setting in Django's `settings.py` or `FLASK_ENV` / `FLASK_DEBUG` environment variables in Flask.
+
+    #### Vulnerable Scenario 1: Django Debug Mode in Production
+    ```python
+    # settings.py (Production Deployment)
+    # DANGEROUS: If True, Django shows detailed error pages with stack traces,
+    # settings, request details, etc.
+    DEBUG = True
+    ALLOWED_HOSTS = ['yourdomain.com'] # Even with allowed hosts, DEBUG=True is risky
+    ```
+
+    #### Vulnerable Scenario 2: Flask Debug Mode in Production
+    Running Flask with debug mode enabled via environment variable or code.
+    ```bash
+    # DANGEROUS: Running Flask in debug mode on production server
+    export FLASK_ENV=development
+    export FLASK_DEBUG=1
+    flask run --host=0.0.0.0
+    ```
+    ```python
+    # app.py (Alternative dangerous way)
+    if __name__ == '__main__':
+        # DANGEROUS: Never run with debug=True in production.
+        app.run(debug=True, host='0.0.0.0')
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Set `DEBUG = False` in your production `settings.py`. Configure `ADMINS` and `LOGGING` to receive error details server-side. Create custom HTML templates for error views (e.g., `templates/500.html`, `templates/404.html`).
+    * **Flask:** Ensure `FLASK_ENV` is set to `production` and `FLASK_DEBUG` is `0` (or unset) in production. Use Flask's `@app.errorhandler()` decorator or `app.register_error_handler()` to define custom, generic error pages. Configure logging.
+
+    #### Secure Code Example
+    ```python
+    # settings.py (Django Production - Secure)
+    DEBUG = False # SECURE
+    ALLOWED_HOSTS = ['yourdomain.com', '[www.yourdomain.com](https://www.yourdomain.com)']
+
+    # Configure logging to capture details server-side
+    LOGGING = { ... }
+    ADMINS = [('Admin', 'admin@yourdomain.com')] # For error emails
+    ```
+    ```python
+    # app.py (Flask Production - Secure)
+    from flask import Flask, render_template
+
+    app = Flask(__name__)
+    # Load production config where DEBUG=False
+    app.config.from_object('config.ProductionConfig')
+
+    @app.errorhandler(500)
+    def internal_server_error(e):
+        # SECURE: Log the detailed error server-side
+        app.logger.error(f'Server Error: {e}', exc_info=True)
+        # SECURE: Show a generic error page to the user
+        return render_template('500.html'), 500
+
+    @app.errorhandler(404)
+    def page_not_found(e):
+        return render_template('404.html'), 404
+
+    # Run via WSGI server (like Gunicorn/uWSGI), not app.run() in production
+    ```
+
+    #### Testing Strategy
+    Intentionally trigger errors in the deployed application (e.g., browse to non-existent pages for 404, cause exceptions for 500). Verify that generic, user-friendly error pages are shown, and **no stack traces, configuration details, or internal paths** are visible in the browser. Check server logs to ensure detailed errors *are* being recorded there.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Controlled by Spring Boot's `server.error.include-stacktrace` property and `server.error.whitelabel.enabled`.
+
+    #### Vulnerable Scenario 1: Including Stack Traces
+    ```properties
+    # application.properties (Production)
+    # DANGEROUS: Shows full stack trace in browser/API response.
+    server.error.include-stacktrace=always
+    ```
+
+    #### Vulnerable Scenario 2: Default Whitelabel Error Page
+    While less sensitive than a full stack trace, the default Spring Boot "Whitelabel Error Page" still reveals that the application uses Spring Boot and potentially exposes some context path information.
+    ```properties
+    # application.properties (Production)
+    # DANGEROUS: Shows the default Spring error page.
+    server.error.whitelabel.enabled=true
+    server.error.include-stacktrace=never # Stack trace is off, but whitelabel reveals framework info
+    ```
+
+    #### Mitigation and Best Practices
+    Set `server.error.include-stacktrace=never` (or `on_param` for controlled debugging). Set `server.error.whitelabel.enabled=false`. Create custom error views (e.g., map error paths in `@ControllerAdvice` or provide static `error/404.html`, `error/500.html` pages). Configure server-side logging.
+
+    #### Secure Code Example
+    ```properties
+    # application.properties (Production - Secure)
+    # SECURE: Never include stack traces in responses.
+    server.error.include-stacktrace=never
+    # SECURE: Disable the default Spring error page.
+    server.error.whitelabel.enabled=false
+    ```
+    ```java
+    // GlobalExceptionHandler.java (Example using @ControllerAdvice)
+    import org.slf4j.Logger;
+    import org.slf4j.LoggerFactory;
+    import org.springframework.web.bind.annotation.ControllerAdvice;
+    import org.springframework.web.bind.annotation.ExceptionHandler;
+    import org.springframework.web.servlet.ModelAndView;
+    import javax.servlet.http.HttpServletRequest;
+
+    @ControllerAdvice
+    public class GlobalExceptionHandler {
+
+        private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+        @ExceptionHandler(Exception.class) // Catch general exceptions
+        public ModelAndView defaultErrorHandler(HttpServletRequest req, Exception e) throws Exception {
+            // SECURE: Log the detailed error server-side
+            logger.error("Unhandled exception for request: {}", req.getRequestURL(), e);
+
+            // SECURE: Show a generic error view
+            ModelAndView mav = new ModelAndView();
+            mav.addObject("exception", null); // Don't pass exception details
+            mav.addObject("url", req.getRequestURL());
+            mav.setViewName("error/generic"); // Path to your generic error template
+            return mav;
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Trigger 404 and 500 errors. Verify that custom, generic error pages are displayed. Inspect the HTML source and network response to ensure no stack traces or sensitive framework details are present. Check server logs for detailed error information.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Controlled by `app.UseDeveloperExceptionPage()` vs. `app.UseExceptionHandler()` in `Startup.cs` based on the environment.
+
+    #### Vulnerable Scenario 1: Developer Exception Page in Production
+    The check for `env.IsDevelopment()` is flawed or missing, causing the detailed developer page to be used in production.
+    ```csharp
+    // Startup.cs - Configure()
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        // DANGEROUS: This logic might incorrectly evaluate to true in production,
+        // or the UseDeveloperExceptionPage() call might be outside the 'if'.
+        // Always ensure this ONLY runs in Development.
+        if (env.IsDevelopment() || env.IsStaging()) // Staging might also be risky
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error");
+            // The default HSTS value is 30 days. You may want to change this for production scenarios, see [https://aka.ms/aspnetcore-hsts](https://aka.ms/aspnetcore-hsts).
+            app.UseHsts();
+        }
+        // If UseDeveloperExceptionPage() was outside the 'if', it would run always!
+        // app.UseDeveloperExceptionPage(); // DANGEROUS if placed here
+        // ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Custom Error Handler Leaking Details
+    A custom error handler logs the error but also passes the full exception details to the error view.
+    ```csharp
+    // Controllers/HomeController.cs
+    [AllowAnonymous]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public IActionResult Error()
+    {
+        var exceptionHandlerPathFeature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
+        // SECURE: Log the detailed error
+        _logger.LogError(exceptionHandlerPathFeature?.Error, "Unhandled error occurred.");
+
+        // DANGEROUS: Passing full exception details to the view.
+        return View(new ErrorViewModel {
+            RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier,
+            ExceptionDetails = exceptionHandlerPathFeature?.Error // Leaking exception
+        });
+    }
+    ```
+    ```html
+    @model ErrorViewModel
+    <h2>Error Details (DO NOT SHOW IN PRODUCTION):</h2>
+    <p>@Model.ExceptionDetails?.Message</p>
+    <pre>@Model.ExceptionDetails?.StackTrace</pre> ```
+
+    #### Mitigation and Best Practices
+    Strictly ensure `app.UseDeveloperExceptionPage()` is only called when `env.IsDevelopment()`. Use `app.UseExceptionHandler("/Path/To/Generic/Error")` for all other environments. Ensure your custom error handler action logs details server-side but passes only minimal, non-sensitive information (or none) to the view model rendered for the user.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs - Configure() (Secure)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            // SECURE: Use a generic handler for non-development environments.
+            app.UseExceptionHandler("/Home/Error");
+            app.UseHsts();
+        }
+        app.UseHttpsRedirection();
+        // ...
+    }
+
+    // Controllers/HomeController.cs (Secure Error Action)
+    public IActionResult Error()
+    {
+        var exceptionHandlerPathFeature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
+        // SECURE: Log the detailed error server-side
+        _logger.LogError(exceptionHandlerPathFeature?.Error, "Unhandled error for RequestId {RequestId}", Activity.Current?.Id ?? HttpContext.TraceIdentifier);
+
+        // SECURE: Pass only necessary, non-sensitive info (like RequestId for support)
+        return View(new ErrorViewModel {
+            RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier
+            // DO NOT pass exception details
+        });
+    }
+    ```
+    ```html
+    @model ErrorViewModel
+    @if (!string.IsNullOrEmpty(Model.RequestId))
+    {
+        <p><strong>Request ID:</strong> <code>@Model.RequestId</code></p>
+        <p>If you contact support, please provide this ID.</p>
+    }
+    ```
+
+    #### Testing Strategy
+    Trigger errors in a production-like environment. Verify the generic error page defined in `UseExceptionHandler` is shown. Ensure no stack traces or sensitive `appsettings.json` values are displayed. Check server logs for detailed error information.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Controlled by `APP_DEBUG` in Laravel's `.env` file, or `display_errors` and `error_reporting` directives in `php.ini` or set via `ini_set()`.
+
+    #### Vulnerable Scenario 1: `APP_DEBUG=true` in Production
+    ```ini
+    # .env (Production)
+    APP_NAME=Laravel
+    APP_ENV=production
+    # DANGEROUS: Shows detailed Ignition/Whoops error pages in production.
+    APP_DEBUG=true
+    APP_URL=[https://myapp.com](https://myapp.com)
+    ```
+
+    #### Vulnerable Scenario 2: `display_errors = On` in `php.ini`
+    Even if `APP_DEBUG=false`, PHP itself might be configured to display errors directly in the output.
+    ```ini
+    ; php.ini (Production Server)
+    ; DANGEROUS: Errors, including paths and potentially sensitive info,
+    ; will be rendered directly in the HTML output.
+    display_errors = On
+    error_reporting = E_ALL
+    log_errors = On ; Logging is good, but display_errors should be Off
+    error_log = /var/log/php_errors.log
+    ```
+
+    #### Mitigation and Best Practices
+    * **Laravel:** Set `APP_DEBUG=false` in your production `.env` file. Configure Laravel's logging channels in `config/logging.php` to capture errors server-side. Create custom Blade views for error pages (e.g., `resources/views/errors/500.blade.php`).
+    * **General PHP:** In `php.ini` for production, set `display_errors = Off` and `log_errors = On`. Configure `error_reporting` appropriately (e.g., `E_ALL & ~E_DEPRECATED & ~E_STRICT`) and set `error_log` to a secure file path. Use `set_exception_handler()` to define a custom handler that logs details and shows a generic page.
+
+    #### Secure Code Example
+    ```ini
+    # .env (Laravel Production - Secure)
+    APP_ENV=production
+    APP_DEBUG=false # SECURE
+    APP_URL=[https://myapp.com](https://myapp.com)
+    LOG_CHANNEL=stack # Or configure specific channels like Slack, file etc.
+    ```
+    ```ini
+    ; php.ini (Production - Secure)
+    display_errors = Off    ; SECURE
+    log_errors = On       ; SECURE (Log errors)
+    error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT ; Sensible reporting level
+    error_log = /var/log/php_errors.log ; Ensure permissions are correct
+    ```
+
+    #### Testing Strategy
+    Trigger PHP errors (e.g., divide by zero, call undefined function) and framework exceptions in a production environment. Verify that no PHP error messages, stack traces, file paths, or framework debug screens (like Ignition) are shown to the browser. Check the configured `error_log` file or Laravel logs (`storage/logs/laravel.log`) for detailed error information.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Typically handled by Express error-handling middleware. The vulnerability is sending the full `err` object (including `err.stack`) to the client in production.
+
+    #### Vulnerable Scenario 1: Leaky Error Handler Middleware
+    ```javascript
+    // app.js
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    app.get('/make-error', (req, res, next) => {
+        next(new Error("Something went wrong!"));
+    });
+
+    // Error handling middleware (MUST be last)
+    app.use((err, req, res, next) => {
+        const statusCode = err.status || 500;
+        res.status(statusCode);
+
+        // DANGEROUS: Sends stack trace even in production.
+        res.json({
+            message: err.message,
+            // Send stack only in development, NOT production
+            stack: isProd ? '🥞' : err.stack // Bad: Sending stack in !isProd means sending in prod if isProd is false
+            // Correct logic should be: stack: isProd ? undefined : err.stack
+        });
+    });
+    ```
+    *Correction:* The example logic was flawed. Correct dangerous logic:
+    ```javascript
+    // Error handling middleware (Corrected DANGEROUS example)
+    app.use((err, req, res, next) => {
+        const statusCode = err.status || 500;
+        res.status(statusCode);
+        console.error(err.stack); // Log it for devs
+
+        // DANGEROUS: Sending the full error object or stack in production.
+        if (process.env.NODE_ENV !== 'production') {
+            // Dev: Send details
+            res.json({ message: err.message, stack: err.stack });
+        } else {
+            // Prod: Accidentally still sending sensitive info
+            res.json({ message: err.message, /* maybe other sensitive props */ }); // Leak
+            // Or just sending the whole err object: res.json(err);
+        }
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Uncaught Exceptions
+    If no error handling middleware catches an error, Node might crash or default handlers might leak stack traces to the console/output depending on the environment.
+
+    #### Mitigation and Best Practices
+    Implement a robust Express error-handling middleware (a function with `(err, req, res, next)` arguments, placed *after* all routes). Inside this middleware, check `process.env.NODE_ENV`. If it's `'production'`, log the full `err` object server-side but send only a generic error message/object to the client.
+
+    #### Secure Code Example
+    ```javascript
+    // app.js (Secure Error Handler)
+    const express = require('express');
+    const app = express();
+    const isProd = (process.env.NODE_ENV === 'production');
+
+    // ... your routes ...
+    app.get('/make-error', (req, res, next) => {
+        next(new Error("Something went wrong!"));
+    });
+
+
+    // SECURE: Error handling middleware (place last)
+    app.use((err, req, res, next) => {
+        const statusCode = err.status || 500;
+
+        // SECURE: Log the full error server-side
+        console.error(`[${new Date().toISOString()}] ${statusCode} ${req.method} ${req.url} Error: ${err.message}`);
+        console.error(err.stack); // Log stack trace
+
+        res.status(statusCode);
+
+        // SECURE: Send generic response in production
+        if (isProd) {
+            res.json({ message: "An internal server error occurred." });
+        } else {
+            // Development: Send more details
+            res.json({ message: err.message, stack: err.stack });
+        }
+    });
+
+    // Add listener for uncaught exceptions/rejections for robustness
+    process.on('uncaughtException', (err) => {
+        console.error('UNCAUGHT EXCEPTION:', err);
+        // Consider graceful shutdown logic here
+    });
+    ```
+
+    #### Testing Strategy
+    Trigger errors in a production-like environment (`NODE_ENV=production`). Verify that only generic JSON messages or HTML pages are returned. Ensure no stack traces or internal object details are present in the response body. Check server logs (console or log files) for detailed error information.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Controlled by `config.consider_all_requests_local` in Rails environment files.
+
+    #### Vulnerable Scenario 1: `consider_all_requests_local = true`
+    Setting this to `true` in `config/environments/production.rb` causes Rails to show detailed debug exceptions pages.
+    ```ruby
+    # config/environments/production.rb
+
+    Rails.application.configure do
+      # ...
+      # DANGEROUS: Shows detailed error pages with code snippets, request info etc.
+      config.consider_all_requests_local = true
+      # ...
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Custom Error Page Leaking Data
+    A custom error page (e.g., `public/500.html` or a view rendered by an `ExceptionApp`) might inadvertently include sensitive instance variables passed from the controller or environment details.
+    ```ruby
+    # app/controllers/concerns/exception_handler.rb (Example custom handler)
+    module ExceptionHandler
+      extend ActiveSupport::Concern
+
+      included do
+        rescue_from StandardError do |exception|
+          # SECURE: Log details
+          Rails.logger.error exception.message
+          Rails.logger.error exception.backtrace.join("\n")
+          # DANGEROUS: Passing the exception object to the view
+          render file: Rails.root.join('public', '500.html'), status: 500, locals: { exception: exception }
+        end
+      end
+    end
+    # If public/500.html or the rendered view then displays exception.message or similar...
+    ```
+
+    #### Mitigation and Best Practices
+    Ensure `config.consider_all_requests_local = false` in `config/environments/production.rb`. Customize static error pages (`public/404.html`, `public/500.html`, etc.) or use a custom `config.exceptions_app` that renders generic views without passing raw exception details. Configure logging for server-side details.
+
+    #### Secure Code Example
+    ```ruby
+    # config/environments/production.rb (Secure)
+    Rails.application.configure do
+      # ...
+      # SECURE: Ensures generic public/500.html etc. are shown
+      config.consider_all_requests_local = false
+
+      # Configure logging level
+      config.log_level = :info
+      # ...
+    end
+
+    # Example: config/routes.rb (Using a custom exceptions app)
+    # Rails.application.config.exceptions_app = self.routes
+
+    # Example: app/controllers/errors_controller.rb (Handles exceptions)
+    # class ErrorsController < ApplicationController
+    #   def show
+    #     # SECURE: Log exception from request.env['action_dispatch.exception']
+    #     exception = request.env['action_dispatch.exception']
+    #     Rails.logger.error "Rendering #{status_code} page due to exception: #{exception.inspect}" if exception
+    #     # Render a generic view without passing the exception object
+    #     render view_for_status_code, status: status_code
+    #   end
+    #   private
+    #   def status_code
+    #     params[:code] || 500
+    #   end
+    #   def view_for_status_code
+    #     # Path to your generic error views, e.g., views/errors/internal_server_error.html.erb
+    #     "errors/#{status_code}"
+    #   end
+    # end
+    ```
+
+    #### Testing Strategy
+    Trigger 404 and 500 errors in a production environment. Verify that the static `public/404.html` / `public/500.html` pages (or your custom generic error views) are displayed. Inspect the response source code for any stack traces, code snippets, or configuration details. Check `log/production.log` for detailed error information.
+  </Tab>
+</Tabs>
