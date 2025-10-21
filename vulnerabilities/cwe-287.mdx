@@ -1,0 +1,710 @@
+---
+title: "Improper Authentication"
+sidebarTitle: "Improper Authentication (CWE-287)"
+description: "Mitigation for flaws in authentication logic, such as accepting incorrect credentials, type juggling, or signature bypass."
+icon: "id-card-clip"
+iconType: "solid"
+---
+
+## Overview
+
+Improper Authentication occurs when an application incorrectly verifies, or fails to verify, a user's identity. This is a broad category covering various flaws in the login mechanism itself, distinct from missing authentication entirely (`CWE-306`) or authorization issues. Examples include:
+* Accepting incorrect passwords or credentials under certain conditions.
+* Vulnerabilities related to type juggling or comparison errors (e.g., `'0' == 0` being true in PHP).
+* Allowing authentication bypass through alternate channels or error conditions.
+* Incorrectly implementing cryptographic signature checks for token-based authentication (related to `CWE-347`).
+* Flaws in multi-factor authentication logic. 🔑❓
+
+---
+
+## Business Impact
+
+Flaws in the authentication mechanism itself can allow attackers to bypass login procedures entirely:
+* **Account Takeover:** Attackers gain access to arbitrary user accounts without needing the correct credentials.
+* **Privilege Escalation:** Attackers might bypass authentication for administrative accounts.
+* **Complete System Compromise:** If authentication is bypassed for critical system functions.
+
+---
+
+<Card title="Reference Details" icon="book-open" iconType="solid">
+  **CWE ID:** [CWE-287](https://cwe.mitre.org/data/definitions/287.html)
+  **Related CWEs:** CWE-288 (Auth Bypass Alt Path), CWE-290 (Spoofing), CWE-304 (Missing Critical Step)
+  **OWASP Top 10 (2021):** A07:2021 - Identification and Authentication Failures
+  **Severity:** Critical
+</Card>
+
+---
+
+## Framework-Specific Analysis and Remediation
+
+While modern frameworks provide robust authentication libraries (Django Auth, Spring Security, ASP.NET Core Identity, Passport.js, Devise), vulnerabilities often arise from:
+1.  **Custom Implementations:** Developers building their own authentication logic introduce subtle flaws.
+2.  **Misconfiguration:** Incorrectly configuring framework authentication (e.g., allowing null passwords, misconfiguring providers).
+3.  **Integration Errors:** Flaws in how different authentication systems (e.g., LDAP, OAuth, SAML) are integrated.
+
+**Key Remediation Principles:**
+1.  **Use Framework Defaults:** Rely on the built-in, vetted authentication mechanisms of your framework whenever possible.
+2.  **Strong Credential Comparison:** Use constant-time comparison functions for passwords and tokens to prevent timing attacks. Frameworks usually handle this internally.
+3.  **Type Safety:** Use strict comparisons (e.g., `===` in PHP/JS, `.equals()` in Java, strong typing) when checking credentials or states.
+4.  **Fail Securely:** Ensure error conditions during login do not accidentally grant access.
+5.  **Multi-Factor Authentication (MFA):** Implement MFA for enhanced security.
+
+---
+
+<Tabs>
+  <Tab title="Python">
+    #### Framework Context
+    Custom authentication backends in Django or manual password checking in Flask that contain logical errors.
+
+    #### Vulnerable Scenario 1: Custom Django Backend Error
+    A custom backend tries to handle multiple user types but allows bypass if an error occurs.
+    ```python
+    # myapp/auth_backends.py
+    from django.contrib.auth.backends import BaseBackend
+    from .models import StandardUser, AdminUser
+
+    class CustomAuthBackend(BaseBackend):
+        def authenticate(self, request, username=None, password=None):
+            user = None
+            try:
+                # Try finding as admin first
+                user = AdminUser.objects.get(username=username)
+            except AdminUser.DoesNotExist:
+                try:
+                    user = StandardUser.objects.get(username=username)
+                except StandardUser.DoesNotExist:
+                    return None # No user found
+            except Exception as e:
+                # DANGEROUS: If DB error occurs finding AdminUser,
+                # it might skip password check and return None, OR worse,
+                # flawed logic might proceed assuming a user was found.
+                print(f"Error finding user: {e}")
+                # return None # Correct behavior is to return None on error
+
+            # DANGEROUS: If an exception occurred above and user is None,
+            # this check might be skipped or fail unexpectedly.
+            # Also, check_password might be flawed if custom implemented.
+            if user and user.check_password(password):
+                 return user # Return the authenticated user object
+            return None # Password incorrect
+    ```
+
+    #### Vulnerable Scenario 2: Flask Manual Check with Null Password Issue
+    ```python
+    # app.py (Flask)
+    @app.route('/login', methods=['POST'])
+    def login():
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = find_user_by_username(username) # Assume this finds user dict/object
+
+        # DANGEROUS: If user exists but has a NULL or empty password stored in DB,
+        # and password input is also empty, this check might pass incorrectly.
+        # Depends heavily on how check_password_hash handles empty/null values.
+        # Also vulnerable if check_password_hash is not used at all.
+        if user and check_password_hash(user.password_hash, password): # Needs Werkzeug security
+             session['user_id'] = user.id
+             return redirect('/dashboard')
+        else:
+             flash('Invalid credentials')
+             return redirect('/login')
+    ```
+
+    #### Mitigation and Best Practices
+    * **Django:** Use the default `ModelBackend` or inherit from it carefully. Ensure custom `authenticate` methods handle all exceptions securely (fail closed by returning `None`). Rely on `user.check_password()`.
+    * **Flask:** Always use secure comparison functions like `werkzeug.security.check_password_hash`. Ensure users cannot register or exist with null/empty passwords. Handle exceptions properly.
+
+    #### Secure Code Example
+    ```python
+    # myapp/auth_backends.py (Secure Custom Backend)
+    from django.contrib.auth.backends import ModelBackend # Inherit for safety
+    from .models import StandardUser, AdminUser
+    from django.contrib.auth import get_user_model
+
+    class SecureCustomAuthBackend(ModelBackend): # Inherit default checks
+        def authenticate(self, request, username=None, password=None, **kwargs):
+            User = get_user_model() # Allows flexibility
+            try:
+                # Prefer finding user case-insensitively if needed
+                user = User.objects.get(username__iexact=username)
+            except User.DoesNotExist:
+                return None # User not found
+            except Exception as e:
+                print(f"DB Error during user lookup: {e}")
+                return None # Fail closed on error
+
+            # SECURE: Rely on Django's built-in check_password and active check
+            if user.check_password(password) and self.user_can_authenticate(user):
+                return user
+            return None # Password incorrect or user inactive
+    ```
+    ```python
+    # app.py (Flask - Secure Check)
+    from werkzeug.security import check_password_hash # Import correctly
+
+    @app.route('/login-secure', methods=['POST'])
+    def login_secure():
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if not username or not password: # Basic check for empty submission
+             flash('Username and password required')
+             return redirect('/login')
+
+        user = find_user_by_username(username)
+
+        # SECURE: check_password_hash handles hash comparison safely.
+        # Ensure user.password_hash exists and is not empty/null.
+        if user and user.password_hash and check_password_hash(user.password_hash, password):
+             session['user_id'] = user.id
+             # Regenerate session ID after login (Session Fixation defense)
+             # Requires session interface supporting regeneration
+             # session.regenerate() # Example name
+             return redirect('/dashboard')
+        else:
+             flash('Invalid credentials')
+             # Add rate limiting here (CWE-307)
+             return redirect('/login')
+    ```
+
+    #### Testing Strategy
+    Test login functionality thoroughly:
+    * **Invalid Credentials:** Ensure incorrect usernames/passwords fail.
+    * **Empty/Null Credentials:** Try logging in with empty username or password. Does it bypass login? (Should fail).
+    * **Error Conditions:** Try to cause database errors during login (e.g., overly long username). Does the application fail securely (deny access)?
+    * **Case Sensitivity:** Check if username comparisons are case-sensitive or insensitive as intended.
+    * **Timing Attacks:** If using custom comparison logic (not recommended), check if comparing incorrect passwords takes significantly less time than correct ones. Standard library functions usually prevent this.
+  </Tab>
+  <Tab title="Java">
+    #### Framework Context
+    Flaws in custom `AuthenticationProvider` implementations in Spring Security, incorrect use of `UserDetailsService`, or manual credential checking logic.
+
+    #### Vulnerable Scenario 1: Custom Provider Accepting Null Passwords
+    ```java
+    // config/CustomAuthProvider.java
+    public class CustomAuthProvider implements AuthenticationProvider {
+        // ... inject UserDetailsService ...
+        @Override
+        public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+            String username = authentication.getName();
+            String password = authentication.getCredentials().toString();
+            UserDetails user = userDetailsService.loadUserByUsername(username);
+
+            // DANGEROUS: If stored password hash is null/empty AND provided password is "",
+            // this might incorrectly pass if equals() handles null poorly or check is flawed.
+            // Also, doesn't use PasswordEncoder.matches().
+            if (user != null && user.getPassword().equals(password)) { // BAD comparison
+                 return new UsernamePasswordAuthenticationToken(user, password, user.getAuthorities());
+            } else {
+                 throw new BadCredentialsException("Invalid credentials");
+            }
+        }
+        // ... supports() method ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Error Handling Bypass
+    Logic that grants access if certain exceptions occur during the authentication check.
+    ```java
+    // service/LegacyAuthService.java
+    public boolean checkLogin(String username, String password) {
+        try {
+            // ... complex legacy check involving multiple steps ...
+            step1_validateUser(username);
+            step2_checkPassword(username, password); // This might throw specific exceptions
+            return true; // Success if no exceptions
+        } catch (UserNotFoundException e) {
+            return false;
+        } catch (IncorrectPasswordException e) {
+            return false;
+        } catch (AccountLockedException e) {
+            // DANGEROUS: Specific exception might be mishandled.
+            // If AccountLockedException implies user *exists* but is locked,
+            // returning 'true' here would bypass the lock.
+            // Should return false or throw a custom exception upwards.
+            System.err.println("Account locked - DEBUG BYPASS"); // Example flaw
+            return true; // INCORRECT!
+        } catch (Exception e) {
+            // DANGEROUS: Catching generic Exception and returning true bypasses auth on unexpected errors.
+            System.err.println("Unexpected auth error, granting access (DEBUG)"); // Example flaw
+            return true; // INCORRECT! Should always be false on error.
+        }
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * Use Spring Security's standard `DaoAuthenticationProvider` which correctly uses `UserDetailsService` and `PasswordEncoder.matches()`.
+    * If implementing a custom `AuthenticationProvider`, ensure it correctly uses `PasswordEncoder.matches()` for comparison and handles all exceptions by throwing appropriate `AuthenticationException` subtypes (failing closed).
+    * Never allow null/empty passwords in the database.
+
+    #### Secure Code Example
+    ```java
+    // config/SecurityConfig.java (Using Standard Provider)
+    @Autowired
+    private UserDetailsService userDetailsService; // Your implementation
+
+    @Autowired
+    private PasswordEncoder passwordEncoder; // Your BCrypt/Argon2 bean
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        // SECURE: DaoAuthenticationProvider correctly handles UserDetailsService
+        // and uses PasswordEncoder.matches().
+        auth.userDetailsService(userDetailsService)
+            .passwordEncoder(passwordEncoder);
+    }
+
+    // CustomAuthProvider (Secure Version - if absolutely needed)
+    public class SecureCustomAuthProvider implements AuthenticationProvider {
+        @Autowired private UserDetailsService userDetailsService;
+        @Autowired private PasswordEncoder passwordEncoder; // Inject encoder
+
+        @Override
+        public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+            String username = authentication.getName();
+            String presentedPassword = authentication.getCredentials().toString();
+            UserDetails user;
+            try {
+                 user = userDetailsService.loadUserByUsername(username);
+                 if (user == null) { // Should throw UsernameNotFoundException instead
+                      throw new BadCredentialsException("Invalid credentials");
+                 }
+            } catch (UsernameNotFoundException e) {
+                 throw new BadCredentialsException("Invalid credentials", e);
+            } catch (Exception e) {
+                 // Log internal error
+                 throw new AuthenticationServiceException("Error retrieving user", e);
+            }
+
+            // SECURE: Use PasswordEncoder.matches() for comparison. Handles null/empty safely.
+            if (passwordEncoder.matches(presentedPassword, user.getPassword())) {
+                 // Check other user statuses (locked, expired, enabled)
+                 if (!user.isAccountNonLocked()) throw new LockedException("Account locked");
+                 if (!user.isEnabled()) throw new DisabledException("Account disabled");
+                 // ... other checks ...
+
+                 return new UsernamePasswordAuthenticationToken(user, presentedPassword, user.getAuthorities());
+            } else {
+                 throw new BadCredentialsException("Invalid credentials");
+            }
+        }
+        // ... supports() method ...
+    }
+    ```
+
+    #### Testing Strategy
+    Test login with incorrect passwords, non-existent users, and empty/null values. Examine custom `AuthenticationProvider` logic for correct use of `PasswordEncoder.matches()` and secure exception handling (fail closed). Try to trigger exceptions during login (e.g., database connection issues) and verify access is denied.
+  </Tab>
+  <Tab title=".NET(C#)">
+    #### Framework Context
+    Flaws in custom implementations of `IPasswordHasher` or manual credential checks outside of ASP.NET Core Identity's `SignInManager`.
+
+    #### Vulnerable Scenario 1: Custom Hasher with Logic Error
+    A custom password hasher tries to support multiple formats but has a bug.
+    ```csharp
+    // Services/CustomPasswordHasher.cs
+    public class CustomPasswordHasher : IPasswordHasher<ApplicationUser>
+    {
+        public string HashPassword(ApplicationUser user, string password) { /* ... Hashing logic ... */ }
+
+        public PasswordVerificationResult VerifyHashedPassword(ApplicationUser user, string hashedPassword, string providedPassword)
+        {
+            if (hashedPassword.StartsWith("legacy_md5:")) {
+                 // ... legacy MD5 check ...
+            } else if (hashedPassword.StartsWith("special_format:")) {
+                 // DANGEROUS: Logic flaw - maybe returns Success if format is known
+                 // but password doesn't actually match, or throws an exception handled poorly elsewhere.
+                 try {
+                      bool result = CheckSpecialFormat(hashedPassword, providedPassword);
+                      // Forgot to return PasswordVerificationResult.Failed if !result
+                      if (result) return PasswordVerificationResult.Success;
+                      // Implicitly returns SuccessRehashNeeded if no other return? Or throws?
+                 } catch {
+                      // DANGEROUS: Returning Success on error bypasses check.
+                      return PasswordVerificationResult.Success; // INCORRECT! Fail closed.
+                 }
+            }
+            // Fallback to default Identity hasher (if structure allows)
+            // ...
+             return PasswordVerificationResult.Failed; // Default fail
+        }
+        // ... (CheckSpecialFormat implementation) ...
+    }
+    ```
+
+    #### Vulnerable Scenario 2: Manual Check Ignoring Identity Result
+    Code manually checks username/password against a service and proceeds even if Identity fails.
+    ```csharp
+    // Controllers/AccountController.cs
+    [HttpPost]
+    public async Task<IActionResult> Login(LoginViewModel model)
+    {
+         // DANGEROUS: Attempting multiple auth methods insecurely.
+         bool customCheckPassed = await _myLegacyAuthService.Verify(model.Email, model.Password);
+
+         // Also try Identity
+         var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
+
+         // DANGEROUS: Grants access if *either* check passes, potentially bypassing
+         // Identity's lockout, MFA, or other security features if customCheckPassed is true.
+         if (customCheckPassed || result.Succeeded)
+         {
+             // Need to ensure SignInManager actually signs the user in if customCheckPassed was true
+             // This logic is complex and prone to errors.
+             return RedirectToAction("Index", "Home");
+         }
+         // Handle failures...
+         return View(model);
+    }
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use `SignInManager`:** Rely on `SignInManager.PasswordSignInAsync` or `SignInManager.CheckPasswordSignInAsync` for standard authentication. These methods correctly use the configured `IPasswordHasher` and handle user account status (locked, requires MFA, etc.).
+    * **Custom Hashers:** If implementing `IPasswordHasher`, ensure all code paths return `Failed` unless verification is definitively successful. Handle all exceptions securely (fail closed). Use constant-time comparisons if manually comparing hashes/tokens.
+    * **Avoid Multiple Auth Systems:** If migrating, hash passwords with the new system upon successful login with the old, then disable the old check once migration is complete. Don't allow login via either system indefinitely.
+
+    #### Secure Code Example
+    ```csharp
+    // Startup.cs (Using Default Identity) - Ensure IPasswordHasher isn't overridden insecurely
+    // services.AddDefaultIdentity<IdentityUser>()... // Standard setup
+
+    // Controllers/AccountController.cs (Secure - Relying on SignInManager)
+    public class AccountController : Controller
+    {
+        private readonly SignInManager<IdentityUser> _signInManager; // Use actual user type
+        private readonly UserManager<IdentityUser> _userManager;
+
+        public AccountController(SignInManager<IdentityUser> signInManager, UserManager<IdentityUser> userManager)
+        {
+            _signInManager = signInManager;
+            _userManager = userManager;
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Login(LoginViewModel model)
+        {
+            if (!ModelState.IsValid) return View(model);
+
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null) {
+                 ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+                 return View(model);
+            }
+
+            // SECURE: PasswordSignInAsync handles hashing, comparison, lockout, MFA checks.
+            var result = await _signInManager.PasswordSignInAsync(user, model.Password, model.RememberMe, lockoutOnFailure: true);
+
+            if (result.Succeeded)
+            {
+                return RedirectToAction("Index", "Home");
+            }
+            if (result.RequiresTwoFactor) { /* Redirect to 2FA page */ }
+            if (result.IsLockedOut) { /* Show lockout message */ }
+            else { ModelState.AddModelError(string.Empty, "Invalid login attempt."); }
+
+            return View(model);
+        }
+    }
+    ```
+
+    #### Testing Strategy
+    Test login with invalid credentials, check account lockout behavior. Review any custom `IPasswordHasher` implementations for logical flaws, especially error handling and comparison logic. Test scenarios involving multiple authentication methods if applicable. Try triggering errors during password verification.
+  </Tab>
+  <Tab title="PHP">
+    #### Framework Context
+    Flaws in manual password checking logic, especially related to type juggling (`==` vs `===`) or incorrect use of `password_verify()`.
+
+    #### Vulnerable Scenario 1: Type Juggling with `==`
+    ```php
+    <?php
+    // login.php (Manual Password Check)
+    $input_password = $_POST['password'];
+    $stored_hash = get_password_hash_from_db($username); // Assume fetches hash
+
+    // DANGEROUS: Using loose comparison (==).
+    // If $stored_hash starts with '0e' followed by only digits, and $input_password
+    // is carefully crafted (e.g., '0' or specific strings hashing to '0e...'),
+    // PHP's type juggling might treat both as numeric (zero) and return true.
+    // Extremely unlikely with modern hash formats, but illustrates the risk of ==.
+    // More likely: if $stored_hash was accidentally 0 (integer) and $input_password was '0'.
+    if (hash('sha256', $input_password) == $stored_hash) { // Also uses weak hash!
+         echo "Login successful (VULNERABLE!)";
+         // Start session...
+    } else {
+         echo "Login failed.";
+    }
+    ?>
+    ```
+
+    #### Vulnerable Scenario 2: Incorrect `password_verify()` Usage
+    Code checks the *return value* incorrectly or has flawed logic around it.
+    ```php
+    <?php
+    // login_verify.php
+    $input_password = $_POST['password'];
+    $stored_hash = get_password_hash_from_db($username);
+
+    // DANGEROUS: Mishandling the result. password_verify returns true/false.
+    // This example simulates a logic flaw where null hash or verification error leads to bypass.
+    $verification_result = null;
+    if ($stored_hash) {
+       // Suppress errors which might hide problems
+       $verification_result = @password_verify($input_password, $stored_hash);
+    }
+
+    // Flawed Logic: If result is null (e.g., hash was null), treat as success?
+    if ($verification_result !== false) { // Allows true OR null! Should be === true
+        echo "Login successful (VULNERABLE!)";
+         // Start session...
+    } else {
+         echo "Login failed.";
+    }
+    ?>
+    ```
+
+    #### Mitigation and Best Practices
+    * **Always use `password_hash()`** with `PASSWORD_ARGON2ID` or `PASSWORD_BCRYPT` to store hashes.
+    * **Always use `password_verify()`** for checking passwords. It handles salt extraction and uses constant-time comparison.
+    * **Always use strict comparison (`===`)** when checking boolean results or states, unless type juggling is explicitly and safely intended (rarely for security).
+    * Use framework authentication (like Laravel Auth) which handles this correctly.
+
+    #### Secure Code Example
+    ```php
+    <?php
+    // login_secure.php
+    $input_password = $_POST['password'] ?? ''; // Use null coalescing
+    $username = $_POST['username'] ?? '';
+
+    if (empty($username) || empty($input_password)) {
+        die("Username and password required.");
+    }
+
+    $stored_hash = get_password_hash_from_db($username); // Fetch hash
+
+    // SECURE: Use password_verify() and check for explicit TRUE.
+    // Handles cases where $stored_hash might be null or invalid format.
+    if ($stored_hash && password_verify($input_password, $stored_hash)) {
+        // SECURE: Regenerate session ID after login
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = get_user_id($username); // Store user ID
+        echo "Login successful!";
+        // Redirect to dashboard...
+    } else {
+         // Add rate limiting (CWE-307)
+         echo "Login failed.";
+    }
+    ?>
+    ```
+    ```php
+    // Laravel Auth (Secure - Built-in)
+    use Illuminate\Support\Facades\Auth;
+
+    public function login(Request $request) {
+        $credentials = $request->only('email', 'password');
+        // SECURE: Auth::attempt uses Hash::check() which uses password_verify() correctly.
+        if (Auth::attempt($credentials)) {
+            $request->session()->regenerate();
+            return redirect()->intended('dashboard');
+        }
+        return back()->withErrors(['email' => 'Invalid credentials.'])->onlyInput('email');
+    }
+    ```
+
+    #### Testing Strategy
+    Review login code for password comparison logic.
+    * Ensure `password_verify()` is used.
+    * Ensure its result is checked strictly (`=== true`).
+    * Ensure `==` is not used for comparing hashes or security-sensitive values.
+    * Test with inputs that might trigger type juggling (e.g., numeric strings like `'0'`, boolean strings `'true'`, scientific notation `'0e123'`) against potentially problematic comparisons.
+  </Tab>
+  <Tab title="Node.js">
+    #### Framework Context
+    Flaws in custom password checking logic, often related to incorrect use of `bcrypt.compare` or insecure manual comparisons.
+
+    #### Vulnerable Scenario 1: Incorrect `bcrypt.compare` Logic
+    Not handling the asynchronous nature correctly or misinterpreting results.
+    ```javascript
+    // routes/auth.js - Assume bcrypt, User model exist
+    router.post('/login', (req, res) => {
+        const { username, password } = req.body;
+        User.findOne({ username }, (err, user) => {
+            if (err || !user) { return res.status(401).send('Auth failed.'); }
+
+            // DANGEROUS: Trying to use async bcrypt.compare in a sync way,
+            // or misinterpreting the callback/promise.
+            let passwordMatch = false; // Default false
+            bcrypt.compare(password, user.passwordHash, (compareErr, result) => {
+                // This callback runs LATER. The outer function continues.
+                if (compareErr) { console.error(compareErr); /* How is this handled? */ }
+                // If result is true, should set flag? But outer func already finished.
+                // passwordMatch = result; // This won't affect outer scope in time
+            });
+
+            // This 'if' runs BEFORE the callback finishes. passwordMatch is still false.
+            // OR, if compareSync was used and threw an error that wasn't caught...
+            if (passwordMatch) { // Check always fails, or might pass on error
+                 req.session.userId = user._id; // Example session setting
+                 res.redirect('/dashboard');
+            } else {
+                 res.status(401).send('Auth failed.');
+            }
+        });
+    });
+    ```
+
+    #### Vulnerable Scenario 2: Simple String Comparison (Timing Attack)
+    Hashing the input password with a fast hash (like SHA256) and comparing using `==` or `===`. While not type juggling, `===` on strings is not constant-time.
+    ```javascript
+    // routes/auth_timing.js - Assume crypto, User model exist
+    router.post('/login-timing', (req, res) => {
+        const { username, password } = req.body;
+        User.findOne({ username }, (err, user) => {
+             if (err || !user) { /* ... fail ... */ }
+
+             // Assume user.passwordHash stores SHA256(salt + password)
+             const inputHash = crypto.createHash('sha256').update(user.salt + password).digest('hex');
+
+             // DANGEROUS: Standard string comparison leaks timing info.
+             // It stops comparing immediately on the first different character.
+             // Attackers can use this timing difference to guess the hash byte-by-byte.
+             if (inputHash === user.passwordHash) {
+                  // Login success
+             } else {
+                  // Login fail
+             }
+        });
+    });
+    ```
+
+    #### Mitigation and Best Practices
+    * Use `bcrypt.compare` (async) or `bcrypt.compareSync` correctly, handling callbacks or Promises properly. `bcrypt.compare` is inherently resistant to timing attacks.
+    * If comparing any other security tokens or secrets manually, use Node's `crypto.timingSafeEqual(a, b)` which performs a constant-time comparison.
+
+    #### Secure Code Example
+    ```javascript
+    // routes/auth.js (Secure async bcrypt.compare)
+    const bcrypt = require('bcrypt');
+    const User = require('../models/User'); // Assume User model with passwordHash
+
+    router.post('/login-secure', async (req, res) => { // Use async function
+        const { username, password } = req.body;
+        if (!username || !password) {
+             return res.status(400).send('Username and password required.');
+        }
+
+        try {
+            const user = await User.findOne({ username });
+            if (!user || !user.passwordHash) {
+                 return res.status(401).send('Invalid credentials.');
+            }
+
+            // SECURE: Use await with bcrypt.compare (or Promises).
+            const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+
+            if (passwordMatch) {
+                // SECURE: Regenerate session ID after login
+                req.session.regenerate((err) => {
+                     if (err) {
+                          console.error("Session regeneration error:", err);
+                          return res.status(500).send('Login error.');
+                     }
+                     req.session.userId = user._id; // Store user ID in new session
+                     res.redirect('/dashboard');
+                });
+            } else {
+                 // Add rate limiting (CWE-307)
+                 res.status(401).send('Invalid credentials.');
+            }
+        } catch (err) {
+            console.error("Login error:", err);
+            res.status(500).send('Login error.');
+        }
+    });
+    ```
+
+    #### Testing Strategy
+    Test login edge cases (empty values, errors). Review code using `bcrypt.compare` to ensure Promises/`await`/callbacks are handled correctly. If any manual hash/token comparison is done with `==` or `===`, replace it with `crypto.timingSafeEqual`. Timing attacks are hard to test directly but avoiding standard string comparison for secrets is the correct mitigation.
+  </Tab>
+  <Tab title="Ruby">
+    #### Framework Context
+    Flaws in custom authentication logic outside of standard gems like Devise or `has_secure_password`. Incorrect use of comparison methods.
+
+    #### Vulnerable Scenario 1: Manual Comparison Error
+    A developer manually retrieves a hash and compares it incorrectly.
+    ```ruby
+    # app/controllers/sessions_controller.rb
+    class SessionsController < ApplicationController
+      def create
+        user = User.find_by(email: params[:email])
+        password = params[:password]
+        stored_digest = user&.password_digest # Using safe navigation
+
+        # DANGEROUS: Manual comparison susceptible to errors or timing attacks.
+        # Example 1: Simple string compare (Timing attack)
+        # if stored_digest && stored_digest == BCrypt::Engine.hash_secret(password, stored_digest)
+        # Example 2: Logic error (e.g., skips check if digest is nil)
+        if user # Only checks if user exists
+          # Forgot to actually compare password!
+          session[:user_id] = user.id
+          redirect_to root_path
+        else
+          flash.now[:alert] = "Invalid email or password"
+          render :new
+        end
+      end
+    end
+    ```
+
+    #### Vulnerable Scenario 2: Error Handling Bypass
+    Similar to Java, catching a specific exception and treating it as success.
+    ```ruby
+    # lib/custom_auth.rb
+    module CustomAuth
+      def self.verify(username, password)
+        begin
+          user = User.find_by!(username: username)
+          # Assume check_legacy_password might raise CustomAuth::AccountMigratedError
+          user.check_legacy_password(password) # Returns true/false
+        rescue ActiveRecord::RecordNotFound
+          false
+        rescue CustomAuth::AccountMigratedError
+          # DANGEROUS: Assumes migrated account is valid without checking new hash.
+          true # INCORRECT! Should proceed to check new hash format.
+        rescue => e
+          Rails.logger.error "Auth Error: #{e.message}"
+          false # Fail closed on other errors (Good)
+        end
+      end
+    end
+    ```
+
+    #### Mitigation and Best Practices
+    * **Use `authenticate`:** If using `has_secure_password`, always use the `user.authenticate(password)` method. It handles `nil` users, finds the user (optional, if called on class), and performs secure (bcrypt) comparison.
+    * **Devise:** Rely on Devise's `valid_password?` method and session management.
+    * **Secure Comparison:** For other secrets/tokens, use `ActiveSupport::SecurityUtils.secure_compare`.
+    * **Fail Closed:** Ensure all error paths in authentication logic result in failure.
+
+    #### Secure Code Example
+    ```ruby
+    # app/controllers/sessions_controller.rb (Secure with has_secure_password)
+    class SessionsController < ApplicationController
+      def create
+        user = User.find_by(email: params[:email])
+
+        # SECURE: user&.authenticate handles nil user and secure comparison.
+        if user&.authenticate(params[:password])
+          # SECURE: Reset session ID after login.
+          reset_session
+          session[:user_id] = user.id
+          redirect_to root_path, notice: 'Logged in successfully.'
+        else
+          # Add rate limiting (CWE-307)
+          flash.now[:alert] = "Invalid email or password."
+          render :new, status: :unprocessable_entity
+        }
+    end
+    ```
+
+    #### Testing Strategy
+    Test login edge cases (invalid user, wrong password, empty values). Review code for usage of `authenticate` (for `has_secure_password`) or equivalent secure methods from auth gems. Check custom comparison logic for use of `ActiveSupport::SecurityUtils.secure_compare`. Verify error handling paths default to denying access.
+  </Tab>
+</Tabs>

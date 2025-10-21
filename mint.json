@@ -133,6 +133,19 @@
       ]
     },
     {
+      "group": "A07:2021 – Identification and Authentication Failures",
+      "pages": [
+        "vulnerabilities/cwe-287",
+        "vulnerabilities/cwe-306",
+        "vulnerabilities/cwe-307",
+        "vulnerabilities/cwe-521",
+        "vulnerabilities/cwe-640",
+        "vulnerabilities/cwe-384",
+        "vulnerabilities/cwe-613",
+        "vulnerabilities/cwe-295"
+      ]
+    },
+    {
       "group": "A08:2021 – Software and Data Integrity Failures",
       "pages": [
         "vulnerabilities/deserialization"
