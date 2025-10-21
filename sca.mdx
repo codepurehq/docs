@@ -1,74 +1,306 @@
 ---
-title: 'SCA'
-description: 'Understand Software Composition Analysis (SCA) with Codepure.'
+title: 'Software Composition Analysis (SCA)'
+description: 'Comprehensive dependency scanning and vulnerability management with Codepure SCA.'
 ---
 
-# What it is
-Codepure’s Software Composition Analysis (SCA) scans your project’s dependencies to find vulnerabilities in open-source libraries and third-party components. Many modern applications rely heavily on external packages, and if these contain security flaws, your application can be at risk.
+# Software Composition Analysis (SCA)
 
-# How it works
-When you run an SCA scan, Codepure analyzes your project’s dependency files (such as package.json, requirements.txt, pom.xml, etc.) and compares them against vulnerability databases. It identifies:
+## Overview
 
-* Vulnerable dependencies – packages with known security issues.
+Software Composition Analysis (SCA) is a critical security practice that automatically identifies and manages open-source components and third-party dependencies in your codebase. Codepure's SCA solution provides comprehensive visibility into your software supply chain, helping you identify vulnerabilities, license risks, and outdated components before they become security incidents.
 
-* Outdated libraries – older versions that may no longer receive security patches.
+## What is SCA?
 
-* License risks – open-source licenses that might cause legal compliance issues.
+Codepure's Software Composition Analysis scans your entire dependency tree to identify security vulnerabilities, licensing issues, and quality concerns in open-source libraries and third-party components. With modern applications containing up to 90% open-source code, SCA has become essential for maintaining secure and compliant software.
 
-# Why it’s important
-Vulnerabilities in third-party libraries are one of the top causes of security breaches. SCA helps you:
+### Key Capabilities
 
-* Reduce supply chain risks by identifying and updating unsafe dependencies.
+- **Deep Dependency Analysis**: Scans both direct and transitive dependencies
+- **Real-time Vulnerability Detection**: Continuously monitors against multiple vulnerability databases
+- **License Compliance Management**: Identifies potential licensing conflicts and risks
+- **Automated SBOM Generation**: Creates comprehensive Software Bill of Materials for every scan
+- **Remediation Guidance**: Provides actionable fix recommendations with upgrade paths
 
-* Stay compliant with security standards like OWASP, PCI DSS, NIST, and ISO 27001.
+## How It Works
 
-* Save time by getting direct recommendations for safe versions.
+### Scanning Process
 
-# SBOM – Software Bill of Materials
-# What it is
-Every time you run an SCA scan, Codepure automatically generates a Software Bill of Materials (SBOM). An SBOM is a detailed list of every software component in your project — including open-source libraries, frameworks, and their versions.
+Codepure's SCA engine employs a multi-stage analysis approach:
 
-# Why it matters
-An SBOM gives you full visibility into your project’s software supply chain, making it easier to:
+1. **Discovery Phase**
+   - Automatically detects and parses dependency manifests (package.json, requirements.txt, pom.xml, go.mod, Gemfile, etc.)
+   - Identifies all direct and transitive dependencies
+   - Maps the complete dependency tree
 
-* Track all dependencies and their versions.
+2. **Analysis Phase**
+   - Compares dependencies against multiple vulnerability databases (NVD, GitHub Advisory Database, OSV, etc.)
+   - Performs license compatibility analysis
+   - Checks for outdated or deprecated packages
+   - Evaluates dependency health metrics
 
-* Monitor vulnerabilities over time.
+3. **Reporting Phase**
+   - Generates detailed vulnerability reports with CVSS scores
+   - Produces automated SBOM documentation
+   - Provides prioritized remediation recommendations
+   - Creates compliance reports for regulatory requirements
 
-* Prove compliance with regulations such as NIST and ISO 27001.
+### Supported Ecosystems
 
-* Respond quickly to new security advisories affecting your components.
+Codepure SCA supports all major package managers and dependency formats:
 
-# Example: Running a SCA Scan
+- **JavaScript/Node.js**: npm, yarn, pnpm
+- **Python**: pip, pipenv, poetry
+- **Java**: Maven, Gradle
+- **.NET**: NuGet
+- **Ruby**: Bundler
+- **Go**: Go modules
+- **PHP**: Composer
+- **Rust**: Cargo
+- **Container**: Docker, OCI images
 
-1. Select and Scan
+## Why SCA is Critical
 
-* From the dashboard, select the project you want to scan.
+### Security Benefits
 
-* Choose SCA and click Start Scanning.
+**Supply Chain Protection**
+- Third-party dependencies account for over 70% of modern codebases
+- A single vulnerable dependency can compromise your entire application
+- Attackers increasingly target popular open-source packages
+
+**Proactive Risk Management**
+- Identify vulnerabilities before they reach production
+- Get alerts for newly discovered CVEs affecting your dependencies
+- Understand the exploitability and impact of each vulnerability
+
+**Compliance Requirements**
+- Meet regulatory standards (GDPR, HIPAA, PCI DSS)
+- Satisfy customer security questionnaires
+- Demonstrate due diligence in software security
+
+### Business Impact
+
+- **Reduce Security Debt**: Address vulnerabilities systematically before they accumulate
+- **Accelerate Development**: Automated scanning eliminates manual security reviews
+- **Lower Remediation Costs**: Fix issues early when they're less expensive to address
+- **Improve Customer Trust**: Demonstrate commitment to security best practices
+
+## Software Bill of Materials (SBOM)
+
+### What is an SBOM?
+
+A Software Bill of Materials (SBOM) is a comprehensive inventory of all software components in your application. Like a list of ingredients on food packaging, an SBOM provides transparency into your software's composition.
+
+### SBOM Components
+
+Every Codepure-generated SBOM includes:
+
+- **Component Identification**
+  - Package name and version
+  - Publisher/author information
+  - Download location and checksums
+  
+- **Dependency Relationships**
+  - Direct vs. transitive dependencies
+  - Dependency tree visualization
+  - Version constraints and conflicts
+
+- **Security Information**
+  - Known vulnerabilities (CVEs)
+  - CVSS scores and severity ratings
+  - Available patches and updates
+
+- **License Details**
+  - License types for each component
+  - License compatibility analysis
+  - Compliance obligations
+
+### SBOM Formats
+
+Codepure supports industry-standard SBOM formats:
+- **SPDX**: Software Package Data Exchange
+- **CycloneDX**: Full-stack bill of materials standard
+- **JSON/CSV**: Custom formats for integration
+
+### Why SBOMs Matter
+
+**Regulatory Compliance**
+- Required by Executive Order 14028 for federal software suppliers
+- Mandated by FDA for medical device software
+- Expected by EU Cyber Resilience Act
+
+**Incident Response**
+- Quickly identify affected systems when new vulnerabilities emerge
+- Accelerate patching and remediation efforts
+- Provide transparency to customers and stakeholders
+
+**Supply Chain Security**
+- Track component provenance
+- Monitor for suspicious changes
+- Validate software integrity
+
+## Using Codepure SCA
+
+### Quick Start Guide
+
+#### 1. Initiate Scan
+
+Navigate to your project dashboard and select the repository to scan:
 
 <Frame>
   <img src="/assets/sca1.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-2. View Results
+- Select your target project from the project list
+- Choose **SCA** from the scanner options
+- Configure scan parameters (optional)
+- Click **Start Scanning** to begin analysis
 
-* When the scan finishes, click the project name.
+#### 2. Review Results
 
-* Click Full Result to see all detected vulnerabilities in dependencies.
+Access comprehensive vulnerability findings and dependency insights:
 
 <Frame>
   <img src="/assets/sca22.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-3. Download SBOM
+- Click on the project name to view scan results
+- Select **Full Result** for detailed vulnerability information
+- Review severity ratings and CVSS scores
+- Explore remediation recommendations
 
-* In the results page, locate the Download SBOM option.
+#### 3. Generate SBOM
 
-* Click it to download a detailed Software Bill of Materials for your project.
-
-* The SBOM lists all dependencies, their versions, and any known vulnerabilities.
+Download your Software Bill of Materials for compliance and documentation:
 
 <Frame>
   <img src="/assets/sca33.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
+
+- Locate the **Download SBOM** button in the results view
+- Select your preferred format (SPDX, CycloneDX, JSON)
+- Save the SBOM for compliance records
+- Share with stakeholders as needed
+
+### Advanced Features
+
+#### Vulnerability Prioritization
+
+Codepure uses intelligent prioritization to help you focus on what matters:
+
+- **Exploitability Analysis**: Identifies actively exploited vulnerabilities
+- **Reachability Assessment**: Determines if vulnerable code paths are actually used
+- **Business Context**: Considers the criticality of affected components
+- **Fix Availability**: Prioritizes vulnerabilities with available patches
+
+#### Continuous Monitoring
+
+- **Automated Rescanning**: Schedule regular dependency checks
+- **Real-time Alerts**: Get notified of new vulnerabilities
+- **Dependency Updates**: Track when new versions become available
+- **Policy Enforcement**: Block builds that violate security policies
+
+#### Integration Capabilities
+
+Seamlessly integrate SCA into your development workflow:
+
+- **CI/CD Integration**: Automated scanning in your pipeline
+- **IDE Plugins**: Real-time feedback while coding
+- **API Access**: Programmatic access to scan results
+- **Webhook Notifications**: Alert your team instantly
+- **Ticketing Integration**: Auto-create issues in Jira, GitHub, etc.
+
+## Best Practices
+
+### Scanning Strategy
+
+1. **Scan Early and Often**
+   - Run SCA scans on every commit
+   - Include SCA in pull request checks
+   - Perform deep scans before releases
+
+2. **Maintain Dependency Hygiene**
+   - Regularly update dependencies
+   - Remove unused packages
+   - Minimize dependency depth
+
+3. **Establish Policies**
+   - Define acceptable risk levels
+   - Set license compliance rules
+   - Create remediation SLAs
+
+### Remediation Workflow
+
+1. **Triage**: Assess vulnerability severity and exploitability
+2. **Prioritize**: Focus on critical and high-severity issues first
+3. **Remediate**: Apply patches, upgrade versions, or implement workarounds
+4. **Verify**: Rescan to confirm successful remediation
+5. **Document**: Update SBOM and compliance records
+
+### Team Collaboration
+
+- **Developer Training**: Educate teams on secure dependency management
+- **Security Champions**: Designate SCA experts in each team
+- **Regular Reviews**: Schedule dependency health check meetings
+- **Knowledge Sharing**: Document lessons learned and best practices
+
+## Compliance and Standards
+
+Codepure SCA helps you meet various compliance requirements:
+
+### Industry Standards
+- **OWASP Top 10**: A9 - Using Components with Known Vulnerabilities
+- **PCI DSS**: Requirement 6.2 - Vulnerability Management
+- **ISO 27001**: A.12.6.1 - Management of Technical Vulnerabilities
+- **NIST Cybersecurity Framework**: ID.RA-1, ID.SC-2
+
+### Regulatory Requirements
+- **EU Cyber Resilience Act**: SBOM requirements
+- **FDA Medical Device Cybersecurity**: Component transparency
+- **Executive Order 14028**: Software supply chain security
+
+## Metrics and Reporting
+
+### Key Performance Indicators
+
+Track your security posture with comprehensive metrics:
+
+- **Vulnerability Metrics**
+  - Mean Time to Detect (MTTD)
+  - Mean Time to Remediate (MTTR)
+  - Vulnerability density per project
+  - Critical vulnerability trends
+
+- **Dependency Health**
+  - Percentage of outdated dependencies
+  - License compliance rate
+  - Technical debt accumulation
+  - Update frequency
+
+### Executive Dashboards
+
+Generate reports for stakeholders showing:
+- Overall security posture
+- Compliance status
+- Risk trends over time
+- Remediation progress
+
+## Getting Started
+
+Ready to secure your dependencies with Codepure SCA?
+
+1. **Configure Your First Scan**: Set up your repository for scanning
+2. **Review Initial Results**: Understand your current security posture
+3. **Create Remediation Plan**: Prioritize and address vulnerabilities
+4. **Establish Policies**: Define your security and compliance requirements
+5. **Integrate into CI/CD**: Automate scanning in your pipeline
+
+## Support and Resources
+
+- **Documentation**: Comprehensive guides and API references
+- **Video Tutorials**: Step-by-step walkthroughs
+- **Community Forum**: Connect with other Codepure users
+- **Support Team**: Get help from our security experts
+
+---
+
+*Codepure SCA - Securing your software supply chain, one dependency at a time.*
