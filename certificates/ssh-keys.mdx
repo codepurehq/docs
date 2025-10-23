@@ -1,0 +1,170 @@
+---
+title: SSH Private Keys
+description: Detecting and securing SSH keys in repositories
+---
+
+# SSH Private Keys
+
+## Common Misconfiguration
+
+Committed SSH private keys provide unauthorized access to servers and can lead to complete infrastructure compromise.
+
+### Vulnerable Example
+
+```bash
+# VULNERABLE - Private key in repository
+# File: deploy_key.pem
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyz
+ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnop
+qrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef
+# ... (key content)
+-----END RSA PRIVATE KEY-----
+
+# VULNERABLE - Embedded in script
+#!/bin/bash
+SSH_KEY="-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAACFwAAAAdzc2gtcn
+# ... (key content)
+-----END OPENSSH PRIVATE KEY-----"
+
+echo "$SSH_KEY" > /tmp/deploy_key
+chmod 600 /tmp/deploy_key
+ssh -i /tmp/deploy_key user@production-server.com
+```
+
+```python
+# VULNERABLE - Hardcoded key in Python
+import paramiko
+
+PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyz
+# ... (key content)
+-----END RSA PRIVATE KEY-----"""
+
+def connect_to_server():
+    key = paramiko.RSAKey.from_private_key(io.StringIO(PRIVATE_KEY))
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect('server.example.com', username='root', pkey=key)
+    return client
+```
+
+## Secure Example
+
+```python
+# SECURE - Using SSH agent and key management
+import paramiko
+import os
+from pathlib import Path
+
+class SecureSSHConnection:
+    def __init__(self):
+        self.client = paramiko.SSHClient()
+        self.client.load_system_host_keys()
+        self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    
+    def connect_with_agent(self, hostname, username):
+        """Use SSH agent for authentication"""
+        self.client.connect(
+            hostname,
+            username=username,
+            allow_agent=True,
+            look_for_keys=False
+        )
+    
+    def connect_with_key_file(self, hostname, username):
+        """Use protected key file from secure location"""
+        key_path = Path.home() / '.ssh' / 'id_rsa'
+        
+        if not key_path.exists():
+            raise FileNotFoundError("SSH key not found")
+        
+        # Check key file permissions
+        if oct(key_path.stat().st_mode)[-3:] != '600':
+            raise PermissionError("SSH key file has incorrect permissions")
+        
+        # Prompt for passphrase if key is encrypted
+        passphrase = os.environ.get('SSH_KEY_PASSPHRASE')
+        
+        try:
+            key = paramiko.RSAKey.from_private_key_file(
+                str(key_path),
+                password=passphrase
+            )
+            
+            self.client.connect(
+                hostname,
+                username=username,
+                pkey=key,
+                look_for_keys=False,
+                allow_agent=False
+            )
+        except paramiko.PasswordRequiredException:
+            raise ValueError("SSH key requires passphrase")
+    
+    def connect_with_bastion(self, target_host, bastion_host):
+        """Use bastion/jump host for secure access"""
+        # First, connect to bastion
+        bastion = paramiko.SSHClient()
+        bastion.load_system_host_keys()
+        bastion.connect(bastion_host, username='bastion-user')
+        
+        # Create tunnel through bastion
+        bastion_transport = bastion.get_transport()
+        dest_addr = (target_host, 22)
+        bastion_channel = bastion_transport.open_channel(
+            "direct-tcpip", dest_addr, ('127.0.0.1', 0)
+        )
+        
+        # Connect to target through tunnel
+        self.client.connect(
+            target_host,
+            username='app-user',
+            sock=bastion_channel
+        )
+
+# Terraform example for key management
+"""
+# SECURE - Generate keys with Terraform
+resource "tls_private_key" "deploy_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "deploy_key" {
+  key_name   = "deploy-key"
+  public_key = tls_private_key.deploy_key.public_key_openssh
+}
+
+# Store private key in secrets manager
+resource "aws_secretsmanager_secret" "deploy_key" {
+  name = "deploy-ssh-key"
+}
+
+resource "aws_secretsmanager_secret_version" "deploy_key" {
+  secret_id     = aws_secretsmanager_secret.deploy_key.id
+  secret_string = tls_private_key.deploy_key.private_key_pem
+}
+"""
+```
+
+## Detection Patterns
+
+  * RSA Private Key: -----BEGIN RSA PRIVATE KEY-----.
+  * OpenSSH Private Key: -----BEGIN OPENSSH PRIVATE KEY-----.
+  * PEM Private Key: -----BEGIN PRIVATE KEY-----.
+  * DSA Private Key: -----BEGIN DSA PRIVATE KEY-----.
+  * EC Private Key: -----BEGIN EC PRIVATE KEY-----.
+
+## Prevention Best Practices
+
+  1. Never commit private keys to repositories.
+  2. Use SSH agent for key management.
+  3. Protect keys with passphrases.
+  4. Set correct file permissions (600).
+  5. Use separate keys for different environments.
+  6. Implement key rotation policies.
+  7. Use bastion hosts for production access.
+  8. Enable SSH key audit logging.
+  9. Use short-lived certificates where possible.
