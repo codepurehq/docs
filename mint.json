@@ -57,7 +57,7 @@
       {"group":"Container Security",
       "pages": [{"group": "Docker", "pages":["docker/running-as-root", "docker/exposed-docker-socket", "docker/using-latest-tags"]},
                 {"group": "Docker Compose", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
-                {"group": "Docker Compose", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
+                {"group": "Kubernetes", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
         
       ]}
     ]
