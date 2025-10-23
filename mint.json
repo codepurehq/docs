@@ -68,7 +68,7 @@
       ]},
       {"group":"Secret Scanning",
       "pages": [{"group": "Cloude Providers", "pages":["cloude-providers/aws-credentials", "cloude-providers/azure-secrets"]},
-                {"group": "DataBases", "pages":["databases/sql-connection-strings"]},
+                {"group": "DataBases", "pages":["databases/sql-connection-strings", "databases/nosql-credentials"]},
                 {"group": "API Keys", "pages":["api-keys/payment-gateway-keys"]},
                 {"group": "Certificates", "pages":["certificates/ssh-keys"]},
                 {"group": "Application Secrets", "pages":["application-secrets/env-files"]},
