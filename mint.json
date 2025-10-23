@@ -67,7 +67,7 @@
         
       ]},
       {"group":"Secret Scanning",
-      "pages": [{"group": "Cloude Providers", "pages":["cloud-providers/aws-credentials", "cloud-providers/exposed-docker-socket", "cloud-providers/using-latest-tags"]},
+      "pages": [{"group": "Cloude Providers", "pages":["cloud-providers/aws-credentials", "cloud-providers/azure-secrets", "cloud-providers/using-latest-tags"]},
                 {"group": "Docker Compose", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
                 {"group": "Kubernetes", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
         
