@@ -1,0 +1,177 @@
+---
+title: Insecure Package Index URLs
+description: Securing pip package sources and index URLs
+---
+
+## Common Misconfigurations
+
+1. **Using HTTP instead of HTTPS for package indexes**
+2. **Trusting unverified package sources**
+3. **Not using package signing verification**
+4. **Allowing arbitrary index URLs**
+5. **Missing SSL certificate verification**
+
+## Vulnerable Example
+
+```ini
+# .pip.conf with insecure configuration
+[global]
+# Using HTTP (insecure)
+index-url = http://pypi.douban.com/simple
+extra-index-url = http://mirrors.aliyun.com/pypi/simple/
+
+# Disabled SSL verification
+trusted-host = pypi.douban.com
+               mirrors.aliyun.com
+               untrusted-host.com
+
+# No certificate verification
+cert = none
+```
+
+```bash
+# Command line with insecure options
+pip install requests --index-url http://insecure.pypi.org/simple/
+pip install django --trusted-host insecure.pypi.org
+pip install --cert none package-name
+```
+
+```txt
+# requirements.txt with insecure index
+--index-url http://insecure-mirror.com/simple/
+--trusted-host insecure-mirror.com
+
+requests==2.31.0
+django==4.2.9
+```
+
+```python
+# setup.py with hardcoded insecure index
+from setuptools import setup
+
+setup(
+    name="insecure-app",
+    dependency_links=[
+        "http://insecure-repo.com/packages/",
+        "http://private-pypi.com/simple/"
+    ]
+)
+```
+
+## Secure Solution
+
+```ini
+# .pip.conf with secure configuration
+[global]
+# Use HTTPS only
+index-url = https://pypi.org/simple
+extra-index-url = https://pypi.python.org/simple
+
+# Require HTTPS
+require-hashes = true
+no-cache-dir = false
+
+# Certificate bundle for verification
+cert = /path/to/ca-bundle.crt
+
+[install]
+# Require virtual environment
+require-virtualenv = true
+
+# No trusted hosts (force HTTPS verification)
+# trusted-host = 
+```
+
+```bash
+# Secure pip commands
+# Use HTTPS with verification
+pip install requests --index-url https://pypi.org/simple/
+
+# With hash verification
+pip install requests==2.31.0 \
+    --require-hashes \
+    --hash sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+
+# Configure private repository securely
+pip config set global.index-url https://nexus.company.com/repository/pypi/simple
+pip config set global.cert /path/to/company-ca.crt
+```
+
+```txt
+# requirements.txt with secure configuration
+# No index URL in requirements file - use pip.conf instead
+# Or use secure HTTPS URL only
+--index-url https://pypi.org/simple/
+
+# Packages with hash verification
+requests==2.31.0 \
+    --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+    
+django==4.2.9 \
+    --hash=sha256:08cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+```
+
+```toml
+# pyproject.toml with secure repository configuration
+[tool.poetry.source]
+name = "private"
+url = "https://nexus.company.com/repository/pypi/simple"
+secondary = true
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
+```
+
+```yaml
+# .github/workflows/secure-install.yml
+name: Secure Package Installation
+on: [push]
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure pip securely
+        run: |
+          pip config set global.index-url https://pypi.org/simple
+          pip config set install.require-hashes true
+      
+      - name: Install with verification
+        run: |
+          pip install --require-hashes -r requirements.txt
+      
+      - name: Verify package integrity
+        run: |
+          pip check
+          pip-audit
+```
+
+```dockerfile
+# Dockerfile with secure pip configuration
+FROM python:3.11-slim
+
+# Configure pip securely
+RUN pip config set global.index-url https://pypi.org/simple && \
+    pip config set install.require-hashes true
+
+# Copy requirements with hashes
+COPY requirements.txt .
+
+# Install with hash verification
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+
+# Remove pip config from image
+RUN rm -rf ~/.config/pip
+```
+
+## Best Practices
+
+* Always use HTTPS for package indexes.
+* Enable hash verification for production.
+* Use private package repositories with proper SSL.
+* Never use --trusted-host in production.
+* Configure index URLs in pip.conf, not in requirements files.
+* Implement package signing where possible.
