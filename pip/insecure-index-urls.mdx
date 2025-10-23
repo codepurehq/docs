@@ -17,28 +17,24 @@ description: Securing pip package sources and index URLs
 # .pip.conf with insecure configuration
 [global]
 # Using HTTP (insecure)
-index-url = http://pypi.douban.com/simple
-extra-index-url = http://mirrors.aliyun.com/pypi/simple/
+index-url = [http://pypi.douban.com/simple](http://pypi.douban.com/simple)
+extra-index-url = [http://mirrors.aliyun.com/pypi/simple/](http://mirrors.aliyun.com/pypi/simple/)
 
-# Disabled SSL verification
+# Disabled SSL verification (insecure)
 trusted-host = pypi.douban.com
-               mirrors.aliyun.com
-               untrusted-host.com
-
-# No certificate verification
-cert = none
-```
+               mirrors.aliyun.com
+               untrusted-host.com
+````
 
 ```bash
 # Command line with insecure options
-pip install requests --index-url http://insecure.pypi.org/simple/
+pip install requests --index-url [http://insecure.pypi.org/simple/](http://insecure.pypi.org/simple/)
 pip install django --trusted-host insecure.pypi.org
-pip install --cert none package-name
 ```
 
 ```txt
 # requirements.txt with insecure index
---index-url http://insecure-mirror.com/simple/
+--index-url [http://insecure-mirror.com/simple/](http://insecure-mirror.com/simple/)
 --trusted-host insecure-mirror.com
 
 requests==2.31.0
@@ -50,11 +46,11 @@ django==4.2.9
 from setuptools import setup
 
 setup(
-    name="insecure-app",
-    dependency_links=[
-        "http://insecure-repo.com/packages/",
-        "http://private-pypi.com/simple/"
-    ]
+    name="insecure-app",
+    dependency_links=[
+        "[http://insecure-repo.com/packages/](http://insecure-repo.com/packages/)",
+        "[http://private-pypi.com/simple/](http://private-pypi.com/simple/)"
+    ]
 )
 ```
 
@@ -64,8 +60,8 @@ setup(
 # .pip.conf with secure configuration
 [global]
 # Use HTTPS only
-index-url = https://pypi.org/simple
-extra-index-url = https://pypi.python.org/simple
+index-url = [https://pypi.org/simple](https://pypi.org/simple)
+extra-index-url = [https://pypi.python.org/simple](https://pypi.python.org/simple)
 
 # Require HTTPS
 require-hashes = true
@@ -79,21 +75,21 @@ cert = /path/to/ca-bundle.crt
 require-virtualenv = true
 
 # No trusted hosts (force HTTPS verification)
-# trusted-host = 
+# trusted-host =D
 ```
 
 ```bash
 # Secure pip commands
 # Use HTTPS with verification
-pip install requests --index-url https://pypi.org/simple/
+pip install requests --index-url [https://pypi.org/simple/](https://pypi.org/simple/)
 
 # With hash verification
 pip install requests==2.31.0 \
-    --require-hashes \
-    --hash sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+    --require-hashes \
+    --hash sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
 
 # Configure private repository securely
-pip config set global.index-url https://nexus.company.com/repository/pypi/simple
+pip config set global.index-url [https://nexus.company.com/repository/pypi/simple](https://nexus.company.com/repository/pypi/simple)
 pip config set global.cert /path/to/company-ca.crt
 ```
 
@@ -101,21 +97,21 @@ pip config set global.cert /path/to/company-ca.crt
 # requirements.txt with secure configuration
 # No index URL in requirements file - use pip.conf instead
 # Or use secure HTTPS URL only
---index-url https://pypi.org/simple/
+--index-url [https://pypi.org/simple/](https://pypi.org/simple/)
 
 # Packages with hash verification
 requests==2.31.0 \
-    --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
-    
+    --hash=sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+    
 django==4.2.9 \
-    --hash=sha256:08cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
+    --hash=sha256:08cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f
 ```
 
 ```toml
 # pyproject.toml with secure repository configuration
 [tool.poetry.source]
 name = "private"
-url = "https://nexus.company.com/repository/pypi/simple"
+url = "[https://nexus.company.com/repository/pypi/simple](https://nexus.company.com/repository/pypi/simple)"
 secondary = true
 
 [[tool.poetry.source]]
@@ -129,24 +125,24 @@ name: Secure Package Installation
 on: [push]
 
 jobs:
-  install:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Configure pip securely
-        run: |
-          pip config set global.index-url https://pypi.org/simple
-          pip config set install.require-hashes true
-      
-      - name: Install with verification
-        run: |
-          pip install --require-hashes -r requirements.txt
-      
-      - name: Verify package integrity
-        run: |
-          pip check
-          pip-audit
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure pip securely
+        run: |
+          pip config set global.index-url [https://pypi.org/simple](https://pypi.org/simple)
+          pip config set install.require-hashes true
+      
+      - name: Install with verification
+        run: |
+          pip install --require-hashes -r requirements.txt
+      
+      - name: Verify package integrity
+        run: |
+          pip check
+          pip-audit
 ```
 
 ```dockerfile
@@ -154,8 +150,8 @@ jobs:
 FROM python:3.11-slim
 
 # Configure pip securely
-RUN pip config set global.index-url https://pypi.org/simple && \
-    pip config set install.require-hashes true
+RUN pip config set global.index-url [https://pypi.org/simple](https://pypi.org/simple) && \
+    pip config set install.require-hashes true
 
 # Copy requirements with hashes
 COPY requirements.txt .
@@ -167,11 +163,65 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 RUN rm -rf ~/.config/pip
 ```
 
+## Key Commands for Managing Indexes
+
+These commands allow you to view, set, and use secure index configurations.
+
+### 1\. View Current Configuration
+
+This command shows you all `pip` settings, including the `index-url` and `cert` files it's currently using.
+
+```bash
+pip config list
+```
+
+### 2\. Set Secure Index (Globally)
+
+This is the recommended way to set your company's private repository (like Nexus or Artifactory) for all projects.
+
+```bash
+# Set the main index to your secure internal repository
+pip config set global.index-url [https://nexus.company.com/repository/pypi/simple](https://nexus.company.com/repository/pypi/simple)
+
+# Set the official PyPI as a backup
+pip config set global.extra-index-url [https://pypi.org/simple](https://pypi.org/simple)
+```
+
+### 3\. Set Custom Certificate
+
+If your private repository uses a self-signed or internal company certificate, you must tell `pip` where to find it.
+
+```bash
+# Point pip to your company's CA bundle
+pip config set global.cert /path/to/company-ca-bundle.crt
+```
+
+### 4\. Insecure Flags (To Avoid)
+
+**Never** use these flags in production. They expose you to Man-in-the-Middle (MITM) attacks.
+
+```bash
+# DANGEROUS: Uses insecure HTTP
+pip install <package> --index-url [http://insecure.index.com/simple](http://insecure.index.com/simple)
+
+# DANGEROUS: Disables SSL/TLS certificate verification
+pip install <package> --trusted-host insecure.index.com
+```
+
+### 5\. Secure Install (With Custom Cert)
+
+If you haven't set the certificate in `pip.conf`, you can provide it at install time. This is common in CI/CD scripts.
+
+```bash
+pip install -r requirements.txt \
+  --cert /etc/ssl/certs/company-ca.crt
+```
+
 ## Best Practices
 
-* Always use HTTPS for package indexes.
-* Enable hash verification for production.
-* Use private package repositories with proper SSL.
-* Never use --trusted-host in production.
-* Configure index URLs in pip.conf, not in requirements files.
-* Implement package signing where possible.
+  * Always use **HTTPS** for package indexes.
+  * Enable **hash verification** for production.
+  * Use private package repositories with proper SSL.
+  * **Never** use `--trusted-host` in production.
+  * Configure index URLs in `pip.conf`, not in `requirements.txt` files.
+  * Implement package signing where possible.
