@@ -1,0 +1,101 @@
+---
+title: Vulnerable Dependencies in NPM
+description: Identifying and fixing vulnerable npm packages
+---
+
+## Common Misconfigurations
+
+1. **Ignoring npm audit warnings**
+2. **Not updating dependencies regularly**
+3. **Using packages with known vulnerabilities**
+4. **Not checking transitive dependencies**
+5. **Missing security audit in CI/CD pipeline**
+
+## Vulnerable Example
+
+```json
+// package.json with vulnerable dependencies
+{
+  "name": "vulnerable-app",
+  "version": "1.0.0",
+  "dependencies": {
+    // Vulnerable lodash version (CVE-2021-23337)
+    "lodash": "4.17.20",
+    
+    // Old Express version with vulnerabilities
+    "express": "4.16.0",
+    
+    // Vulnerable minimist (CVE-2021-44906)
+    "minimist": "1.2.5",
+    
+    // Old axios with security issues
+    "axios": "0.21.0",
+    
+    // Vulnerable node-fetch
+    "node-fetch": "2.6.0"
+  }
+}
+
+// package-lock.json not committed or outdated
+// No .npmrc security configuration
+```
+
+## Secure Solution
+
+```json
+// package.json with secure dependencies
+{
+  "name": "secure-app",
+  "version": "1.0.0",
+  "dependencies": {
+    // Updated to secure versions
+    "lodash": "4.17.21",
+    "express": "4.19.2",
+    "minimist": "1.2.8",
+    "axios": "1.6.5",
+    "node-fetch": "3.3.2"
+  },
+  "devDependencies": {
+    // Add security scanning tools
+    "npm-audit-resolver": "^3.0.0",
+    "snyk": "^1.1269.0"
+  },
+  "scripts": {
+    "audit": "npm audit --audit-level=moderate",
+    "audit:fix": "npm audit fix",
+    "security-check": "snyk test",
+    "preinstall": "npm audit"
+  }
+}
+```
+
+```settings
+# .npmrc with security settings
+audit-level=moderate
+fund=false
+save-exact=true
+package-lock=true
+```
+
+```yaml
+# .github/workflows/security.yml
+name: Security Audit
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npm run security-check
+```
+
+## Best Practices
+
+* Run npm audit regularly.
+* Keep package-lock.json in version control.
+* Use automated dependency updates (Dependabot/Renovate).
+* Implement security checks in CI/CD.
+* Review and update dependencies monthly.
