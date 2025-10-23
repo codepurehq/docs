@@ -69,7 +69,7 @@
       {"group":"Secret Scanning",
       "pages": [{"group": "Cloude Providers", "pages":["cloude-providers/aws-credentials", "cloude-providers/azure-secrets"]},
                 {"group": "DataBases", "pages":["databases/sql-connection-strings"]},
-                {"group": "Kubernetes", "pages":["api-keys/payment-gateway-keys"]}
+                {"group": "API Keys", "pages":["api-keys/payment-gateway-keys"]}
         
       ]}
     ]
