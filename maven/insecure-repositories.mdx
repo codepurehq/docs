@@ -14,80 +14,92 @@ description: Securing Maven repository configurations
 ## Vulnerable Example
 
 ```xml
+<!-- settings.xml with insecure configuration -->
 <settings>
-    <repositories>
-        <repository>
-            <id>insecure-repo</id>
-                        <url>[http://insecure-repo.example.com/maven2](http://insecure-repo.example.com/maven2)</url>
-            <releases>
-                <enabled>true</enabled>
-                                <checksumPolicy>ignore</checksumPolicy>
-            </releases>
-        </repository>
-    </repositories>
-    
-        <profiles>
-        <profile>
-            <id>dev</id>
-            <repositories>
-                <repository>
-                    <id>unknown-repo</id>
-                                        <url>[http://unknown-maven.com/repository](http://unknown-maven.com/repository)</url>
-                </repository>
-            </repositories>
-        </profile>
-    </profiles>
+    <repositories>
+        <repository>
+            <id>insecure-repo</id>
+            <!-- Using HTTP protocol - vulnerable to MITM attacks -->
+            <url>http://insecure-repo.example.com/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+                <!-- Checksums not enforced -->
+                <checksumPolicy>ignore</checksumPolicy>
+            </releases>
+        </repository>
+    </repositories>
+    
+    <!-- No mirror configuration -->
+    <profiles>
+        <profile>
+            <id>dev</id>
+            <repositories>
+                <repository>
+                    <id>unknown-repo</id>
+                    <!-- Untrusted repository -->
+                    <url>http://unknown-maven.com/repository</url>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
 </settings>
 ````
 
 ## Secure Solution
 
 ```xml
+<!-- settings.xml with secure configuration -->
 <settings>
-        <mirrors>
-        <mirror>
-            <id>central-secure</id>
-            <mirrorOf>central</mirrorOf>
-            <url>[https://repo.maven.apache.org/maven2](https://repo.maven.apache.org/maven2)</url>
-        </mirror>
-    </mirrors>
-    
-    <repositories>
-        <repository>
-            <id>secure-repo</id>
-                  . <url>[https://secure-repo.example.com/maven2](https://secure-repo.example.com/maven2)</url>
-            <releases>
-                <enabled>true</enabled>
-                                <checksumPolicy>fail</checksumPolicy>
-            </releases>
-            <snapshots>
-          _ <enabled>false</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
-    
-        <profiles>
-        <profile>
-            <id>secure-dev</id>
-            <repositories>
-                <repository>
-                    <id>company-repo</id>
-                                        <url>[https://nexus.company.com/repository/maven-public](https://nexus.company.com/repository/maven-public)</url>
-                    <releases>
-                        <checksumPolicy>fail</checksumPolicy>
-          _         </releases>
-                </repository>
-            </repositories>
-        </profile>
-    </profiles>
-    
-        <servers>
-        <server>
-            <id>company-repo</id>
-            <username>${env.REPO_USERNAME}</username>
-            <password>${env.REPO_PASSWORD}</password>
-        </server>
-    </servers>
+    <!-- Configure secure mirror -->
+    <mirrors>
+        <mirror>
+            <id>central-secure</id>
+            <mirrorOf>central</mirrorOf>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </mirror>
+    </mirrors>
+    
+    <repositories>
+        <repository>
+            <id>secure-repo</id>
+            <!-- Using HTTPS protocol -->
+            <url>https://secure-repo.example.com/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+                <!-- Enforce checksum validation -->
+                <checksumPolicy>fail</checksumPolicy>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    
+    <!-- Secure profile configuration -->
+    <profiles>
+        <profile>
+            <id>secure-dev</id>
+            <repositories>
+                <repository>
+                    <id>company-repo</id>
+                    <!-- Internal trusted repository with HTTPS -->
+                    <url>https://nexus.company.com/repository/maven-public</url>
+                    <releases>
+                        <checksumPolicy>fail</checksumPolicy>
+                    </releases>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+    
+    <!-- Add server authentication -->
+    <servers>
+        <server>
+            <id>company-repo</id>
+            <username>${env.REPO_USERNAME}</username>
+            <password>${env.REPO_PASSWORD}</password>
+        </server>
+    </servers>
 </settings>
 ```
 
