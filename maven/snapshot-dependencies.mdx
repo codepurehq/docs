@@ -1,0 +1,132 @@
+---
+title: Snapshot Dependencies Security
+description: Managing snapshot dependencies securely in Maven
+---
+
+## Common Misconfigurations
+
+1. **Using SNAPSHOT versions in production**
+2. **Not controlling snapshot update frequency**
+3. **Allowing snapshots from untrusted repositories**
+4. **Missing snapshot versioning policies**
+5. **Not locking snapshot versions before release**
+
+## Vulnerable Example
+
+```xml
+<!-- pom.xml with insecure snapshot usage -->
+<project>
+    <dependencies>
+        <!-- Using snapshot in production code -->
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>critical-library</artifactId>
+            <version>1.0-SNAPSHOT</version> <!-- Unstable version -->
+        </dependency>
+        
+        <!-- Multiple snapshot dependencies -->
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>security-module</artifactId>
+            <version>2.3-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+    
+    <!-- Unrestricted snapshot repository -->
+    <repositories>
+        <repository>
+            <id>snapshots-repo</id>
+            <url>http://repo.example.com/snapshots</url>
+            <snapshots>
+                <enabled>true</enabled>
+                <!-- Always update snapshots -->
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+        </repository>
+    </repositories>
+</project>
+```
+
+## Secure Solution
+
+```xml
+<!-- pom.xml with secure snapshot handling -->
+<project>
+    <properties>
+        <!-- Use property management for versions -->
+        <critical-library.version>1.0.2</critical-library.version>
+        <security-module.version>2.3.1</security-module.version>
+    </properties>
+    
+    <dependencies>
+        <!-- Use stable releases only -->
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>critical-library</artifactId>
+            <version>${critical-library.version}</version> <!-- Stable version -->
+        </dependency>
+        
+        <dependency>
+            <groupId>com.example</groupId>
+            <artifactId>security-module</artifactId>
+            <version>${security-module.version}</version>
+        </dependency>
+    </dependencies>
+    
+    <!-- Controlled snapshot repository for development only -->
+    <profiles>
+        <profile>
+            <id>development</id>
+            <repositories>
+                <repository>
+                    <id>internal-snapshots</id>
+                    <url>https://nexus.company.com/repository/snapshots</url>
+                    <snapshots>
+                        <enabled>true</enabled>
+                        <!-- Controlled update policy -->
+                        <updatePolicy>daily</updatePolicy>
+                        <checksumPolicy>fail</checksumPolicy>
+                    </snapshots>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+    
+    <!-- Enforce no snapshots in release builds -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-no-snapshots</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireReleaseDeps>
+                                    <message>No Snapshots Allowed!</message>
+                                </requireReleaseDeps>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+## Best Practices
+
+* Never use SNAPSHOT dependencies in production.
+* Implement strict snapshot policies.
+* Use Maven Enforcer Plugin to prevent snapshot usage.
+* Lock versions before releases.
+* Use separate repositories for snapshots and releases.
