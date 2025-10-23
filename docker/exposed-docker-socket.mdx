@@ -3,8 +3,6 @@ title: Exposed Docker Socket
 description: Risks of mounting Docker socket inside containers and secure alternatives
 ---
 
-# Exposed Docker Socket
-
 ## Common Misconfiguration
 
 Mounting the Docker socket (`/var/run/docker.sock`) inside a container grants that container full control over the Docker daemon, essentially providing root access to the host system.
