@@ -54,7 +54,7 @@
     "group": "Reference",
     "pages": [
       {"group":"Container Security",
-      "pages": [{"group": "Docker", "pages":["docker/running-as-root"]}
+      "pages": [{"group": "Docker", "pages":["docker/running-as-root", "docker/exposed-docker-socket"]}
         
       ]}
     ]
