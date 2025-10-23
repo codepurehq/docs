@@ -15,32 +15,32 @@ description: Properly pinning Python package versions for security
 
 ```python
 # requirements.txt with unpinned versions
-Django>=3.0  # Allows any version above 3.0
-requests     # No version specified
-numpy>1.19   # Open-ended range
-pandas~=1.3  # Compatible release clause
-scipy        # Latest version always
-Pillow<9     # Only upper bound
-```
+Django>=3.0  # Allows any version above 3.0
+requests     # No version specified
+numpy>1.19   # Open-ended range
+pandas~=1.3  # Compatible release clause
+scipy        # Latest version always
+Pillow<9     # Only upper bound
+````
 
 ```python
 # setup.py with loose constraints
 from setuptools import setup
 
 setup(
-    name="unpinned-app",
-    install_requires=[
-        "flask",           # No version
-        "sqlalchemy>=1.0", # Open range
-        "celery>4,<6",     # Wide range
-        "redis",           # Unpinned
-    ],
-    extras_require={
-        "dev": [
-            "pytest",      # No version
-            "black",       # No version
-        ]
-    }
+    name="unpinned-app",
+    install_requires=[
+        "flask",           # No version
+        "sqlalchemy>=1.0", # Open range
+        "celery>4,<6",     # Wide range
+        "redis",           # Unpinned
+    ],
+    extras_require={
+        "dev": [
+            "pytest",      # No version
+            "black",       # No version
+        ]
+    }
 )
 ```
 
@@ -89,13 +89,13 @@ from setuptools import setup
 
 # Read requirements from file
 with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
+    requirements = f.read().splitlines()
 
 setup(
-    name="secure-app",
-    version="1.0.0",
-    install_requires=requirements,
-    python_requires=">=3.9,<3.12",  # Specify Python version
+    name="secure-app",
+    version="1.0.0",
+    install_requires=requirements,
+    python_requires=">=3.9,<3.12",  # Specify Python version
 )
 ```
 
@@ -106,10 +106,10 @@ name = "secure-app"
 version = "1.0.0"
 requires-python = ">=3.9,<3.12"
 dependencies = [
-    "Django==4.2.9",
-    "requests==2.31.0",
-    "numpy==1.26.3",
-    "pandas==2.1.4",
+    "Django==4.2.9",
+    "requests==2.31.0",
+    "numpy==1.26.3",
+    "pandas==2.1.4",
 ]
 
 [tool.pip-tools]
@@ -126,21 +126,72 @@ requests = "2.31.0"
 # Dependabot configuration
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    reviewers:
-      - "security-team"
-    labels:
-      - "dependencies"
-      - "security"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "security-team"
+    labels:
+      - "dependencies"
+      - "security"
+```
+
+## Key Commands for Pinning
+
+Here are the commands that power the secure workflows described above.
+
+### 1\. Simple Pinning (pip freeze)
+
+This command "freezes" the current virtual environment, capturing the exact versions of *everything* installed and saving it to a file.
+
+```bash
+pip freeze > requirements.txt
+```
+
+  * **Pro:** Very simple.
+  * **Con:** Not reproducible. It captures all dependencies in your environment, not just the ones your project needs. It's hard to update.
+
+### 2\. Modern Pinning (pip-tools)
+
+This is the recommended approach. It uses `pip-compile` to generate a locked `requirements.txt` from a simple `requirements.in` file.
+
+**Step 1: Install pip-tools**
+
+```bash
+pip install pip-tools
+```
+
+**Step 2: Create `requirements.in`**
+Create a file listing *only* your direct dependencies (e.g., `django`, `requests`).
+
+**Step 3: Compile the lock file**
+This command resolves all dependencies (direct and transitive) and pins them with hashes.
+
+```bash
+pip-compile requirements.in -o requirements.txt --generate-hashes
+```
+
+### 3\. Installing Pinned Dependencies
+
+This command installs *only* the exact versions specified in your lock file. It is the standard command for production and CI/CD.
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4\. Syncing Your Environment
+
+This command (from `pip-tools`) is even better. It makes your virtual environment *exactly* match the `requirements.txt` file, installing missing packages and **uninstalling** any that don't belong.
+
+```bash
+pip-sync
 ```
 
 ## Best Practices
 
-* Use pip-tools or Poetry for dependency management.
-* Generate requirements.txt with exact versions.
-* Include hash verification.
-* Use separate files for dev and prod dependencies.
-* Implement automated dependency updates with review.
+  * Use **pip-tools** or **Poetry** for dependency management.
+  * Generate `requirements.txt` with exact versions.
+  * Include hash verification.
+  * Use separate files for dev and prod dependencies.
+  * Implement automated dependency updates with review.
