@@ -1,0 +1,149 @@
+---
+title: Using Latest Tags
+description: Security and stability risks of using 'latest' tags in production environments
+---
+
+# Using Latest Tags
+
+## Common Misconfiguration
+
+Using the `latest` tag or no tag (which defaults to `latest`) in production creates unpredictability, potential security vulnerabilities, and makes rollbacks difficult. Images can change without notice, introducing breaking changes or vulnerabilities.
+
+## Vulnerable Example
+
+```dockerfile
+# Vulnerable Dockerfile
+FROM python:latest  # Unpredictable version
+
+RUN pip install flask redis  # No version pinning
+
+COPY app.py /app/
+WORKDIR /app
+
+CMD ["python", "app.py"]
+```
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx  # Defaults to nginx:latest
+    ports:
+      - "80:80"
+  
+  database:
+    image: postgres:latest  # Explicit but still problematic
+    environment:
+      POSTGRES_PASSWORD: secretpass
+  
+  cache:
+    image: redis  # No tag specified
+```
+
+## Secure Example
+
+```dockerfile
+# Secure Dockerfile
+FROM python:3.11.7-slim-bookworm  # Specific version and variant
+
+# Pin package versions
+RUN pip install --no-cache-dir     flask==3.0.0     redis==5.0.1     gunicorn==21.2.0
+
+COPY app.py /app/
+WORKDIR /app
+
+# Use specific user
+USER 1000:1000
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "app:app"]
+```
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:1.25.3-alpine3.18  # Specific version and base
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    security_opt:
+      - no-new-privileges:true
+  
+  database:
+    image: postgres:16.1-alpine3.19  # Specific version
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  
+  cache:
+    image: redis:7.2.3-alpine3.19  # Specific version
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+## Version Management Strategy
+
+```bash
+# .env file for version management
+NGINX_VERSION=1.25.3-alpine3.18
+POSTGRES_VERSION=16.1-alpine3.19
+REDIS_VERSION=7.2.3-alpine3.19
+APP_VERSION=v2.1.5
+```
+
+```yaml
+# docker-compose with version variables
+version: '3.8'
+services:
+  web:
+    image: nginx:${NGINX_VERSION}
+    
+  database:
+    image: postgres:${POSTGRES_VERSION}
+    
+  app:
+    image: myregistry/myapp:${APP_VERSION}
+```
+
+## Automated Security Scanning
+
+```yaml
+# GitHub Actions workflow for image scanning
+name: Container Security Scan
+on:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:v2.1.5'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+```
