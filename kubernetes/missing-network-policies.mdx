@@ -385,15 +385,15 @@ spec:
     args: ["-c", "while true; do sleep 3600; done"]
 ---
 # Test commands to run inside the pod:
-# kubectl exec -it netpol-test -n production -- bash
-# 
+kubectl exec -it netpol-test -n production -- bash
+ 
 # Test DNS:
-# nslookup kubernetes.default
-# 
+nslookup kubernetes.default
+ 
 # Test database connection (should fail due to policies):
-# nc -zv database-service 5432
-# 
+nc -zv database-service 5432
+ 
 # Test web app (should fail):
-# curl http://web-service:8080
+curl http://web-service:8080
 ```
 
