@@ -1,0 +1,140 @@
+---
+title: Payment Gateway Keys
+description: Securing payment processor API keys and tokens
+---
+
+## Common Misconfiguration
+
+Exposed payment gateway keys can lead to financial fraud, unauthorized charges, and compliance violations.
+
+### Vulnerable Example
+
+```javascript
+// VULNERABLE - Hardcoded payment keys
+const stripe = require('stripe');
+const paypal = require('@paypal/checkout-server-sdk');
+
+// Never hardcode these keys!
+const STRIPE_SECRET_KEY = 'sk_live_4eC39HqLyjWDarjtT1zdp7dcTYooMQauvdEDq54NiTphI7jx';
+const STRIPE_PUBLISHABLE_KEY = 'pk_live_51H3bgKG8vPDgDbmwNbL4nqVGRdDq5rWvZ';
+
+// PayPal credentials
+const PAYPAL_CLIENT_ID = 'AXy9r6UmgMXQKvnodataJ3u_lqIMSbhA2kV8tWwFakeID';
+const PAYPAL_CLIENT_SECRET = 'EGnHDxD_qRPdaGP2Ioq9BYw6rF5hFakeSecretExample';
+
+// Square API
+const SQUARE_ACCESS_TOKEN = 'EAAAEOuLQObrVwJvCvoTsZvvM1YvFakeTokenExample';
+const SQUARE_APPLICATION_ID = 'sq0idp-FakeApplicationId123';
+
+// Initialize with hardcoded keys
+const stripeClient = stripe(STRIPE_SECRET_KEY);
+
+class PaymentProcessor {
+    constructor() {
+        this.stripe = stripe(STRIPE_SECRET_KEY);
+        this.setupPayPal();
+    }
+    
+    setupPayPal() {
+        const environment = new paypal.core.LiveEnvironment(
+            PAYPAL_CLIENT_ID,
+            PAYPAL_CLIENT_SECRET
+        );
+        this.paypalClient = new paypal.core.PayPalHttpClient(environment);
+    }
+}
+```
+
+## Secure Example
+
+```javascript
+// SECURE - Using environment variables and secure initialization
+const stripe = require('stripe');
+const paypal = require('@paypal/checkout-server-sdk');
+
+class SecurePaymentProcessor {
+    constructor() {
+        this.initializeProviders();
+    }
+    
+    async initializeProviders() {
+        // Load from environment variables
+        const stripeKey = process.env.STRIPE_SECRET_KEY;
+        const paypalClientId = process.env.PAYPAL_CLIENT_ID;
+        const paypalSecret = process.env.PAYPAL_CLIENT_SECRET;
+        
+        // Validate keys exist
+        if (!stripeKey || !paypalClientId || !paypalSecret) {
+            throw new Error('Payment credentials not configured');
+        }
+        
+        // Initialize Stripe with restricted key
+        this.stripe = stripe(stripeKey, {
+            apiVersion: '2023-10-16',
+            maxNetworkRetries: 2,
+            timeout: 20000
+        });
+        
+        // Initialize PayPal with appropriate environment
+        const environment = process.env.NODE_ENV === 'production'
+            ? new paypal.core.LiveEnvironment(paypalClientId, paypalSecret)
+            : new paypal.core.SandboxEnvironment(paypalClientId, paypalSecret);
+            
+        this.paypalClient = new paypal.core.PayPalHttpClient(environment);
+    }
+    
+    // Use webhook endpoints for secure payment confirmation
+    async handleStripeWebhook(request) {
+        const sig = request.headers['stripe-signature'];
+        const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+        
+        try {
+            const event = this.stripe.webhooks.constructEvent(
+                request.body,
+                sig,
+                webhookSecret
+            );
+            
+            // Process webhook event
+            await this.processPaymentEvent(event);
+        } catch (err) {
+            console.error('Webhook signature verification failed');
+            throw err;
+        }
+    }
+}
+
+// Use a secrets manager for production
+const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
+
+async function getPaymentCredentials() {
+    const client = new SecretManagerServiceClient();
+    
+    const [stripeSecret] = await client.accessSecretVersion({
+        name: 'projects/my-project/secrets/stripe-key/versions/latest',
+    });
+    
+    return {
+        stripe: stripeSecret.payload.data.toString(),
+        // ... other credentials
+    };
+}
+```
+
+## Detection Patterns
+
+  * Stripe Secret Key: sk_(live|test)_[0-9a-zA-Z].
+  * PayPal Client Secret: [A-Za-z0-9-_].
+  * Square Access Token: EAAA[a-zA-Z0-9-_]+.
+  * Braintree Access Token: access_token\$production\$[0-9a-z]{16}\$[0-9a-f].
+
+## Prevention Best Practices
+
+  1. Use restricted API keys with minimal scopes.
+  2. Implement webhook signature verification.
+  3. Use separate keys for development/staging/production.
+  4. Enable PCI DSS compliance measures.
+  5. Implement rate limiting and fraud detection.
+  6. Log all payment transactions for audit.
+  7. Use tokenization for card data.
+  8. Rotate API keys regularly.

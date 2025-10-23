@@ -67,9 +67,9 @@
         
       ]},
       {"group":"Secret Scanning",
-      "pages": [{"group": "Cloude Providers", "pages":["cloude-providers/aws-credentials", "cloude-providers/azure-secrets", "cloude-providers/using-latest-tags"]},
-                {"group": "DataBases", "pages":["databases/sql-connection-strings", "databases/privileged-containers", "databases/sensitive-host-mounts"]},
-                {"group": "Kubernetes", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
+      "pages": [{"group": "Cloude Providers", "pages":["cloude-providers/aws-credentials", "cloude-providers/azure-secrets"]},
+                {"group": "DataBases", "pages":["databases/sql-connection-strings"]},
+                {"group": "Kubernetes", "pages":["api-keys/payment-gateway-keys"]}
         
       ]}
     ]
