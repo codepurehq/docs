@@ -1,0 +1,225 @@
+---
+title: GitHub Tokens and Secrets
+description: Securing GitHub access tokens and OAuth credentials
+---
+
+# GitHub Tokens and Secrets
+
+## Common Misconfiguration
+
+Exposed GitHub tokens can lead to unauthorized repository access, code theft, and supply chain attacks.
+
+### Vulnerable Example
+
+```yaml
+# VULNERABLE - GitHub Actions workflow with hardcoded token
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          # Never hardcode tokens!
+          token: ghp_1234567890abcdefghijklmnopqrstuvwxyzAB
+      
+      - name: Push to another repo
+        run: |
+          # Hardcoded PAT in script
+          git clone https://ghp_1234567890abcdefghijklmnopqrstuvwxyzAB@github.com/org/private-repo.git
+          cd private-repo
+          # ... make changes
+          git push
+```
+
+```bash
+// VULNERABLE - Hardcoded GitHub App credentials
+const { Octokit } = require("@octokit/rest");
+const { createAppAuth } = require("@octokit/auth-app");
+
+// Never hardcode these!
+const GITHUB_APP_ID = "123456";
+const GITHUB_PRIVATE_KEY = `-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA1234567890abcdefghijklmnop
+// ... rest of private key
+-----END RSA PRIVATE KEY-----`;
+const GITHUB_CLIENT_SECRET = "1234567890abcdef1234567890abcdef12345678";
+const GITHUB_WEBHOOK_SECRET = "my_webhook_secret_123";
+
+// Personal Access Token
+const GITHUB_TOKEN = "ghp_1234567890abcdefghijklmnopqrstuvwxyzAB";
+
+const octokit = new Octokit({
+  auth: GITHUB_TOKEN
+});
+```
+
+## Secure Example
+
+```yaml
+# SECURE - Using GitHub Secrets
+name: Secure Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # Use default GITHUB_TOKEN
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Use external service
+        env:
+          EXTERNAL_TOKEN: ${{ secrets.EXTERNAL_API_TOKEN }}
+        run: |
+          # Token is in environment, not in code
+          ./deploy.sh
+      
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      
+      - name: Use App token
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api /repos/${{ github.repository }}
+```
+
+```bash
+// SECURE - Using environment variables and secure storage
+const { Octokit } = require("@octokit/rest");
+const { createAppAuth } = require("@octokit/auth-app");
+const fs = require('fs').promises;
+
+class GitHubClient {
+    constructor() {
+        this.octokit = null;
+    }
+    
+    async initializeWithToken() {
+        // Read from environment
+        const token = process.env.GITHUB_TOKEN;
+        
+        if (!token) {
+            throw new Error('GITHUB_TOKEN not configured');
+        }
+        
+        // Validate token format
+        if (!this.isValidToken(token)) {
+            throw new Error('Invalid GitHub token format');
+        }
+        
+        this.octokit = new Octokit({
+            auth: token,
+            userAgent: 'MyApp/1.0.0',
+            timeZone: 'UTC',
+            baseUrl: 'https://api.github.com'
+        });
+        
+        // Verify token works
+        try {
+            await this.octokit.users.getAuthenticated();
+        } catch (error) {
+            throw new Error('GitHub token authentication failed');
+        }
+    }
+    
+    async initializeAsApp() {
+        // Read from secure files or environment
+        const appId = process.env.GITHUB_APP_ID;
+        const privateKeyPath = process.env.GITHUB_APP_KEY_PATH;
+        
+        if (!appId || !privateKeyPath) {
+            throw new Error('GitHub App credentials not configured');
+        }
+        
+        // Read private key from secure location
+        const privateKey = await fs.readFile(privateKeyPath, 'utf8');
+        
+        this.octokit = new Octokit({
+            authStrategy: createAppAuth,
+            auth: {
+                appId: appId,
+                privateKey: privateKey,
+                installationId: process.env.GITHUB_APP_INSTALLATION_ID
+            }
+        });
+    }
+    
+    isValidToken(token) {
+        // GitHub token patterns
+        const patterns = [
+            /^ghp_[a-zA-Z0-9]{36}$/,  // Personal access token
+            /^gho_[a-zA-Z0-9]{36}$/,  // OAuth access token
+            /^ghu_[a-zA-Z0-9]{36}$/,  // User-to-server token
+            /^ghs_[a-zA-Z0-9]{36}$/,  // Server-to-server token
+            /^ghr_[a-zA-Z0-9]{36}$/   // Refresh token
+        ];
+        
+        return patterns.some(pattern => pattern.test(token));
+    }
+    
+    async verifyWebhook(payload, signature) {
+        const secret = process.env.GITHUB_WEBHOOK_SECRET;
+        const crypto = require('crypto');
+        
+        const hmac = crypto.createHmac('sha256', secret);
+        hmac.update(JSON.stringify(payload));
+        const digest = `sha256=${hmac.digest('hex')}`;
+        
+        return crypto.timingSafeEqual(
+            Buffer.from(signature),
+            Buffer.from(digest)
+        );
+    }
+}
+
+// Using with Docker secrets
+const dockerExample = `
+FROM node:18-alpine
+RUN mkdir -p /run/secrets
+COPY --from=secrets /github-token /run/secrets/github-token
+ENV GITHUB_TOKEN_FILE=/run/secrets/github-token
+`;
+```
+
+## Detection Patterns
+
+  * Personal Access Token: ghp_[a-zA-Z0-9].
+  * OAuth Access Token: gho_[a-zA-Z0-9].
+  * User-to-Server Token: ghu_[a-zA-Z0-9].
+  * Server-to-Server Token: ghs_[a-zA-Z0-9].
+  * Refresh Token: ghr_[a-zA-Z0-9].
+
+## Prevention Best Practices
+
+  1. Use GitHub's built-in GITHUB_TOKEN in Actions.
+  2. Store tokens in GitHub Secrets.
+  3. Use GitHub Apps instead of personal tokens.
+  4. Implement token rotation.
+  5. Set minimal required permissions.
+  6. Use fine-grained personal access tokens.
+  7. Enable SSO for organization tokens.
+  8. Monitor token usage with audit logs.
+  9. Implement webhook signature verification.
