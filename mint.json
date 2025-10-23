@@ -45,12 +45,18 @@
     "pages": [
       "sast",
       "sca",
-      {"group":"container_security",
-      "pages": [{"group": "Docker", "pages":["docker/running-as-root"]}
-        
-      ]},
+      "container_security",
       "secret_scanning",
       "devsecops"
+    ]
+  },
+  {
+    "group": "Reference",
+    "pages": [
+      {"group":"Container Security",
+      "pages": [{"group": "Docker", "pages":["docker/running-as-root"]}
+        
+      ]}
     ]
   },
   {
