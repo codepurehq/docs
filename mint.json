@@ -56,8 +56,8 @@
     "pages": [
       {"group":"SCA",
       "pages": [{"group": "Maven", "pages":["maven/vulnerable-dependencies", "maven/insecure-repositories", "maven/snapshot-dependencies"]},
-                {"group": "NPM", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
-                {"group": "PIP", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
+                {"group": "npm", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
+                {"group": "pip", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
         
       ]},
       {"group":"Container Security",
