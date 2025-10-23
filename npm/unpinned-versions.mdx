@@ -1,0 +1,122 @@
+---
+title: Unpinned Package Versions
+description: Securing npm dependencies with proper version pinning
+---
+
+## Common Misconfigurations
+
+1. **Using caret (^) or tilde (~) ranges in production**
+2. **Not committing package-lock.json**
+3. **Using latest tag or * for versions**
+4. **Inconsistent versioning strategies**
+5. **Not using exact versions for critical dependencies**
+
+## Vulnerable Example
+
+```json
+// package.json with unpinned versions
+{
+  "name": "unpinned-app",
+  "dependencies": {
+    // Caret allows minor updates (risky)
+    "react": "^18.0.0",
+    
+    // Tilde allows patch updates
+    "lodash": "~4.17.0",
+    
+    // Extremely dangerous - any version
+    "some-package": "*",
+    
+    // Latest tag - unpredictable
+    "another-package": "latest",
+    
+    // Range versions
+    "express": ">=4.0.0 <5.0.0",
+    
+    // No version specified
+    "axios": ""
+  }
+}
+
+// Missing or gitignored package-lock.json
+// No .npmrc configuration
+```
+
+## Secure Solution
+
+```json
+// package.json with pinned versions
+{
+  "name": "secure-pinned-app",
+  "dependencies": {
+    // Exact versions for production dependencies
+    "react": "18.2.0",
+    "lodash": "4.17.21",
+    "express": "4.18.2",
+    "axios": "1.6.5",
+    "dotenv": "16.3.1"
+  },
+  "devDependencies": {
+    // Dev dependencies can be more flexible
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0"
+  },
+  "overrides": {
+    // Force specific versions for nested dependencies
+    "minimist": "1.2.8"
+  }
+}
+```
+
+```settings
+# .npmrc - enforce exact versions
+save-exact=true
+package-lock=true
+save-prefix=""
+```
+
+```json
+// npm-shrinkwrap.json for additional locking
+{
+  "name": "secure-pinned-app",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "secure-pinned-app",
+      "version": "1.0.0",
+      "dependencies": {
+        "react": "18.2.0",
+        "lodash": "4.17.21"
+      }
+    }
+  }
+}
+```
+
+```json
+# Renovate config for controlled updates
+{
+  "extends": ["config:base"],
+  "rangeStrategy": "pin",
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["*"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "rangeStrategy": "bump"
+    }
+  ]
+}
+```
+
+## Best Practices
+
+* Use exact versions for production dependencies.
+* Always commit package-lock.json.
+* Configure save-exact in .npmrc.
+* Use npm ci instead of npm install in CI/CD.
+* Implement controlled update process with tools like Renovate.
