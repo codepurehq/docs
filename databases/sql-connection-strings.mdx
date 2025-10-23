@@ -1,0 +1,120 @@
+---
+title: SQL Connection Strings
+description: Detecting and securing database connection strings
+---
+
+# SQL Connection Strings
+
+## Common Misconfiguration
+
+Hardcoded database connection strings expose your database to unauthorized access and data breaches.
+
+### Vulnerable Example
+
+```java
+// VULNERABLE - Hardcoded connection strings
+public class DatabaseConfig {
+    // MySQL connection string
+    private static final String MYSQL_URL = "jdbc:mysql://prod-db.company.com:3306/customers?user=root&password=MyP@ssw0rd123!";
+    
+    // PostgreSQL with password
+    private static final String POSTGRES_URL = "postgresql://dbadmin:SecretPass123!@postgres.company.com:5432/production";
+    
+    // SQL Server connection
+    private static final String SQLSERVER_CONN = "Server=sql.company.com;Database=ProductionDB;User Id=sa;Password=AdminP@ss2024;";
+    
+    // Oracle connection
+    private static final String ORACLE_URL = "jdbc:oracle:thin:system/Oracle123@//oracle.company.com:1521/PRODDB";
+    
+    public Connection getMySQLConnection() throws SQLException {
+        return DriverManager.getConnection(MYSQL_URL);
+    }
+}
+```
+
+```yml
+# VULNERABLE - application.yml with passwords
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/myapp
+    username: postgres
+    password: postgres123!
+    driver-class-name: org.postgresql.Driver
+```
+
+## Secure Example
+
+```java
+// SECURE - Using environment variables and connection pools
+import javax.sql.DataSource;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
+public class SecureDatabaseConfig {
+    
+    private final DataSource dataSource;
+    
+    public SecureDatabaseConfig() {
+        this.dataSource = createDataSource();
+    }
+    
+    private DataSource createDataSource() {
+        HikariConfig config = new HikariConfig();
+        
+        // Read from environment variables
+        config.setJdbcUrl(System.getenv("DATABASE_URL"));
+        config.setUsername(System.getenv("DATABASE_USER"));
+        config.setPassword(System.getenv("DATABASE_PASSWORD"));
+        
+        // Or use a secrets management service
+        SecretManager secretManager = new SecretManager();
+        DatabaseCredentials creds = secretManager.getDatabaseCredentials("prod-db");
+        
+        config.setJdbcUrl(creds.getUrl());
+        config.setUsername(creds.getUsername());
+        config.setPassword(creds.getPassword());
+        
+        // Configure connection pool
+        config.setMaximumPoolSize(10);
+        config.setMinimumIdle(5);
+        config.setConnectionTimeout(30000);
+        
+        return new HikariDataSource(config);
+    }
+}
+```
+
+```yml
+# SECURE - application.yml with placeholders
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  # Use Spring Cloud Config Server or Vault
+  cloud:
+    config:
+      uri: https://config-server.company.com
+      username: ${CONFIG_SERVER_USER}
+      password: ${CONFIG_SERVER_PASSWORD}
+```
+
+## Detection Patterns
+
+  * MySQL: mysql://.*:.*@.
+  * PostgreSQL: postgres(ql)?://.*:.*@.
+  * SQL Server: (Server|Data Source)=.*;(Password|Pwd)=.
+  * Oracle: jdbc:oracle:.*@.
+  * MongoDB: mongodb(\+srv)?://.*:.*@.
+
+## Prevention Best Practices
+
+  1. Use environment variables for credentials
+  2. Implement connection pooling
+  3. Use secrets management services (Vault, AWS Secrets Manager)
+  4. Enable SSL/TLS for database connections
+  5. Use service accounts with minimal privileges
+  6. Rotate database passwords regularly
+  7. Implement database audit logging
