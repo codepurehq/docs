@@ -14,99 +14,145 @@ description: Securing Maven repository configurations
 ## Vulnerable Example
 
 ```xml
-<!-- settings.xml with insecure configuration -->
 <settings>
-    <repositories>
-        <repository>
-            <id>insecure-repo</id>
-            <!-- Using HTTP protocol - vulnerable to MITM attacks -->
-            <url>http://insecure-repo.example.com/maven2</url>
-            <releases>
-                <enabled>true</enabled>
-                <!-- Checksums not enforced -->
-                <checksumPolicy>ignore</checksumPolicy>
-            </releases>
-        </repository>
-    </repositories>
-    
-    <!-- No mirror configuration -->
-    <profiles>
-        <profile>
-            <id>dev</id>
-            <repositories>
-                <repository>
-                    <id>unknown-repo</id>
-                    <!-- Untrusted repository -->
-                    <url>http://unknown-maven.com/repository</url>
-                </repository>
-            </repositories>
-        </profile>
-    </profiles>
+    <repositories>
+        <repository>
+            <id>insecure-repo</id>
+                        <url>[http://insecure-repo.example.com/maven2](http://insecure-repo.example.com/maven2)</url>
+            <releases>
+                <enabled>true</enabled>
+                                <checksumPolicy>ignore</checksumPolicy>
+            </releases>
+        </repository>
+    </repositories>
+    
+        <profiles>
+        <profile>
+            <id>dev</id>
+            <repositories>
+                <repository>
+                    <id>unknown-repo</id>
+                                        <url>[http://unknown-maven.com/repository](http://unknown-maven.com/repository)</url>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
 </settings>
-```
+````
 
 ## Secure Solution
 
 ```xml
-<!-- settings.xml with secure configuration -->
 <settings>
-    <!-- Configure secure mirror -->
-    <mirrors>
-        <mirror>
-            <id>central-secure</id>
-            <mirrorOf>central</mirrorOf>
-            <url>https://repo.maven.apache.org/maven2</url>
-        </mirror>
-    </mirrors>
-    
-    <repositories>
-        <repository>
-            <id>secure-repo</id>
-            <!-- Using HTTPS protocol -->
-            <url>https://secure-repo.example.com/maven2</url>
-            <releases>
-                <enabled>true</enabled>
-                <!-- Enforce checksum validation -->
-                <checksumPolicy>fail</checksumPolicy>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
-    
-    <!-- Secure profile configuration -->
-    <profiles>
-        <profile>
-            <id>secure-dev</id>
-            <repositories>
-                <repository>
-                    <id>company-repo</id>
-                    <!-- Internal trusted repository with HTTPS -->
-                    <url>https://nexus.company.com/repository/maven-public</url>
-                    <releases>
-                        <checksumPolicy>fail</checksumPolicy>
-                    </releases>
-                </repository>
-            </repositories>
-        </profile>
-    </profiles>
-    
-    <!-- Add server authentication -->
-    <servers>
-        <server>
-            <id>company-repo</id>
-            <username>${env.REPO_USERNAME}</username>
-            <password>${env.REPO_PASSWORD}</password>
-        </server>
-    </servers>
+        <mirrors>
+        <mirror>
+            <id>central-secure</id>
+            <mirrorOf>central</mirrorOf>
+            <url>[https://repo.maven.apache.org/maven2](https://repo.maven.apache.org/maven2)</url>
+        </mirror>
+    </mirrors>
+    
+    <repositories>
+        <repository>
+            <id>secure-repo</id>
+                  . <url>[https://secure-repo.example.com/maven2](https://secure-repo.example.com/maven2)</url>
+            <releases>
+                <enabled>true</enabled>
+                                <checksumPolicy>fail</checksumPolicy>
+            </releases>
+            <snapshots>
+          _ <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    
+        <profiles>
+        <profile>
+            <id>secure-dev</id>
+            <repositories>
+                <repository>
+                    <id>company-repo</id>
+                                        <url>[https://nexus.company.com/repository/maven-public](https://nexus.company.com/repository/maven-public)</url>
+                    <releases>
+                        <checksumPolicy>fail</checksumPolicy>
+          _         </releases>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+    
+        <servers>
+        <server>
+            <id>company-repo</id>
+            <username>${env.REPO_USERNAME}</username>
+            <password>${env.REPO_PASSWORD}</password>
+        </server>
+    </servers>
 </settings>
+```
+
+## Key Commands for Managing Repositories
+
+These commands help you verify, use, and enforce your secure repository configurations.
+
+### 1\. View Effective Settings
+
+This command shows the final `settings.xml` that Maven is using, merged from the global and user-specific files. It's essential for verifying that your secure configurations (like mirrors and profiles) are active.
+
+```bash
+mvn help:effective-settings
+```
+
+### 2\. View Effective POM
+
+This command shows the final, fully merged `pom.xml`. Use this to check which repositories are being used for the build, helping you spot any insecure repositories being added by a parent or child POM.
+
+```bash
+mvn help:effective-pom
+```
+
+### 3\. Force Strict Checksums
+
+You can override the `pom.xml` or `settings.xml` to *force* a strict checksum policy. The `-C` flag will fail the build if any checksum does not match, which is a good security check.
+
+```bash
+mvn clean install -C
+# or
+mvn clean install --strict-checksums
+```
+
+Conversely, avoid the insecure `-c` or `--lax-checksums` flag, which only warns.
+
+### 4\. Use a Specific Settings File
+
+For CI/CD or secure environments, you can tell Maven to use a specific, known-good `settings.xml` file, ignoring any default or user-level ones.
+
+```bash
+mvn deploy -s /path/to/secure-settings.xml
+```
+
+### 5\. Force Dependency Updates
+
+The `-U` flag forces Maven to check for updated snapshot releases from your remote repositories. While it doesn't directly relate to security, it ensures you are not using a stale, cached snapshot.
+
+```bash
+mvn clean install -U
+# or
+mvn clean install --update-snapshots
+```
+
+### 6\. Purge and Re-resolve Dependencies
+
+If you suspect your local cache is compromised or has bad artifacts, you can purge it. This command forces Maven to re-download all dependencies on the next build, re-validating checksums in the process.
+
+```bash
+mvn dependency:purge-local-repository
 ```
 
 ## Best Practices
 
-* Always use HTTPS for repository URLs.
-* Implement repository managers like Nexus or Artifactory.
-* Use repository mirroring for better control.
-* Enable checksum validation.
-* Restrict repository definitions in child POMs.
+  * Always use HTTPS for repository URLs.
+  * Implement repository managers like Nexus or Artifactory.
+  * Use repository mirroring for better control.
+  * Enable checksum validation.
+  * Restrict repository definitions in child POMs.
