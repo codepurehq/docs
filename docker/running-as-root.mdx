@@ -23,15 +23,16 @@ COPY . .
 
 EXPOSE 3000
 CMD ["node", "server.js"]
+```
 
-Secure Example
+## Secure Example
 
+```dockerfile
 # Secure Dockerfile
 FROM node:18-alpine
 
 # Create a non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+RUN addgroup -g 1001 -S nodejs &&     adduser -S nodejs -u 1001
 
 WORKDIR /app
 
@@ -46,9 +47,11 @@ COPY --chown=nodejs:nodejs . .
 
 EXPOSE 3000
 CMD ["node", "server.js"]
+```
 
-Additional Security Measures
+## Additional Security Measures
 
+```yaml
 # docker-compose.yml with security context
 version: '3.8'
 services:
@@ -60,9 +63,11 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+```
 
-Verification
+## Verification
 
+```bash
 # Check the user running inside the container
 docker exec <container-id> whoami
 # Should output: nodejs (not root)
@@ -70,3 +75,4 @@ docker exec <container-id> whoami
 # Verify UID
 docker exec <container-id> id
 # Should show: uid=1001(nodejs) gid=1001(nodejs)
+```
