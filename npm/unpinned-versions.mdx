@@ -16,55 +16,55 @@ description: Securing npm dependencies with proper version pinning
 ```json
 // package.json with unpinned versions
 {
-  "name": "unpinned-app",
-  "dependencies": {
-    // Caret allows minor updates (risky)
-    "react": "^18.0.0",
-    
-    // Tilde allows patch updates
-    "lodash": "~4.17.0",
-    
-    // Extremely dangerous - any version
-    "some-package": "*",
-    
-    // Latest tag - unpredictable
-    "another-package": "latest",
-    
-    // Range versions
-    "express": ">=4.0.0 <5.0.0",
-    
-    // No version specified
-    "axios": ""
-  }
+  "name": "unpinned-app",
+  "dependencies": {
+    // Caret allows minor updates (risky)
+    "react": "^18.0.0",
+    
+    // Tilde allows patch updates
+    "lodash": "~4.17.0",
+    
+    // Extremely dangerous - any version
+    "some-package": "*",
+    
+    // Latest tag - unpredictable
+    "another-package": "latest",
+    
+    // Range versions
+    "express": ">=4.0.0 <5.0.0",
+    
+    // No version specified
+    "axios": ""
+  }
 }
 
 // Missing or gitignored package-lock.json
 // No .npmrc configuration
-```
+````
 
 ## Secure Solution
 
 ```json
 // package.json with pinned versions
 {
-  "name": "secure-pinned-app",
-  "dependencies": {
-    // Exact versions for production dependencies
-    "react": "18.2.0",
-    "lodash": "4.17.21",
-    "express": "4.18.2",
-    "axios": "1.6.5",
-    "dotenv": "16.3.1"
-  },
-  "devDependencies": {
-    // Dev dependencies can be more flexible
-    "eslint": "^8.56.0",
-    "jest": "^29.7.0"
-  },
-  "overrides": {
-    // Force specific versions for nested dependencies
-    "minimist": "1.2.8"
-  }
+  "name": "secure-pinned-app",
+  "dependencies": {
+    // Exact versions for production dependencies
+    "react": "18.2.0",
+    "lodash": "4.17.21",
+    "express": "4.18.2",
+    "axios": "1.6.5",
+    "dotenv": "16.3.1"
+  },
+  "devDependencies": {
+    // Dev dependencies can be more flexible
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0"
+  },
+  "overrides": {
+    // Force specific versions for nested dependencies
+    "minimist": "1.2.8"
+  }
 }
 ```
 
@@ -78,45 +78,101 @@ save-prefix=""
 ```json
 // npm-shrinkwrap.json for additional locking
 {
-  "name": "secure-pinned-app",
-  "version": "1.0.0",
-  "lockfileVersion": 3,
-  "requires": true,
-  "packages": {
-    "": {
-      "name": "secure-pinned-app",
-      "version": "1.0.0",
-      "dependencies": {
-        "react": "18.2.0",
-        "lodash": "4.17.21"
-      }
-    }
-  }
+  "name": "secure-pinned-app",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "secure-pinned-app",
+      "version": "1.0.0",
+      "dependencies": {
+        "react": "18.2.0",
+        "lodash": "4.17.21"
+      }
+    }
+  }
 }
 ```
 
 ```json
 # Renovate config for controlled updates
 {
-  "extends": ["config:base"],
-  "rangeStrategy": "pin",
-  "packageRules": [
-    {
-      "matchPackagePatterns": ["*"],
-      "rangeStrategy": "pin"
-    },
-    {
-      "matchDepTypes": ["devDependencies"],
-      "rangeStrategy": "bump"
-    }
-  ]
+  "extends": ["config:base"],
+  "rangeStrategy": "pin",
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["*"],
+      "rangeStrategy": "pin"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "rangeStrategy": "bump"
+    }
+  ]
 }
 ```
 
+## Key Commands for Pinning and Updating
+
+While the goal is to pin versions, you still need commands to manage these pins and update them securely.
+
+### 1\. Installing Packages with Exact Versions
+
+To install a new package and automatically pin its exact version in `package.json`, use the `--save-exact` flag:
+
+```bash
+npm install <package-name> --save-exact
+# Example:
+npm install react --save-exact
+```
+
+To make this the default behavior, set it in your `.npmrc` file (as shown in the Secure Solution):
+
+```settings
+save-exact=true
+```
+
+### 2\. Enforcing Pinned Versions (CI/CD)
+
+This command is crucial for CI/CD. It installs dependencies *exactly* as specified in your `package-lock.json` file. It's faster and more reliable than `npm install` as it doesn't try to resolve versions.
+
+```bash
+npm ci
+```
+
+### 3\. Creating a Shrinkwrap File
+
+If you are publishing a library or need an even stricter lockfile that gets published, you can use `npm shrinkwrap`. This creates an `npm-shrinkwrap.json` file (which is just a renamed `package-lock.json`) that takes precedence.
+
+```bash
+npm shrinkwrap
+```
+
+### 4\. Checking for Updates (When Pinned)
+
+When all your versions are pinned, `npm outdated` will still show you newer versions, but `npm update` won't do anything. You need a dedicated tool to manage updates.
+
+The `npm-check-updates` tool is perfect for this. It checks for the latest versions and can update your `package.json` file for you.
+
+```bash
+# 1. Check for updates (won't change anything)
+npx npm-check-updates
+
+# 2. To apply the updates to your package.json:
+npx npm-check-updates -u
+
+# 3. After updating package.json, install the new packages:
+npm install
+```
+
+This workflow, combined with a tool like Renovate (shown in the config example), allows you to stay secure with pinned versions while still having a clear process for updates.
+
 ## Best Practices
 
-* Use exact versions for production dependencies.
-* Always commit package-lock.json.
-* Configure save-exact in .npmrc.
-* Use npm ci instead of npm install in CI/CD.
-* Implement controlled update process with tools like Renovate.
+  * Use exact versions for production dependencies.
+  * Always commit `package-lock.json`.
+  * Configure `save-exact` in `.npmrc`.
+  * Use `npm ci` instead of `npm install` in CI/CD.
+  * Implement a controlled update process with tools like Renovate.
+
