@@ -1,0 +1,72 @@
+---
+title: Running Containers as Root
+description: Security risks and mitigation strategies for containers running with root privileges
+---
+
+# Running Containers as Root
+
+## Common Misconfiguration
+
+Running containers as the root user (UID 0) is a critical security risk. If an attacker compromises the application, they gain root privileges within the container, potentially leading to container escape or host compromise.
+
+## Vulnerable Example
+
+```dockerfile
+# Vulnerable Dockerfile
+FROM node:18-alpine
+
+# No user specified - runs as root by default
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+EXPOSE 3000
+CMD ["node", "server.js"]
+
+Secure Example
+
+# Secure Dockerfile
+FROM node:18-alpine
+
+# Create a non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+WORKDIR /app
+
+# Change ownership of the app directory
+COPY --chown=nodejs:nodejs package*.json ./
+
+# Switch to non-root user before installing dependencies
+USER nodejs
+
+RUN npm install
+COPY --chown=nodejs:nodejs . .
+
+EXPOSE 3000
+CMD ["node", "server.js"]
+
+Additional Security Measures
+
+# docker-compose.yml with security context
+version: '3.8'
+services:
+  app:
+    build: .
+    user: "1001:1001"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+Verification
+
+# Check the user running inside the container
+docker exec <container-id> whoami
+# Should output: nodejs (not root)
+
+# Verify UID
+docker exec <container-id> id
+# Should show: uid=1001(nodejs) gid=1001(nodejs)

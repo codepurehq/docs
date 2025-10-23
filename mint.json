@@ -45,7 +45,10 @@
     "pages": [
       "sast",
       "sca",
-      "container_security",
+      {"group":"container_security",
+      "pages": [
+        "docker/running-as-root"
+      ]},
       "secret_scanning",
       "devsecops"
     ]
