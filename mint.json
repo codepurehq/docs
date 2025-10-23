@@ -57,7 +57,7 @@
       {"group":"SCA",
       "pages": [{"group": "Maven", "pages":["maven/vulnerable-dependencies", "maven/insecure-repositories", "maven/snapshot-dependencies"]},
                 {"group": "npm", "pages":["npm/vulnerable-dependencies", "npm/unpinned-versions", "npm/insecure-scripts"]},
-                {"group": "pip", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
+                {"group": "pip", "pages":["pip/allowing-privileged-pods", "pip/missing-network-policies", "pip/default-service-accounts"]}
         
       ]},
       {"group":"Container Security",

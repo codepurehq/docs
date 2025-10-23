@@ -1,0 +1,131 @@
+---
+title: Vulnerable Dependencies in Pip
+description: Managing and securing Python package dependencies
+---
+
+## Common Misconfigurations
+
+1. **Using outdated packages with known CVEs**
+2. **Not scanning dependencies for vulnerabilities**
+3. **Ignoring security advisories**
+4. **Missing dependency pinning**
+5. **Not checking package integrity**
+
+## Vulnerable Example
+
+```python
+# requirements.txt with vulnerable packages
+# Vulnerable Django version (CVE-2023-23969)
+Django==3.2.0
+
+# Old Pillow with security issues
+Pillow==8.1.0
+
+# Vulnerable PyYAML (CVE-2020-1747)
+PyYAML==5.3
+
+# Insecure requests version
+requests==2.20.0
+
+# Vulnerable Jinja2
+Jinja2==2.11.2
+
+# Old cryptography package
+cryptography==3.2
+
+# No hash verification
+# No source verification
+```
+
+```python
+# setup.py with loose version constraints
+from setuptools import setup
+
+setup(
+    name="vulnerable-app",
+    install_requires=[
+        "Django>=3.0",  # Too permissive
+        "Pillow",       # No version constraint
+        "PyYAML<6",     # Allows vulnerable versions
+        "requests"      # Unpinned
+    ]
+)
+```
+
+## Secure Solution
+
+```txt
+# requirements.txt with secure, pinned versions
+# Secure versions with hash verification
+Django==4.2.9 \
+    --hash=sha256:abcdef1234567890abcdef1234567890
+
+Pillow==10.2.0 \
+    --hash=sha256:1234567890abcdef1234567890abcdef
+
+PyYAML==6.0.1 \
+    --hash=sha256:bfdf1234567890abcdef1234567890abcd
+
+requests==2.31.0 \
+    --hash=sha256:58cd1234567890abcdef1234567890abcd
+
+Jinja2==3.1.3 \
+    --hash=sha256:ac8bd1234567890abcdef1234567890abcd
+
+cryptography==41.0.7 \
+    --hash=sha256:13abd1234567890abcdef1234567890abcd
+```
+
+```txt
+# requirements-dev.txt for development dependencies
+# Security scanning tools
+safety==3.0.1
+pip-audit==2.6.1
+bandit==1.7.5
+```
+
+```settings
+# .pip.conf for security settings
+[global]
+require-hashes = true
+no-cache-dir = false
+disable-pip-version-check = false
+
+[install]
+require-virtualenv = true
+```
+
+```yaml
+# .github/workflows/security.yml
+name: Python Security Check
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install safety pip-audit
+      
+      - name: Run safety check
+        run: safety check --json
+      
+      - name: Run pip-audit
+        run: pip-audit
+      
+      - name: Run Bandit
+        run: bandit -r src/
+```
+
+## Best Practices
+
+* 
