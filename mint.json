@@ -55,7 +55,7 @@
     "icon": "book",
     "pages": [
       {"group":"SCA",
-      "pages": [{"group": "Maven", "pages":["maven/vulnerable-dependencies", "maven/exposed-docker-socket", "maven/using-latest-tags"]},
+      "pages": [{"group": "Maven", "pages":["maven/vulnerable-dependencies", "maven/insecure-repositories", "maven/using-latest-tags"]},
                 {"group": "NPM", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
                 {"group": "PIP", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
         

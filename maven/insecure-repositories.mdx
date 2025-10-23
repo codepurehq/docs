@@ -1,0 +1,112 @@
+---
+title: Insecure Repository Configuration
+description: Securing Maven repository configurations
+---
+
+## Common Misconfigurations
+
+1. **Using HTTP instead of HTTPS for repositories**
+2. **Not verifying checksums of downloaded artifacts**
+3. **Using untrusted third-party repositories**
+4. **Allowing repository override in child POMs**
+5. **Not implementing repository mirroring**
+
+## Vulnerable Example
+
+```xml
+<!-- settings.xml with insecure configuration -->
+<settings>
+    <repositories>
+        <repository>
+            <id>insecure-repo</id>
+            <!-- Using HTTP protocol - vulnerable to MITM attacks -->
+            <url>http://insecure-repo.example.com/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+                <!-- Checksums not enforced -->
+                <checksumPolicy>ignore</checksumPolicy>
+            </releases>
+        </repository>
+    </repositories>
+    
+    <!-- No mirror configuration -->
+    <profiles>
+        <profile>
+            <id>dev</id>
+            <repositories>
+                <repository>
+                    <id>unknown-repo</id>
+                    <!-- Untrusted repository -->
+                    <url>http://unknown-maven.com/repository</url>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+</settings>
+```
+
+## Secure Solution
+
+```xml
+<!-- settings.xml with secure configuration -->
+<settings>
+    <!-- Configure secure mirror -->
+    <mirrors>
+        <mirror>
+            <id>central-secure</id>
+            <mirrorOf>central</mirrorOf>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </mirror>
+    </mirrors>
+    
+    <repositories>
+        <repository>
+            <id>secure-repo</id>
+            <!-- Using HTTPS protocol -->
+            <url>https://secure-repo.example.com/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+                <!-- Enforce checksum validation -->
+                <checksumPolicy>fail</checksumPolicy>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    
+    <!-- Secure profile configuration -->
+    <profiles>
+        <profile>
+            <id>secure-dev</id>
+            <repositories>
+                <repository>
+                    <id>company-repo</id>
+                    <!-- Internal trusted repository with HTTPS -->
+                    <url>https://nexus.company.com/repository/maven-public</url>
+                    <releases>
+                        <checksumPolicy>fail</checksumPolicy>
+                    </releases>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
+    
+    <!-- Add server authentication -->
+    <servers>
+        <server>
+            <id>company-repo</id>
+            <username>${env.REPO_USERNAME}</username>
+            <password>${env.REPO_PASSWORD}</password>
+        </server>
+    </servers>
+</settings>
+```
+
+## Best Practices
+
+* Always use HTTPS for repository URLs.
+* Implement repository managers like Nexus or Artifactory.
+* Use repository mirroring for better control.
+* Enable checksum validation.
+* Restrict repository definitions in child POMs.
