@@ -1,0 +1,207 @@
+---
+title: Environment Files (.env)
+description: Securing environment variables and .env files
+---
+
+## Common Misconfiguration
+
+Committed .env files expose all application secrets including API keys, database passwords, and encryption keys.
+
+### Vulnerable Example
+
+```bash
+# VULNERABLE - .env file with secrets
+# File: .env (committed to repository)
+
+# Database
+DATABASE_URL=postgresql://admin:SuperSecret123!@db.prod.example.com:5432/production
+REDIS_PASSWORD=Redis@Pass2024!
+
+# API Keys
+STRIPE_SECRET_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dcTYooMQauvdEDq54
+SENDGRID_API_KEY=SG.actual_api_key_here_never_commit_this
+JWT_SECRET=my-super-secret-jwt-key-that-should-be-random
+
+# AWS
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# OAuth
+GOOGLE_CLIENT_SECRET=GOCSPX-1234567890abcdefghijklm
+GITHUB_CLIENT_SECRET=1234567890abcdef1234567890abcdef12345678
+
+# Encryption
+ENCRYPTION_KEY=32_byte_encryption_key_here_abc123
+APP_SECRET=change_me_to_something_random_and_secret
+
+# Admin
+ADMIN_PASSWORD=admin123
+SUPER_USER_TOKEN=super_secret_admin_token
+```
+
+```bash
+// VULNERABLE - Loading .env without validation
+require('dotenv').config();
+
+const dbConnection = process.env.DATABASE_URL;  // Directly used
+const apiKey = process.env.API_KEY;  // No validation
+
+// Logging environment variables (exposes secrets)
+console.log('Environment:', process.env);
+```
+
+## Secure Example
+
+```env
+# SECURE - .env.example (committed to repository)
+# Copy this file to .env and fill in your values
+
+# Database
+DATABASE_URL=postgresql://username:password@host:port/database
+REDIS_PASSWORD=
+
+# API Keys (obtain from respective services)
+STRIPE_SECRET_KEY=sk_live_...
+SENDGRID_API_KEY=SG....
+JWT_SECRET=  # Generate with: openssl rand -base64 32
+
+# AWS (use IAM roles in production)
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+# OAuth
+GOOGLE_CLIENT_SECRET=
+GITHUB_CLIENT_SECRET=
+
+# Encryption (generate secure random keys)
+ENCRYPTION_KEY=  # Generate with: openssl rand -hex 32
+APP_SECRET=
+
+# Admin
+ADMIN_PASSWORD=  # Use strong password
+SUPER_USER_TOKEN=  # Generate with: uuidgen
+```
+
+```js
+// SECURE - Proper environment variable handling
+const dotenv = require('dotenv');
+const crypto = require('crypto');
+
+class ConfigManager {
+    constructor() {
+        this.loadEnvironment();
+        this.validateConfig();
+    }
+    
+    loadEnvironment() {
+        // Load .env file only in development
+        if (process.env.NODE_ENV !== 'production') {
+            const result = dotenv.config();
+            if (result.error) {
+                console.warn('Warning: .env file not found');
+            }
+        }
+    }
+    
+    validateConfig() {
+        const required = [
+            'DATABASE_URL',
+            'JWT_SECRET',
+            'ENCRYPTION_KEY'
+        ];
+        
+        const missing = required.filter(key => !process.env[key]);
+        
+        if (missing.length > 0) {
+            throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+        }
+        
+        // Validate format and strength
+        this.validateDatabaseUrl();
+        this.validateSecrets();
+    }
+    
+    validateDatabaseUrl() {
+        const dbUrl = process.env.DATABASE_URL;
+        try {
+            const url = new URL(dbUrl);
+            if (!url.password || url.password.length < 12) {
+                throw new Error('Database password is too weak');
+            }
+        } catch (error) {
+            throw new Error('Invalid DATABASE_URL format');
+        }
+    }
+    
+    validateSecrets() {
+        // Check JWT secret strength
+        const jwtSecret = process.env.JWT_SECRET;
+        if (jwtSecret.length < 32) {
+            throw new Error('JWT_SECRET must be at least 32 characters');
+        }
+        
+        // Check encryption key format
+        const encKey = process.env.ENCRYPTION_KEY;
+        if (!/^[0-9a-f]{64}$/i.test(encKey)) {
+            throw new Error('ENCRYPTION_KEY must be 64 hex characters');
+        }
+    }
+    
+    getConfig() {
+        return {
+            database: {
+                url: process.env.DATABASE_URL,
+                ssl: process.env.NODE_ENV === 'production'
+            },
+            jwt: {
+                secret: process.env.JWT_SECRET,
+                expiresIn: '24h'
+            },
+            encryption: {
+                key: Buffer.from(process.env.ENCRYPTION_KEY, 'hex'),
+                algorithm: 'aes-256-gcm'
+            }
+        };
+    }
+}
+
+// Docker compose with secrets management
+const dockerComposeSecure = `
+version: '3.8'
+
+services:
+  app:
+    image: myapp:latest
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL_FILE=/run/secrets/db_url
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
+    secrets:
+      - db_url
+      - jwt_secret
+
+secrets:
+  db_url:
+    external: true
+  jwt_secret:
+    external: true
+`;
+```
+
+## Detection Patterns
+
+  * Generic secrets: (password|passwd|pwd|secret|token|key)\s*=\s*['"][^'"]+['"].
+  * API Keys: (api[_-]?key|apikey)\s*=\s*['"][^'"]+['"].
+  * Private keys: (private[_-]?key)\s*=\s*['"][^'"]+['"].
+
+## Prevention Best Practices
+
+  1. Never commit .env files (add to .gitignore).
+  2. Use .env.example as a template.
+  3. Validate environment variables on startup.
+  4. Use secrets management services in production.
+  5. Encrypt sensitive environment variables.
+  6. Implement proper access controls.
+  7. Rotate secrets regularly.
+  8. Use different secrets per environment.
+  9. Monitor for exposed secrets in repositories.
