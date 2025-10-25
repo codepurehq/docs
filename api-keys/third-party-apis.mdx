@@ -1,0 +1,336 @@
+---
+title: Third-Party API Keys
+description: Securing various third-party service API keys
+---
+
+## Common Misconfiguration
+
+Exposed third-party API keys can lead to unauthorized service usage, data breaches, and significant financial costs.
+
+### Vulnerable Example
+
+```javascript
+// VULNERABLE - Hardcoded third-party API keys
+const config = {
+    // Communication APIs
+    twilio: {
+        accountSid: 'AC1234567890abcdef1234567890abcdef',
+        authToken: '1234567890abcdef1234567890abcdef',
+        apiKey: 'SK1234567890abcdef1234567890abcdef',
+        apiSecret: 'abcdef1234567890abcdef1234567890'
+    },
+    sendgrid: {
+        apiKey: 'SG.1234567890abcdef.1234567890abcdef1234567890abcdef1234567890'
+    },
+    mailgun: {
+        apiKey: 'key-1234567890abcdef1234567890abcdef',
+        domain: 'mg.example.com'
+    },
+    
+    // Analytics & Monitoring
+    datadog: {
+        apiKey: 'abcdef1234567890abcdef1234567890',
+        appKey: '1234567890abcdef1234567890abcdef1234567890'
+    },
+    newRelic: {
+        licenseKey: 'abcdef1234567890abcdef1234567890NRAL',
+        apiKey: 'NRAK-1234567890ABCDEF1234567890'
+    },
+    sentry: {
+        dsn: 'https://abcdef1234567890@o123456.ingest.sentry.io/1234567'
+    },
+    
+    // Maps & Location
+    googleMaps: {
+        apiKey: 'AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe'
+    },
+    mapbox: {
+        accessToken: 'pk.eyJ1IjoiZXhhbXBsZSIsImEiOiJjbGFzZGZhc2RmIn0.1234567890'
+    },
+    
+    // Cloud Storage
+    s3: {
+        accessKey: 'AKIAIOSFODNN7EXAMPLE',
+        secretKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+    },
+    cloudinary: {
+        cloudName: 'mycloud',
+        apiKey: '123456789012345',
+        apiSecret: 'abcdef1234567890abcdef12'
+    },
+    
+    // Social Media
+    twitter: {
+        apiKey: 'abcdef1234567890abcdef123',
+        apiSecret: '1234567890abcdef1234567890abcdef1234567890abcdef',
+        bearerToken: 'AAAAAAAAAAAAAAAAAAAAAMLheAAAAAAA0%2BuSeid%2BULvsea4JtiGRiSDSJSI%3DEUifiRBkKG5E2XzMDjRfl76ZC9Ub0wnz4XsNiRVBChTYbJcE3F'
+    },
+    facebook: {
+        appId: '1234567890123456',
+        appSecret: 'abcdef1234567890abcdef1234567890'
+    },
+    
+    // AI/ML Services
+    openai: {
+        apiKey: 'sk-1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ'
+    },
+    anthropic: {
+        apiKey: 'sk-ant-1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ'
+    }
+};
+```
+
+## Secure Example
+
+```javascript
+// SECURE - Environment-based API key management
+class SecureAPIManager {
+    constructor() {
+        this.apis = {};
+        this.initialized = false;
+    }
+    
+    async initialize() {
+        // Load from environment variables with validation
+        this.loadEnvironmentKeys();
+        
+        // Or load from secrets manager
+        await this.loadFromSecretsManager();
+        
+        // Validate all required keys
+        this.validateConfiguration();
+        
+        this.initialized = true;
+    }
+    
+    loadEnvironmentKeys() {
+        // Communication APIs
+        this.apis.twilio = {
+            accountSid: this.getRequiredEnv('TWILIO_ACCOUNT_SID'),
+            authToken: this.getRequiredEnv('TWILIO_AUTH_TOKEN'),
+            fromNumber: this.getRequiredEnv('TWILIO_FROM_NUMBER')
+        };
+        
+        this.apis.sendgrid = {
+            apiKey: this.getRequiredEnv('SENDGRID_API_KEY'),
+            fromEmail: this.getRequiredEnv('SENDGRID_FROM_EMAIL')
+        };
+        
+        // Analytics & Monitoring (optional keys)
+        this.apis.datadog = {
+            apiKey: process.env.DATADOG_API_KEY,
+            appKey: process.env.DATADOG_APP_KEY,
+            enabled: !!process.env.DATADOG_API_KEY
+        };
+        
+        this.apis.sentry = {
+            dsn: process.env.SENTRY_DSN,
+            environment: process.env.NODE_ENV || 'development',
+            enabled: !!process.env.SENTRY_DSN
+        };
+    }
+    
+    async loadFromSecretsManager() {
+        // AWS Secrets Manager example
+        const AWS = require('aws-sdk');
+        const secretsManager = new AWS.SecretsManager();
+        
+        try {
+            const secretName = 'prod/api-keys';
+            const secret = await secretsManager.getSecretValue({ 
+                SecretId: secretName 
+            }).promise();
+            
+            const keys = JSON.parse(secret.SecretString);
+            
+            // Merge with existing configuration
+            Object.assign(this.apis, keys);
+        } catch (error) {
+            console.error('Failed to load secrets:', error);
+            // Fall back to environment variables
+        }
+    }
+    
+    getRequiredEnv(key) {
+        const value = process.env[key];
+        if (!value) {
+            throw new Error(`Required environment variable ${key} is not set`);
+        }
+        return value;
+    }
+    
+    validateConfiguration() {
+        // Validate API key formats
+        const validators = {
+            twilio: (config) => {
+                if (!config.accountSid?.startsWith('AC')) {
+                    throw new Error('Invalid Twilio Account SID format');
+                }
+            },
+            sendgrid: (config) => {
+                if (!config.apiKey?.startsWith('SG.')) {
+                    throw new Error('Invalid SendGrid API key format');
+                }
+            },
+            stripe: (config) => {
+                if (config.apiKey?.startsWith('sk_live_') && 
+                    process.env.NODE_ENV !== 'production') {
+                    throw new Error('Live Stripe key used in non-production environment');
+                }
+            }
+        };
+        
+        for (const [name, validator] of Object.entries(validators)) {
+            if (this.apis[name]) {
+                validator(this.apis[name]);
+            }
+        }
+    }
+    
+    // Rate limiting wrapper
+    createRateLimitedClient(apiName, client) {
+        const rateLimit = require('express-rate-limit');
+        const limits = {
+            twilio: { requests: 100, window: 60000 },  // 100 req/min
+            sendgrid: { requests: 100, window: 1000 }, // 100 req/sec
+            openai: { requests: 60, window: 60000 },   // 60 req/min
+        };
+        
+        const limit = limits[apiName] || { requests: 100, window: 60000 };
+        
+        return new Proxy(client, {
+            get: (target, prop) => {
+                if (typeof target[prop] === 'function') {
+                    return async (...args) => {
+                        // Implement rate limiting logic
+                        await this.checkRateLimit(apiName, limit);
+                        return target[prop](...args);
+                    };
+                }
+                return target[prop];
+            }
+        });
+    }
+    
+    // Secure client initialization
+    getTwilioClient() {
+        if (!this.apis.twilio) {
+            throw new Error('Twilio not configured');
+        }
+        
+        const twilio = require('twilio');
+        const client = twilio(
+            this.apis.twilio.accountSid,
+            this.apis.twilio.authToken,
+            {
+                lazyLoading: true,
+                edge: 'sydney',  // Use edge location
+                logLevel: 'error'
+            }
+        );
+        
+        return this.createRateLimitedClient('twilio', client);
+    }
+    
+    getSendGridClient() {
+        if (!this.apis.sendgrid) {
+            throw new Error('SendGrid not configured');
+        }
+        
+        const sgMail = require('@sendgrid/mail');
+        sgMail.setApiKey(this.apis.sendgrid.apiKey);
+        
+        // Add request interceptor for monitoring
+        sgMail.setSubstitutionWrappers('{{', '}}');
+        
+        return sgMail;
+    }
+}
+
+// Docker secrets example
+const dockerCompose = `
+version: '3.8'
+
+services:
+  app:
+    image: myapp:latest
+    environment:
+      - NODE_ENV=production
+    secrets:
+      - twilio_auth
+      - sendgrid_key
+      - stripe_key
+    
+secrets:
+  twilio_auth:
+    external: true
+    external_name: twilio_auth_token
+  sendgrid_key:
+    external: true
+    external_name: sendgrid_api_key
+  stripe_key:
+    external: true
+    external_name: stripe_secret_key
+`;
+
+// Kubernetes ConfigMap and Secret
+const k8sConfig = `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  TWILIO_FROM_NUMBER: "+1234567890"
+  SENDGRID_FROM_EMAIL: "noreply@example.com"
+  SENTRY_ENVIRONMENT: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-keys
+type: Opaque
+stringData:
+  TWILIO_ACCOUNT_SID: \${TWILIO_ACCOUNT_SID}
+  TWILIO_AUTH_TOKEN: \${TWILIO_AUTH_TOKEN}
+  SENDGRID_API_KEY: \${SENDGRID_API_KEY}
+  DATADOG_API_KEY: \${DATADOG_API_KEY}
+  STRIPE_SECRET_KEY: \${STRIPE_SECRET_KEY}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        envFrom:
+        - configMapRef:
+            name: api-config
+        - secretRef:
+            name: api-keys
+`;
+```
+
+## Detection Patterns
+
+  * Twilio: AC[a-z0-9]{32} and SK[a-z0-9].
+  * SendGrid: SG\.[a-zA-Z0-9]{22}\.[a-zA-Z0-9].
+  * Mailgun: key-[a-z0-9].
+  * Datadog: [a-z0-9] (API) and [a-z0-9] (App).
+  * OpenAI: sk-[a-zA-Z0-9].
+  * Google API: AIza[0-9A-Za-z-_].
+
+## Prevention Best Practices
+
+  1. Use environment variables for all API keys.
+  2. Implement API key rotation schedules.
+  3. Use restricted API keys with minimal scopes.
+  4. Implement rate limiting on API usage.
+  5. Monitor API usage for anomalies.
+  6. Use separate keys for different environments.
+  7. Implement request signing where available.
+  8. Use IP whitelisting for API keys.
+  9. Enable API key expiration.
+  10. Audit API key usage regularly.
