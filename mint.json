@@ -72,7 +72,7 @@
                 {"group": "API Keys", "pages":["api-keys/payment-gateway-keys"]},
                 {"group": "Certificates", "pages":["certificates/ssh-keys"]},
                 {"group": "Application Secrets", "pages":["application-secrets/env-files"]},
-                {"group": "Source Control", "pages":["source-control/github-tokens"]}
+                {"group": "Source Control", "pages":["source-control/github-tokens", "source-control/gitlab-credentials"]}
         
       ]}
     ]
