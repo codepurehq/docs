@@ -1,0 +1,210 @@
+---
+title: Google Cloud Platform Keys
+description: Detecting and securing GCP service account keys and API credentials
+---
+
+## Common Misconfiguration
+
+Exposed GCP service account keys grant full access to Google Cloud resources, potentially leading to data breaches, cryptocurrency mining, and massive cloud bills.
+
+### Vulnerable Example
+
+```json
+// VULNERABLE - service-account-key.json committed to repository
+{
+  "type": "service_account",
+  "project_id": "my-project-123456",
+  "private_key_id": "1234567890abcdef1234567890abcdef12345678",
+  "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA2Z3qX2BTLS7ZAAAA...\n-----END RSA PRIVATE KEY-----\n",
+  "client_email": "my-service-account@my-project-123456.iam.gserviceaccount.com",
+  "client_id": "123456789012345678901",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-service-account%40my-project-123456.iam.gserviceaccount.com"
+}
+```
+
+```json
+# VULNERABLE - Hardcoded GCP credentials
+from google.cloud import storage
+from google.oauth2 import service_account
+import json
+
+# Never hardcode service account keys!
+SERVICE_ACCOUNT_KEY = """
+{
+  "type": "service_account",
+  "project_id": "my-project-123456",
+  "private_key": "-----BEGIN RSA PRIVATE KEY-----\\nMIIEpAIBAAKCAQEA2Z3qX2BTLS7ZAAAA...\\n-----END RSA PRIVATE KEY-----\\n",
+  "client_email": "my-sa@my-project.iam.gserviceaccount.com"
+}
+"""
+
+# Hardcoded API key
+GCP_API_KEY = "AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe"
+
+# Firebase config with API key
+FIREBASE_CONFIG = {
+    "apiKey": "AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe",
+    "authDomain": "my-app.firebaseapp.com",
+    "databaseURL": "https://my-app.firebaseio.com",
+    "projectId": "my-project-123456",
+    "storageBucket": "my-project-123456.appspot.com",
+    "messagingSenderId": "123456789012",
+    "appId": "1:123456789012:web:abcdef123456"
+}
+
+# Using hardcoded credentials
+credentials = service_account.Credentials.from_service_account_info(
+    json.loads(SERVICE_ACCOUNT_KEY)
+)
+client = storage.Client(credentials=credentials)
+```
+
+## Secure Example
+
+```python
+# SECURE - Using Application Default Credentials and Workload Identity
+from google.cloud import storage
+from google.cloud import secretmanager
+import google.auth
+import os
+
+class SecureGCPClient:
+    def __init__(self):
+        self.project_id = os.environ.get('GCP_PROJECT_ID')
+        self.credentials = None
+        self.storage_client = None
+        
+    def initialize_with_adc(self):
+        """Use Application Default Credentials"""
+        # ADC automatically finds credentials in this order:
+        # 1. GOOGLE_APPLICATION_CREDENTIALS environment variable
+        # 2. gcloud auth application-default login
+        # 3. GCE/GKE/Cloud Run/Cloud Functions metadata service
+        
+        credentials, project = google.auth.default(
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
+        )
+        
+        self.credentials = credentials
+        self.project_id = project or self.project_id
+        
+        # Initialize clients
+        self.storage_client = storage.Client(
+            project=self.project_id,
+            credentials=credentials
+        )
+        
+    def initialize_with_workload_identity(self):
+        """Use Workload Identity Federation for external workloads"""
+        # Configure via environment variable pointing to config file
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/var/run/secrets/gcp/key.json'
+        
+        # The config file contains workload identity pool info, not keys
+        credentials, project = google.auth.default()
+        
+        self.storage_client = storage.Client(
+            project=self.project_id,
+            credentials=credentials
+        )
+    
+    def get_secret(self, secret_name):
+        """Retrieve secrets from Secret Manager"""
+        client = secretmanager.SecretManagerServiceClient()
+        
+        # Build the resource name
+        name = f"projects/{self.project_id}/secrets/{secret_name}/versions/latest"
+        
+        # Access the secret
+        response = client.access_secret_version(request={"name": name})
+        secret_value = response.payload.data.decode('UTF-8')
+        
+        return secret_value
+    
+    def initialize_firebase_securely(self):
+        """Initialize Firebase with secure configuration"""
+        import firebase_admin
+        from firebase_admin import credentials
+        
+        if not firebase_admin._apps:
+            # Use Application Default Credentials
+            cred = credentials.ApplicationDefault()
+            firebase_admin.initialize_app(cred, {
+                'projectId': self.project_id,
+                'storageBucket': f'{self.project_id}.appspot.com',
+                'databaseURL': f'https://{self.project_id}.firebaseio.com'
+            })
+        
+        return firebase_admin.get_app()
+
+# Terraform configuration for Workload Identity
+"""
+# SECURE - Workload Identity setup
+resource "google_service_account" "app_sa" {
+  account_id   = "app-service-account"
+  display_name = "Application Service Account"
+  project      = var.project_id
+}
+
+resource "google_service_account_iam_member" "workload_identity" {
+  service_account_id = google_service_account.app_sa.name
+  role               = "roles/iam.workloadIdentityUser"
+  member            = "serviceAccount:${var.project_id}.svc.id.goog[${var.namespace}/${var.ksa_name}]"
+}
+
+# Grant minimal required permissions
+resource "google_project_iam_member" "app_permissions" {
+  project = var.project_id
+  role    = "roles/storage.objectViewer"  # Minimal permission
+  member  = "serviceAccount:${google_service_account.app_sa.email}"
+}
+"""
+
+# Kubernetes configuration
+"""
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-ksa
+  namespace: default
+  annotations:
+    iam.gke.io/gcp-service-account: app-service-account@PROJECT_ID.iam.gserviceaccount.com
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  template:
+    spec:
+      serviceAccountName: app-ksa
+      containers:
+      - name: app
+        image: gcr.io/project/app:latest
+        env:
+        - name: GCP_PROJECT_ID
+          value: "my-project-123456"
+        # No keys needed! Workload Identity handles authentication
+"""
+```
+
+## Detection Patterns
+
+  * GCP API Key: AIza[0-9A-Za-z-_].
+  * Service Account Key: "private_key":\s*"-----BEGIN RSA PRIVATE KEY-----.
+  * OAuth2 Refresh Token: 1//0[0-9A-Za-z-_].
+  * Cloud Resource Manager Key: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f].
+
+## Prevention Best Practices
+
+  1. Use Application Default Credentials (ADC).
+  2. Implement Workload Identity for GKE.
+  3. Use IAM roles instead of service account keys.
+  4. Store secrets in Secret Manager.
+  5. Enable API key restrictions.
+  6. Implement VPC Service Controls.
+  7. Use short-lived access tokens.
+  8. Audit service account key usage.
+  9. Enable organizational policies to prevent key downloads.
