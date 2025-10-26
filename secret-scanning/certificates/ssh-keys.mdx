@@ -29,11 +29,12 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAACFwAAAAdzc2gtcn
 echo "$SSH_KEY" > /tmp/deploy_key
 chmod 600 /tmp/deploy_key
 ssh -i /tmp/deploy_key user@production-server.com
-```
+````
 
 ```python
 # VULNERABLE - Hardcoded key in Python
 import paramiko
+import io # Needs io module
 
 PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyz
@@ -60,30 +61,32 @@ class SecureSSHConnection:
     def __init__(self):
         self.client = paramiko.SSHClient()
         self.client.load_system_host_keys()
-        self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        # RejectPolicy is safer than AutoAddPolicy in production
+        self.client.set_missing_host_key_policy(paramiko.RejectPolicy()) 
     
     def connect_with_agent(self, hostname, username):
         """Use SSH agent for authentication"""
+        # Ensure agent is running and has keys loaded
         self.client.connect(
             hostname,
             username=username,
             allow_agent=True,
-            look_for_keys=False
+            look_for_keys=False # Important: don't look elsewhere if agent fails
         )
     
     def connect_with_key_file(self, hostname, username):
         """Use protected key file from secure location"""
-        key_path = Path.home() / '.ssh' / 'id_rsa'
+        key_path = Path.home() / '.ssh' / 'id_rsa' # Or specify path
         
         if not key_path.exists():
-            raise FileNotFoundError("SSH key not found")
+            raise FileNotFoundError(f"SSH key not found at {key_path}")
         
-        # Check key file permissions
+        # Check key file permissions (VERY important)
         if oct(key_path.stat().st_mode)[-3:] != '600':
-            raise PermissionError("SSH key file has incorrect permissions")
+            raise PermissionError(f"SSH key file {key_path} has incorrect permissions (should be 600)")
         
-        # Prompt for passphrase if key is encrypted
-        passphrase = os.environ.get('SSH_KEY_PASSPHRASE')
+        # Load passphrase from environment or secure source
+        passphrase = os.environ.get('SSH_KEY_PASSPHRASE') 
         
         try:
             key = paramiko.RSAKey.from_private_key_file(
@@ -99,70 +102,83 @@ class SecureSSHConnection:
                 allow_agent=False
             )
         except paramiko.PasswordRequiredException:
-            raise ValueError("SSH key requires passphrase")
-    
-    def connect_with_bastion(self, target_host, bastion_host):
+            # Handle case where key needs passphrase but none was provided
+            raise ValueError(f"SSH key {key_path} requires a passphrase (set SSH_KEY_PASSPHRASE)")
+        except paramiko.SSHException as e:
+            # Handle other SSH errors (e.g., key format incorrect)
+            raise ConnectionError(f"Failed to connect using key {key_path}: {e}")
+
+    def connect_with_bastion(self, target_host, bastion_host, bastion_user='bastion-user', target_user='app-user'):
         """Use bastion/jump host for secure access"""
-        # First, connect to bastion
+        # First, connect to bastion (using agent or key file)
         bastion = paramiko.SSHClient()
         bastion.load_system_host_keys()
-        bastion.connect(bastion_host, username='bastion-user')
+        bastion.set_missing_host_key_policy(paramiko.RejectPolicy())
+        
+        # Example assumes bastion uses agent auth; adjust as needed
+        bastion.connect(bastion_host, username=bastion_user, allow_agent=True, look_for_keys=False) 
         
         # Create tunnel through bastion
         bastion_transport = bastion.get_transport()
         dest_addr = (target_host, 22)
+        local_addr = ('127.0.0.1', 0) # Use ephemeral local port
         bastion_channel = bastion_transport.open_channel(
-            "direct-tcpip", dest_addr, ('127.0.0.1', 0)
+            "direct-tcpip", dest_addr, local_addr
         )
         
-        # Connect to target through tunnel
+        # Connect to target through tunnel (again, assumes agent auth for target)
         self.client.connect(
             target_host,
-            username='app-user',
-            sock=bastion_channel
+            username=target_user,
+            sock=bastion_channel,
+            allow_agent=True, # Use agent key for target host
+            look_for_keys=False
         )
+```
 
-# Terraform example for key management
-"""
-# SECURE - Generate keys with Terraform
+```hcl
+# SECURE - Generate keys with Terraform and store in Secrets Manager
 resource "tls_private_key" "deploy_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
 
 resource "aws_key_pair" "deploy_key" {
-  key_name   = "deploy-key"
+  key_name   = "deploy-key-${random_id.id.hex}" # Add randomness
   public_key = tls_private_key.deploy_key.public_key_openssh
 }
 
-# Store private key in secrets manager
-resource "aws_secretsmanager_secret" "deploy_key" {
+# Store private key in AWS Secrets Manager
+resource "aws_secretsmanager_secret" "deploy_key_secret" {
   name = "deploy-ssh-key"
 }
 
-resource "aws_secretsmanager_secret_version" "deploy_key" {
-  secret_id     = aws_secretsmanager_secret.deploy_key.id
+resource "aws_secretsmanager_secret_version" "deploy_key_version" {
+  secret_id     = aws_secretsmanager_secret.deploy_key_secret.id
   secret_string = tls_private_key.deploy_key.private_key_pem
 }
-"""
+
+resource "random_id" "id" {
+  byte_length = 8
+}
 ```
 
 ## Detection Patterns
 
-  * RSA Private Key: -----BEGIN RSA PRIVATE KEY-----.
-  * OpenSSH Private Key: -----BEGIN OPENSSH PRIVATE KEY-----.
-  * PEM Private Key: -----BEGIN PRIVATE KEY-----.
-  * DSA Private Key: -----BEGIN DSA PRIVATE KEY-----.
-  * EC Private Key: -----BEGIN EC PRIVATE KEY-----.
+  * RSA Private Key: `` `-----BEGIN RSA PRIVATE KEY-----` ``
+  * OpenSSH Private Key: `` `-----BEGIN OPENSSH PRIVATE KEY-----` ``
+  * Generic Private Key: `` `-----BEGIN PRIVATE KEY-----` ``
+  * DSA Private Key: `` `-----BEGIN DSA PRIVATE KEY-----` ``
+  * EC Private Key: `` `-----BEGIN EC PRIVATE KEY-----` ``
 
 ## Prevention Best Practices
 
-  1. Never commit private keys to repositories.
-  2. Use SSH agent for key management.
-  3. Protect keys with passphrases.
-  4. Set correct file permissions (600).
-  5. Use separate keys for different environments.
-  6. Implement key rotation policies.
-  7. Use bastion hosts for production access.
-  8. Enable SSH key audit logging.
-  9. Use short-lived certificates where possible.
+  1.  **Never Commit Private Keys:** This is the golden rule. Private keys (`id_rsa`, `.pem` files) should **never** be in your Git repository, configuration files, or embedded in scripts. Use `.gitignore` to prevent accidental commits.
+  2.  **Use SSH Agent Forwarding:** For tasks like CI/CD deployments, use SSH agent forwarding. Your local agent manages the key securely, and the remote server can use it without having the key file itself. Be cautious, as agent hijacking is possible in untrusted environments.
+  3.  **Protect Keys with Strong Passphrases:** Encrypt your private SSH keys with a strong, unique passphrase. This adds a crucial layer of security if the key file is stolen. Use `ssh-keygen -p` to add or change a passphrase.
+  4.  **Set Correct File Permissions:** Private key files must have strict permissions (`chmod 600 ~/.ssh/id_rsa`). SSH clients will often refuse to use keys with overly permissive settings (like `644` or `777`).
+  5.  **Use Separate Keys:** Don't use the same SSH key for everything. Use different keys for different services, environments (dev vs. prod), and levels of access. This limits the blast radius if one key is compromised. Deploy keys (specific keys for specific repositories) are better than user keys for automation.
+  6.  **Implement Key Rotation:** SSH keys, especially those used for automation, should be rotated regularly (e.g., every 90 days). This limits the window of opportunity if a key is compromised silently.
+  7.  **Use Bastion Hosts (Jump Boxes):** Do not expose your production servers directly to the internet. Require users and automation to connect through a hardened bastion host first. Access to the bastion should be tightly controlled and monitored.
+  8.  **Enable SSH Key Audit Logging:** On servers, configure SSH daemon (`sshd`) logging to record key fingerprints used for authentication (`LogLevel VERBOSE`). This helps trace which key was used for potentially malicious access.
+  9.  **Consider SSH Certificates:** For larger organizations, SSH certificates (signed by a Certificate Authority) offer advantages over raw keys, including short lifespans, easier revocation, and role-based access without managing `authorized_keys` on every server.
