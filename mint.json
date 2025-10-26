@@ -33,182 +33,191 @@
     }
   ],
   "navigation": [
-  {
-    "group": "Getting Started",
-    "icon": "book-open",
-    "iconType": "solid",
-    "pages": ["introduction", "quickstart", "team"]
-  },
-  {
-    "group": "Core Capabilities",
-    "icon": "shield-alt",
-    "pages": [
-      "sast",
-      "sca",
-      "container_security",
-      "secret_scanning",
-      "devsecops"
-    ]
-  },
-  {
-    "group": "Reference",
-    "icon": "book",
-    "pages": [
-      {"group":"SCA",
-      "pages": [{"group": "Maven", "pages":["sca/maven/vulnerable-dependencies", "sca/maven/insecure-repositories", "sca/maven/snapshot-dependencies"]},
-                {"group": "npm", "pages":["sca/npm/vulnerable-dependencies", "sca/npm/unpinned-versions", "sca/npm/insecure-scripts"]},
-                {"group": "pip", "pages":["sca/pip/vulnerable-dependencies", "sca/pip/unpinned-dependencies", "sca/pip/insecure-index-urls"]}
-        
-      ]},
-      {"group":"Container Security",
-      "pages": [{"group": "Docker", "pages":["container-security/docker/running-as-root", "container-security/docker/exposed-docker-socket", "container-security/docker/using-latest-tags"]},
-                {"group": "Docker Compose", "pages":["container-security/docker-compose/hardcoded-secrets", "container-security/docker-compose/privileged-containers", "container-security/docker-compose/sensitive-host-mounts"]},
-                {"group": "Kubernetes", "pages":["container-security/kubernetes/allowing-privileged-pods", "container-security/kubernetes/missing-network-policies", "container-security/kubernetes/default-service-accounts"]}
-        
-      ]},
-      {"group":"Secret Scanning",
-      "pages": [{"group": "Cloude Providers", "pages":["secret-scanning/cloude-providers/aws-credentials", "secret-scanning/cloude-providers/azure-secrets", "secret-scanning/cloude-providers/gcp-keys", "secret-scanning/cloude-providers/multi-cloud-credentials"]},
-                {"group": "DataBases", "pages":["secret-scanning/databases/sql-connection-strings", "secret-scanning/databases/nosql-credentials", "secret-scanning/databases/database-passwords"]},
-                {"group": "API Keys", "pages":["secret-scanning/api-keys/payment-gateway-keys", "secret-scanning/api-keys/third-party-apis", "secret-scanning/api-keys/jwt-secrets"]},
-                {"group": "Certificates", "pages":["secret-scanning/certificates/ssh-keys"]},
-                {"group": "Application Secrets", "pages":["secret-scanning/application-secrets/env-files"]},
-                {"group": "Source Control", "pages":["secret-scanning/source-control/github-tokens", "secret-scanning/source-control/gitlab-credentials", "secret-scanning/source-control/git-secrets"]}
-        
-      ]}
-    ]
-  },
-  {
-    "group": "User Management",
-    "icon": "users-cog",
-    "pages": ["role_perm"]
-  },
-  {
-  "group": "Vulnerability Reference",
-  "icon": "shield-virus",
-  "pages": [
     {
-      "group": "A01:2021 – Broken Access Control",
+      "group": "Getting Started",
+      "icon": "book-open",
+      "iconType": "solid",
+      "pages": ["introduction", "quickstart", "team"]
+    },
+    {
+      "group": "Product Guides",
+      "icon": "shield-alt",
       "pages": [
-        "vulnerabilities/path-traversal",
-        "vulnerabilities/cwe-200",
-        "vulnerabilities/cwe-284",
-        "vulnerabilities/cwe-352",
-        "vulnerabilities/cwe-425",
-        "vulnerabilities/cwe-601",
-        "vulnerabilities/cwe-639",
-        "vulnerabilities/cwe-862",
-        "vulnerabilities/cwe-1275"
+        {
+          "group": "SAST",
+          "pages": [
+            "sast"
+          ]
+        },
+        {
+          "group": "SCA",
+          "pages": [
+            "sca",
+            {"group": "Maven", "pages":["sca/maven/vulnerable-dependencies", "sca/maven/insecure-repositories", "sca/maven/snapshot-dependencies"]},
+            {"group": "npm", "pages":["sca/npm/vulnerable-dependencies", "sca/npm/unpinned-versions", "sca/npm/insecure-scripts"]},
+            {"group": "pip", "pages":["sca/pip/vulnerable-dependencies", "sca/pip/unpinned-dependencies", "sca/pip/insecure-index-urls"]}
+          ]
+        },
+        {
+          "group": "Container Security",
+          "pages": [
+            "container_security",
+            {"group": "Docker", "pages":["container-security/docker/running-as-root", "container-security/docker/exposed-docker-socket", "container-security/docker/using-latest-tags"]},
+            {"group": "Docker Compose", "pages":["container-security/docker-compose/hardcoded-secrets", "container-security/docker-compose/privileged-containers", "container-security/docker-compose/sensitive-host-mounts"]},
+            {"group": "Kubernetes", "pages":["container-security/kubernetes/allowing-privileged-pods", "container-security/kubernetes/missing-network-policies", "container-security/kubernetes/default-service-accounts"]}
+          ]
+        },
+        {
+          "group": "Secret Scanning",
+          "pages": [
+            "secret_scanning",
+            {"group": "Cloud Providers", "pages":["secret-scanning/cloude-providers/aws-credentials", "secret-scanning/cloude-providers/azure-secrets", "secret-scanning/cloude-providers/gcp-keys", "secret-scanning/cloude-providers/multi-cloud-credentials"]},
+            {"group": "Databases", "pages":["secret-scanning/databases/sql-connection-strings", "secret-scanning/databases/nosql-credentials", "secret-scanning/databases/database-passwords"]},
+            {"group": "API Keys", "pages":["secret-scanning/api-keys/payment-gateway-keys", "secret-scanning/api-keys/third-party-apis", "secret-scanning/api-keys/jwt-secrets"]},
+            {"group": "Certificates", "pages":["secret-scanning/certificates/ssh-keys"]},
+            {"group": "Application Secrets", "pages":["secret-scanning/application-secrets/env-files"]},
+            {"group": "Source Control", "pages":["secret-scanning/source-control/github-tokens", "secret-scanning/source-control/gitlab-credentials", "secret-scanning/source-control/git-secrets"]}
+          ]
+        }
       ]
     },
     {
-      "group": "A02:2021 – Cryptographic Failures",
+      "group": "Integrations",
+      "icon": "plug",
       "pages": [
-        "vulnerabilities/cwe-319",
-        "vulnerabilities/cwe-327",
-        "vulnerabilities/cwe-916",
-        "vulnerabilities/cwe-759",
-        "vulnerabilities/cwe-259",
-        "vulnerabilities/cwe-321",
-        "vulnerabilities/cwe-330",
-        "vulnerabilities/cwe-329",
-        "vulnerabilities/cwe-347"
+        "devsecops",
+        "github", 
+        "gitlab", 
+        "bitbucket"
       ]
     },
     {
-      "group": "A03:2021 – Injection",
+      "group": "Vulnerability Reference",
+      "icon": "shield-virus",
       "pages": [
-        "vulnerabilities/sql-injection",
-        "vulnerabilities/xss",
-        "vulnerabilities/command-injection",
-        "vulnerabilities/cwe-94",
-        "vulnerabilities/ldap-injection",
-        "vulnerabilities/cwe-643",
-        "vulnerabilities/cwe-917",
-        "vulnerabilities/cwe-113"
+        {
+          "group": "A01:2021 – Broken Access Control",
+          "pages": [
+            "vulnerabilities/path-traversal",
+            "vulnerabilities/cwe-200",
+            "vulnerabilities/cwe-284",
+            "vulnerabilities/cwe-352",
+            "vulnerabilities/cwe-425",
+            "vulnerabilities/cwe-601",
+            "vulnerabilities/cwe-639",
+            "vulnerabilities/cwe-862",
+            "vulnerabilities/cwe-1275"
+          ]
+        },
+        {
+          "group": "A02:2021 – Cryptographic Failures",
+          "pages": [
+            "vulnerabilities/cwe-319",
+            "vulnerabilities/cwe-327",
+            "vulnerabilities/cwe-916",
+            "vulnerabilities/cwe-759",
+            "vulnerabilities/cwe-259",
+            "vulnerabilities/cwe-321",
+            "vulnerabilities/cwe-330",
+            "vulnerabilities/cwe-329",
+            "vulnerabilities/cwe-347"
+          ]
+        },
+        {
+          "group": "A03:2021 – Injection",
+          "pages": [
+            "vulnerabilities/sql-injection",
+            "vulnerabilities/xss",
+            "vulnerabilities/command-injection",
+            "vulnerabilities/cwe-94",
+            "vulnerabilities/ldap-injection",
+            "vulnerabilities/cwe-643",
+            "vulnerabilities/cwe-917",
+            "vulnerabilities/cwe-113"
+          ]
+        },
+        {
+          "group": "A04:2021 – Insecure Design",
+          "pages": [
+            "vulnerabilities/cwe-209",
+            "vulnerabilities/cwe-434",
+            "vulnerabilities/cwe-501",
+            "vulnerabilities/cwe-602",
+            "vulnerabilities/cwe-799",
+            "vulnerabilities/cwe-840",
+            "vulnerabilities/cwe-312",
+            "vulnerabilities/cwe-257"
+          ]
+        },
+        {
+          "group": "A05:2021 – Security Misconfiguration",
+          "pages": [
+            "vulnerabilities/xxe",
+            "vulnerabilities/cwe-548",
+            "vulnerabilities/cwe-11",
+            "vulnerabilities/cwe-614",
+            "vulnerabilities/cwe-1004",
+            "vulnerabilities/cwe-526",
+            "vulnerabilities/cwe-776",
+            "vulnerabilities/cwe-942"
+          ]
+        },
+        {
+          "group": "A06:2021 – Vulnerable and Outdated Components",
+          "pages": [
+            "vulnerabilities/cwe-1104"
+          ]
+        },
+        {
+          "group": "A07:2021 – Identification and Authentication Failures",
+          "pages": [
+            "vulnerabilities/cwe-287",
+            "vulnerabilities/cwe-306",
+            "vulnerabilities/cwe-307",
+            "vulnerabilities/cwe-521",
+            "vulnerabilities/cwe-640",
+            "vulnerabilities/cwe-384",
+            "vulnerabilities/cwe-613",
+            "vulnerabilities/cwe-295"
+          ]
+        },
+        {
+          "group": "A08:2021 – Software and Data Integrity Failures",
+          "pages": [
+            "vulnerabilities/deserialization",
+            "vulnerabilities/cwe-494",
+            "vulnerabilities/cwe-829",
+            "vulnerabilities/cwe-915",
+            "vulnerabilities/cwe-353"
+          ]
+        },
+        {
+          "group": "A09:2021 – Security Logging and Monitoring Failures",
+          "pages": [
+            "vulnerabilities/cwe-778",
+            "vulnerabilities/cwe-532",
+            "vulnerabilities/cwe-117"
+          ]
+        },
+        {
+          "group": "A10:2021 – Server-Side Request Forgery (SSRF)",
+          "pages": [
+            "vulnerabilities/ssrf"
+          ]
+        }
       ]
     },
     {
-      "group": "A04:2021 – Insecure Design",
-      "pages": [
-        "vulnerabilities/cwe-209",
-        "vulnerabilities/cwe-434",
-        "vulnerabilities/cwe-501",
-        "vulnerabilities/cwe-602",
-        "vulnerabilities/cwe-799",
-        "vulnerabilities/cwe-840",
-        "vulnerabilities/cwe-312",
-        "vulnerabilities/cwe-257"
-      ]
+      "group": "User Management",
+      "icon": "users-cog",
+      "pages": ["role_perm"]
     },
     {
-      "group": "A05:2021 – Security Misconfiguration",
-      "pages": [
-        "vulnerabilities/xxe",
-        "vulnerabilities/cwe-548",
-        "vulnerabilities/cwe-11",
-        "vulnerabilities/cwe-614",
-        "vulnerabilities/cwe-1004",
-        "vulnerabilities/cwe-526",
-        "vulnerabilities/cwe-776",
-        "vulnerabilities/cwe-942"
-      ]
-    },
-    {
-      "group": "A06:2021 – Vulnerable and Outdated Components",
-      "pages": [
-        "vulnerabilities/cwe-1104"
-      ]
-    },
-    {
-      "group": "A07:2021 – Identification and Authentication Failures",
-      "pages": [
-        "vulnerabilities/cwe-287",
-        "vulnerabilities/cwe-306",
-        "vulnerabilities/cwe-307",
-        "vulnerabilities/cwe-521",
-        "vulnerabilities/cwe-640",
-        "vulnerabilities/cwe-384",
-        "vulnerabilities/cwe-613",
-        "vulnerabilities/cwe-295"
-      ]
-    },
-    {
-      "group": "A08:2021 – Software and Data Integrity Failures",
-      "pages": [
-        "vulnerabilities/deserialization",
-        "vulnerabilities/cwe-494",
-        "vulnerabilities/cwe-829",
-        "vulnerabilities/cwe-915",
-        "vulnerabilities/cwe-353"
-      ]
-    },
-    {
-      "group": "A09:2021 – Security Logging and Monitoring Failures",
-      "pages": [
-        "vulnerabilities/cwe-778",
-        "vulnerabilities/cwe-532",
-        "vulnerabilities/cwe-117"
-      ]
-    },
-    {
-      "group": "A10:2021 – Server-Side Request Forgery (SSRF)",
-      "pages": [
-        "vulnerabilities/ssrf"
-      ]
+      "group": "Releases & Roadmap",
+      "icon": "map-signs",
+      "pages": ["changelog", "roadmap"]
     }
-  ]
-},
-  {
-    "group": "Integrations",
-    "icon": "plug",
-    "pages": ["github", "gitlab", "bitbucket"]
-  },
-  {
-    "group": "Releases & Roadmap",
-    "icon": "map-signs",
-    "pages": ["changelog", "roadmap"]
-  }
-],
+  ],
   "footerSocials": {
     "twitter": "https://twitter.com/codepurehq",
     "github": "https://github.com/codepurehq",
