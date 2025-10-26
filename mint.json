@@ -61,9 +61,9 @@
         
       ]},
       {"group":"Container Security",
-      "pages": [{"group": "Docker", "pages":["docker/running-as-root", "docker/exposed-docker-socket", "docker/using-latest-tags"]},
-                {"group": "Docker Compose", "pages":["docker-compose/hardcoded-secrets", "docker-compose/privileged-containers", "docker-compose/sensitive-host-mounts"]},
-                {"group": "Kubernetes", "pages":["kubernetes/allowing-privileged-pods", "kubernetes/missing-network-policies", "kubernetes/default-service-accounts"]}
+      "pages": [{"group": "Docker", "pages":["container-security/docker/running-as-root", "container-security/docker/exposed-docker-socket", "container-security/docker/using-latest-tags"]},
+                {"group": "Docker Compose", "pages":["container-security/docker-compose/hardcoded-secrets", "container-security/docker-compose/privileged-containers", "container-security/docker-compose/sensitive-host-mounts"]},
+                {"group": "Kubernetes", "pages":["container-security/kubernetes/allowing-privileged-pods", "container-security/kubernetes/missing-network-policies", "container-security/kubernetes/default-service-accounts"]}
         
       ]},
       {"group":"Secret Scanning",
