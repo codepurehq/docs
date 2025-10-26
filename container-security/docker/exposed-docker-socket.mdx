@@ -25,7 +25,10 @@ services:
 
 ```bash
 # Vulnerable docker run command
-docker run -v /var/run/docker.sock:/var/run/docker.sock            -p 8080:8080            jenkins/jenkins:lts
+docker run -d -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v jenkins_home:/var/jenkins_home \
+  jenkins/jenkins:lts
 ```
 
 ## Secure Example
@@ -99,7 +102,7 @@ spec:
 
 ## Security Best Practices
 
-- Never mount Docker socket unless absolutely necessary  
-- Use Docker-in-Docker (DinD) with TLS for CI/CD pipelines  
-- Consider rootless alternatives like Kaniko or Buildah   
-- Implement socket proxies with restricted API access  
+- Never mount Docker socket unless absolutely necessary.  
+- Use Docker-in-Docker (DinD) with TLS for CI/CD pipelines.  
+- Consider rootless alternatives like Kaniko or Buildah.   
+- Implement socket proxies with restricted API access.  
