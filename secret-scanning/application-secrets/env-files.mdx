@@ -5,7 +5,7 @@ description: Securing environment variables and .env files
 
 ## Common Misconfiguration
 
-Committed .env files expose all application secrets including API keys, database passwords, and encryption keys.
+Committed `.env` files expose all application secrets including API keys, database passwords, and encryption keys. 😱
 
 ### Vulnerable Example
 
@@ -37,18 +37,20 @@ APP_SECRET=change_me_to_something_random_and_secret
 # Admin
 ADMIN_PASSWORD=admin123
 SUPER_USER_TOKEN=super_secret_admin_token
-```
+````
 
-```bash
+```javascript
 // VULNERABLE - Loading .env without validation
 require('dotenv').config();
 
-const dbConnection = process.env.DATABASE_URL;  // Directly used
-const apiKey = process.env.API_KEY;  // No validation
+const dbConnection = process.env.DATABASE_URL; // Directly used
+const apiKey = process.env.API_KEY; // No validation
 
 // Logging environment variables (exposes secrets)
 console.log('Environment:', process.env);
 ```
+
+-----
 
 ## Secure Example
 
@@ -63,7 +65,7 @@ REDIS_PASSWORD=
 # API Keys (obtain from respective services)
 STRIPE_SECRET_KEY=sk_live_...
 SENDGRID_API_KEY=SG....
-JWT_SECRET=  # Generate with: openssl rand -base64 32
+JWT_SECRET= # Generate with: openssl rand -base64 32
 
 # AWS (use IAM roles in production)
 AWS_ACCESS_KEY_ID=
@@ -74,15 +76,15 @@ GOOGLE_CLIENT_SECRET=
 GITHUB_CLIENT_SECRET=
 
 # Encryption (generate secure random keys)
-ENCRYPTION_KEY=  # Generate with: openssl rand -hex 32
+ENCRYPTION_KEY= # Generate with: openssl rand -hex 32
 APP_SECRET=
 
 # Admin
-ADMIN_PASSWORD=  # Use strong password
-SUPER_USER_TOKEN=  # Generate with: uuidgen
+ADMIN_PASSWORD= # Use strong password
+SUPER_USER_TOKEN= # Generate with: uuidgen
 ```
 
-```js
+```javascript
 // SECURE - Proper environment variable handling
 const dotenv = require('dotenv');
 const crypto = require('crypto');
@@ -92,7 +94,7 @@ class ConfigManager {
         this.loadEnvironment();
         this.validateConfig();
     }
-    
+
     loadEnvironment() {
         // Load .env file only in development
         if (process.env.NODE_ENV !== 'production') {
@@ -101,53 +103,57 @@ class ConfigManager {
                 console.warn('Warning: .env file not found');
             }
         }
+        // In production, variables should be injected by the environment
+        // (e.g., Docker secrets, Kubernetes secrets, PaaS config vars)
     }
-    
+
     validateConfig() {
         const required = [
             'DATABASE_URL',
             'JWT_SECRET',
             'ENCRYPTION_KEY'
         ];
-        
+
         const missing = required.filter(key => !process.env[key]);
-        
+
         if (missing.length > 0) {
             throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
         }
-        
+
         // Validate format and strength
         this.validateDatabaseUrl();
         this.validateSecrets();
     }
-    
+
     validateDatabaseUrl() {
         const dbUrl = process.env.DATABASE_URL;
         try {
             const url = new URL(dbUrl);
+            // Example strength check (adjust as needed)
             if (!url.password || url.password.length < 12) {
-                throw new Error('Database password is too weak');
+                console.warn('Warning: Database password seems weak');
             }
         } catch (error) {
-            throw new Error('Invalid DATABASE_URL format');
+            throw new Error(`Invalid DATABASE_URL format: ${error.message}`);
         }
     }
-    
+
     validateSecrets() {
         // Check JWT secret strength
         const jwtSecret = process.env.JWT_SECRET;
-        if (jwtSecret.length < 32) {
+        if (!jwtSecret || jwtSecret.length < 32) {
             throw new Error('JWT_SECRET must be at least 32 characters');
         }
-        
-        // Check encryption key format
+
+        // Check encryption key format (e.g., 64 hex chars for AES-256)
         const encKey = process.env.ENCRYPTION_KEY;
-        if (!/^[0-9a-f]{64}$/i.test(encKey)) {
-            throw new Error('ENCRYPTION_KEY must be 64 hex characters');
+        if (!encKey || !/^[0-9a-fA-F]{64}$/.test(encKey)) {
+            throw new Error('ENCRYPTION_KEY must be 64 hex characters (32 bytes)');
         }
     }
-    
+
     getConfig() {
+        // Return structured config, ensuring secrets aren't accidentally logged
         return {
             database: {
                 url: process.env.DATABASE_URL,
@@ -155,18 +161,20 @@ class ConfigManager {
             },
             jwt: {
                 secret: process.env.JWT_SECRET,
-                expiresIn: '24h'
+                expiresIn: '15m' // Keep short
             },
             encryption: {
                 key: Buffer.from(process.env.ENCRYPTION_KEY, 'hex'),
                 algorithm: 'aes-256-gcm'
             }
+            // Add other non-sensitive config values here
         };
     }
 }
+```
 
-// Docker compose with secrets management
-const dockerComposeSecure = `
+```yaml
+# SECURE - Docker compose with secrets management
 version: '3.8'
 
 services:
@@ -174,6 +182,7 @@ services:
     image: myapp:latest
     environment:
       - NODE_ENV=production
+      # Inject secrets via files mounted by Docker
       - DATABASE_URL_FILE=/run/secrets/db_url
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
     secrets:
@@ -182,26 +191,34 @@ services:
 
 secrets:
   db_url:
-    external: true
+    # Use Docker Swarm secrets or bind-mount from secure location
+    external: true # Assumes 'db_url_v1' secret exists
+    name: db_url_v1
   jwt_secret:
-    external: true
-`;
+    external: true # Assumes 'jwt_secret_prod' secret exists
+    name: jwt_secret_prod
 ```
+
+-----
 
 ## Detection Patterns
 
-  * Generic secrets: (password|passwd|pwd|secret|token|key)\s*=\s*['"][^'"]+['"].
-  * API Keys: (api[_-]?key|apikey)\s*=\s*['"][^'"]+['"].
-  * Private keys: (private[_-]?key)\s*=\s*['"][^'"]+['"].
+  * Generic Secret: `` `(?i)(password|passwd|pwd|secret|token|api.?key)\s*[:=]\s*['"]?[^'"\s]+['"]?` ``
+  * AWS Key: `` `(AWS|aws|Aws)_(ACCESS|access|Access)_KEY(_ID)?\s*[:=]\s*['"]?(AKIA|ASIA)[0-9A-Z]{16}['"]?` ``
+  * AWS Secret: `` `(AWS|aws|Aws)_(SECRET|secret|Secret)_ACCESS_KEY\s*[:=]\s*['"]?[A-Za-z0-9/+=]{40}['"]?` ``
+  * Stripe Key: `` `STRIPE_(SECRET|secret|Secret)_KEY\s*[:=]\s*['"]?sk_(live|test)_[0-9a-zA-Z]{24,}['"]?` ``
+  * Google OAuth Secret: `` `(GOOGLE|google|Google)_CLIENT_SECRET\s*[:=]\s*['"]?GOCSPX-[0-9a-zA-Z-]{30,}['"]?` ``
+
+-----
 
 ## Prevention Best Practices
 
-  1. Never commit .env files (add to .gitignore).
-  2. Use .env.example as a template.
-  3. Validate environment variables on startup.
-  4. Use secrets management services in production.
-  5. Encrypt sensitive environment variables.
-  6. Implement proper access controls.
-  7. Rotate secrets regularly.
-  8. Use different secrets per environment.
-  9. Monitor for exposed secrets in repositories.
+  1.  **Never Commit `.env` Files:** This is the absolute **most important rule** 🚫. Add `.env` (and similar files like `.envrc`, `.flaskenv`) to your `.gitignore` file immediately. Secrets should never exist in your code repository's history.
+  2.  **Use `.env.example`:** Commit a template file (e.g., `.env.example`) that lists all required environment variables but **without** their actual values. This guides other developers (and your future self) on what needs to be configured.
+  3.  **Validate Variables on Startup:** Your application should check for the *presence* and potentially the *format* or *strength* of required environment variables when it starts. Fail fast if critical secrets are missing or invalid.
+  4.  **Use Secrets Management in Production:** While `.env` files are okay for local development, they are **not** suitable for production. Use platform-native solutions (like AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, Kubernetes Secrets, Docker Secrets, Heroku Config Vars) to inject secrets securely into your production environment.
+  5.  **Encrypt Sensitive Variables:** For secrets stored *at rest* (e.g., in some deployment configurations or backups), ensure they are encrypted. Tools like `sops` can encrypt secrets within configuration files, decrypting them only at runtime.
+  6.  **Implement Proper Access Controls:** Limit who can access the production environment where secrets are stored or injected. Use Role-Based Access Control (RBAC) on your cloud platform or orchestrator.
+  7.  **Rotate Secrets Regularly:** All secrets (database passwords, API keys, encryption keys) should have a defined lifespan and be rotated periodically. Automate this process using secrets management tools.
+  8.  **Use Different Secrets Per Environment:** Never share secrets between development, staging, and production. Each environment must have its own unique set of credentials.
+  9.  **Scan Repositories for Secrets:** Use automated tools (like `git-secrets`, `truffleHog`, or GitHub Advanced Security secret scanning) in your CI/CD pipeline to detect accidentally committed secrets before they are merged.
