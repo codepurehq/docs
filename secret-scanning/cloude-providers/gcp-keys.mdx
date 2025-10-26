@@ -48,7 +48,7 @@ GCP_API_KEY = "AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe"
 FIREBASE_CONFIG = {
     "apiKey": "AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe",
     "authDomain": "my-app.firebaseapp.com",
-    "databaseURL": "[https://my-app.firebaseio.com](https://my-app.firebaseio.com)",
+    "databaseURL": "https://my-app.firebaseio.com",
     "projectId": "my-project-123456",
     "storageBucket": "my-project-123456.appspot.com",
     "messagingSenderId": "123456789012",
@@ -85,7 +85,7 @@ class SecureGCPClient:
         # 3. GCE/GKE/Cloud Run/Cloud Functions metadata service
 
         credentials, project = google.auth.default(
-            scopes=['[https://www.googleapis.com/auth/cloud-platform](https://www.googleapis.com/auth/cloud-platform)']
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
         )
 
         self.credentials = credentials
