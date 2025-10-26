@@ -87,14 +87,10 @@ spec:
   - Egress
   ingress:
   - from:
-    # Only allow from web-app pods
+    # Only allow from web-app pods in this namespace
     - podSelector:
         matchLabels:
           app: web
-    # Only from the same namespace
-    - namespaceSelector:
-        matchLabels:
-          name: production
     ports:
     - protocol: TCP
       port: 5432
@@ -103,14 +99,14 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
-          name: kube-system
+          name: kube-system # Use correct label for kube-system
     - podSelector:
         matchLabels:
           k8s-app: kube-dns
     ports:
     - protocol: UDP
       port: 53
-  # Allow responses back to web-app
+  # Allow responses back to web-app (optional, as egress is stateful)
   - to:
     - podSelector:
         matchLabels:
@@ -136,8 +132,8 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: ingress-nginx
-    - podSelector:
+          name: ingress-nginx # Use the namespace's label
+      podSelector:
         matchLabels:
           app.kubernetes.io/name: ingress-nginx
     ports:
@@ -147,13 +143,13 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: monitoring
-    - podSelector:
+          name: monitoring # Use the namespace's label
+      podSelector:
         matchLabels:
           app: prometheus
     ports:
     - protocol: TCP
-      port: 9090
+      port: 9090 # Port for scraping
   egress:
   # Allow to database
   - to:
@@ -187,7 +183,7 @@ spec:
     - ipBlock:
         cidr: 0.0.0.0/0
         except:
-        - 169.254.169.254/32  # Block metadata service
+        - 169.254.169.254/32 # Block metadata service
         - 10.0.0.0/8
         - 192.168.0.0/16
         - 172.16.0.0/12
@@ -210,12 +206,10 @@ spec:
   - Egress
   ingress:
   - from:
+    # Only allow from web-app pods in this namespace
     - podSelector:
         matchLabels:
           app: web
-    - namespaceSelector:
-        matchLabels:
-          name: production
     ports:
     - protocol: TCP
       port: 6379
