@@ -55,9 +55,9 @@
     "icon": "book",
     "pages": [
       {"group":"SCA",
-      "pages": [{"group": "Maven", "pages":["maven/vulnerable-dependencies", "maven/insecure-repositories", "maven/snapshot-dependencies"]},
-                {"group": "npm", "pages":["npm/vulnerable-dependencies", "npm/unpinned-versions", "npm/insecure-scripts"]},
-                {"group": "pip", "pages":["pip/vulnerable-dependencies", "pip/unpinned-dependencies", "pip/insecure-index-urls"]}
+      "pages": [{"group": "Maven", "pages":["sca/maven/vulnerable-dependencies", "sca/maven/insecure-repositories", "sca/maven/snapshot-dependencies"]},
+                {"group": "npm", "pages":["sca/npm/vulnerable-dependencies", "sca/npm/unpinned-versions", "sca/npm/insecure-scripts"]},
+                {"group": "pip", "pages":["sca/pip/vulnerable-dependencies", "sca/pip/unpinned-dependencies", "sca/pip/insecure-index-urls"]}
         
       ]},
       {"group":"Container Security",
