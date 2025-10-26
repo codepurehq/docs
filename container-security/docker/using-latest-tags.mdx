@@ -46,7 +46,10 @@ services:
 FROM python:3.11.7-slim-bookworm  # Specific version and variant
 
 # Pin package versions
-RUN pip install --no-cache-dir     flask==3.0.0     redis==5.0.1     gunicorn==21.2.0
+RUN pip install --no-cache-dir \
+    flask==3.0.0 \
+    redis==5.0.1 \
+    gunicorn==21.2.0
 
 COPY app.py /app/
 WORKDIR /app
@@ -134,7 +137,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0 # Pin to a specific version
         with:
           image-ref: 'myapp:v2.1.5'
           format: 'sarif'
