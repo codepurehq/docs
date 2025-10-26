@@ -334,14 +334,14 @@ spec:
 
 ## Prevention Best Practices
 
-1.  **Use Secrets Management:** Never hardcode keys. Load them from a central, secure location at runtime, such as environment variables (`.env` files for local development) or a dedicated secrets manager (like HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, or GCP Secret Manager).
-2.  **Enforce Least Privilege:** Do not use root API keys. Create "restricted" keys with the minimum permissions needed. For example, a SendGrid key might only need "Mail Send" permissions, not "Full Access" or "Billing" permissions.
-3.  **Use Separate Keys Per Environment:** Never use your "live" or "production" API keys in development, testing, or staging. Use separate test keys (like `sk_test_...` for Stripe) or sandboxed accounts.
-4.  **Use IP Whitelisting:** If your provider supports it (e.g., Google Maps, SendGrid), lock your API key so it only works when requests come from your server's known, static IP addresses. This is a highly effective defense.
-5.  **Verify Webhooks:** If a third-party service (like Twilio or Sentry) sends *you* data via a webhook, always verify the request's signature to ensure it's authentic and not an attacker.
-6.  **Implement Rate Limiting:** Protect your application and your budget by rate-limiting calls to third-party services. This prevents a single user (or an attacker) from causing a massive bill or getting your account suspended.
-7.  **Monitor and Audit Usage:** Actively log and monitor your API usage. Set up billing alerts and anomaly detection (e.g., "alert me if Twilio costs exceed $10 in an hour") to catch leaks as soon as they happen.
-8.  **Rotate API Keys:** All keys should have a defined lifespan. Regularly rotate (delete and create new) your API keys to limit the window of opportunity if a key is ever silently leaked. Automate this process if your provider supports it.
-9.  **Enable Key Expiration:** If the provider allows it, set an automatic expiration date on API keys, especially for temporary or testing purposes.
-10. **Audit Key Usage Regularly:** Periodically review all active API keys and delete any that are no longer needed by your application.
+  1.  **Use Secrets Management:** Never hardcode keys. Load them from a central, secure location at runtime, such as environment variables (`.env` files for local development) or a dedicated secrets manager (like HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, or GCP Secret Manager).
+  2.  **Enforce Least Privilege:** Do not use root API keys. Create "restricted" keys with the minimum permissions needed. For example, a SendGrid key might only need "Mail Send" permissions, not "Full Access" or "Billing" permissions.
+  3.  **Use Separate Keys Per Environment:** Never use your "live" or "production" API keys in development, testing, or staging. Use separate test keys (like `sk_test_...` for Stripe) or sandboxed accounts.
+  4.  **Use IP Whitelisting:** If your provider supports it (e.g., Google Maps, SendGrid), lock your API key so it only works when requests come from your server's known, static IP addresses. This is a highly effective defense.
+  5.  **Verify Webhooks:** If a third-party service (like Twilio or Sentry) sends *you* data via a webhook, always verify the request's signature to ensure it's authentic and not an attacker.
+  6.  **Implement Rate Limiting:** Protect your application and your budget by rate-limiting calls to third-party services. This prevents a single user (or an attacker) from causing a massive bill or getting your account suspended.
+  7.  **Monitor and Audit Usage:** Actively log and monitor your API usage. Set up billing alerts and anomaly detection (e.g., "alert me if Twilio costs exceed $10 in an hour") to catch leaks as soon as they happen.
+  8.  **Rotate API Keys:** All keys should have a defined lifespan. Regularly rotate (delete and create new) your API keys to limit the window of opportunity if a key is ever silently leaked. Automate this process if your provider supports it.
+  9.  **Enable Key Expiration:** If the provider allows it, set an automatic expiration date on API keys, especially for temporary or testing purposes.
+  10. **Audit Key Usage Regularly:** Periodically review all active API keys and delete any that are no longer needed by your application.
 
