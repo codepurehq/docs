@@ -43,7 +43,7 @@ class PaymentProcessor {
         this.paypalClient = new paypal.core.PayPalHttpClient(environment);
     }
 }
-```
+````
 
 ## Secure Example
 
@@ -58,7 +58,7 @@ class SecurePaymentProcessor {
     }
     
     async initializeProviders() {
-        // Load from environment variables
+        // Load from environment variables or secrets manager
         const stripeKey = process.env.STRIPE_SECRET_KEY;
         const paypalClientId = process.env.PAYPAL_CLIENT_ID;
         const paypalSecret = process.env.PAYPAL_CLIENT_SECRET;
@@ -123,18 +123,18 @@ async function getPaymentCredentials() {
 
 ## Detection Patterns
 
-  * Stripe Secret Key: sk_(live|test)_[0-9a-zA-Z].
-  * PayPal Client Secret: [A-Za-z0-9-_].
-  * Square Access Token: EAAA[a-zA-Z0-9-_]+.
-  * Braintree Access Token: access_token\$production\$[0-9a-z]{16}\$[0-9a-f].
+  * Stripe Secret Key: `` `sk_(live|test)_[0-9a-zA-Z]{24,}` ``
+  * PayPal Client Secret (Live): `` `E[C|V][A-Za-z0-9-_]{40,}` ``
+  * Square Access Token: `` `EAAA[a-zA-Z0-9-_]{60,}` ``
+  * Braintree Access Token: `` `access_token\$production\$[0-9a-z]{16}\$[0-9a-f]{32,}` ``
 
 ## Prevention Best Practices
 
-  1. Use restricted API keys with minimal scopes.
-  2. Implement webhook signature verification.
-  3. Use separate keys for development/staging/production.
-  4. Enable PCI DSS compliance measures.
-  5. Implement rate limiting and fraud detection.
-  6. Log all payment transactions for audit.
-  7. Use tokenization for card data.
-  8. Rotate API keys regularly.
+  1.  **Use Restricted API Keys:** Do not use your root API key. Create "restricted" keys with the minimum permissions needed (e.g., a key that can only create charges but not issue refunds).
+  2.  **Verify Webhook Signatures:** Never trust a webhook just because it hits your endpoint. An attacker can send fake "payment successful" requests. Always verify the request's signature using your dedicated webhook secret (as shown in the secure example).
+  3.  **Use Separate Keys Per Environment:** Your `sk_live_...` (live key) is a top-tier secret. Your `sk_test_...` (test key) is not. Never use your live keys in development, testing, or staging environments.
+  4.  **Ensure PCI DSS Compliance:** This is a set of security standards for handling card data. The easiest way to comply is to *never* let sensitive data (like a full credit card number or CVC) touch your server.
+  5.  **Implement Rate Limiting and Fraud Detection:** Protect your payment endpoints from "carding attacks," where bots test lists of stolen credit cards. Use rate limiting and built-in fraud tools (like Stripe Radar).
+  6.  **Log All Payment Transactions:** Maintain a secure, immutable audit log of all API calls and transactions. This is critical for tracing fraudulent activity or a leaked key.
+  7.  **Use Client-Side Tokenization:** Use the gateway's JavaScript library (e.g., Stripe.js, PayPal Smart Buttons) to send card data directly from the user's browser to the payment gateway. The gateway will give you back a safe, one-time-use token (e.g., `tok_...`). Your server only ever touches the token, not the card number.
+  8.  **Rotate API Keys Regularly:** Even if you follow all other practices, you should regularly rotate (delete and create new) your API keys (e.g., every 90 days). This limits the window of opportunity if a key is ever silently leaked.
