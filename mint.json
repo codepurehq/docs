@@ -67,12 +67,12 @@
         
       ]},
       {"group":"Secret Scanning",
-      "pages": [{"group": "Cloude Providers", "pages":["cloude-providers/aws-credentials", "cloude-providers/azure-secrets", "cloude-providers/gcp-keys", "cloude-providers/multi-cloud-credentials"]},
-                {"group": "DataBases", "pages":["databases/sql-connection-strings", "databases/nosql-credentials", "databases/database-passwords"]},
-                {"group": "API Keys", "pages":["api-keys/payment-gateway-keys", "api-keys/third-party-apis", "api-keys/jwt-secrets"]},
-                {"group": "Certificates", "pages":["certificates/ssh-keys"]},
-                {"group": "Application Secrets", "pages":["application-secrets/env-files"]},
-                {"group": "Source Control", "pages":["source-control/github-tokens", "source-control/gitlab-credentials", "source-control/git-secrets"]}
+      "pages": [{"group": "Cloude Providers", "pages":["secret-scanning/cloude-providers/aws-credentials", "secret-scanning/cloude-providers/azure-secrets", "secret-scanning/cloude-providers/gcp-keys", "secret-scanning/cloude-providers/multi-cloud-credentials"]},
+                {"group": "DataBases", "pages":["secret-scanning/databases/sql-connection-strings", "secret-scanning/databases/nosql-credentials", "secret-scanning/databases/database-passwords"]},
+                {"group": "API Keys", "pages":["secret-scanning/api-keys/payment-gateway-keys", "secret-scanning/api-keys/third-party-apis", "secret-scanning/api-keys/jwt-secrets"]},
+                {"group": "Certificates", "pages":["secret-scanning/certificates/ssh-keys"]},
+                {"group": "Application Secrets", "pages":["secret-scanning/application-secrets/env-files"]},
+                {"group": "Source Control", "pages":["secret-scanning/source-control/github-tokens", "secret-scanning/source-control/gitlab-credentials", "secret-scanning/source-control/git-secrets"]}
         
       ]}
     ]
