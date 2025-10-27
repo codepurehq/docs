@@ -244,8 +244,6 @@ CMD ["node", "app.js"]
   * GitHub App Server-to-Server Token: `` `ghs_[a-zA-Z0-9]{36}` ``
   * GitHub App Refresh Token: `` `ghr_[a-zA-Z0-9]{36}` ``
 
------
-
 ## Prevention Best Practices
 
   1.  **Prefer `GITHUB_TOKEN` in Actions:** For most workflow tasks within the same repository (like checkout, commenting on PRs, uploading artifacts), use the built-in, short-lived `GITHUB_TOKEN`. It's automatically available and requires no setup. Define minimal permissions for it using the `permissions` key. 
