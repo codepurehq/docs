@@ -1,0 +1,20 @@
+---
+title: 'Python: Scanning FastAPI'
+---
+
+## Scanning FastAPI Applications
+
+FastAPI is a modern, high-performance Python framework for building APIs. Its reliance on Python type hints and Pydantic for validation makes it highly scannable.
+
+### How Codepure Scans FastAPI
+
+* **SAST (Static Analysis):** We trace data from API path parameters, query parameters, and request bodies. We analyze how this data is handled by your API functions, especially when it's passed to database models or external services.
+* **SCA (Software Composition Analysis):** We scan your `requirements.txt` or `pyproject.toml` to find vulnerabilities in your dependencies.
+* **Secret Scanning:** We scan your configuration files and `.env` files for hardcoded database connection strings, JWT secrets, and API keys.
+
+### Common Vulnerabilities Found
+
+* [A01: Broken Access Control](/vulnerabilities/cwe-284) from missing or improperly implemented `Depends` functions for authentication.
+* [A03: Injection](/vulnerabilities/sql-injection) in raw database queries.
+* [A07: Identification and Authentication Failures](/vulnerabilities/cwe-287) from weak or misconfigured JWT handling.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from overly permissive CORS policies.

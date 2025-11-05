@@ -1,0 +1,24 @@
+---
+title: 'Python: Scanning Django'
+---
+
+## Scanning Django Applications
+
+Django is a high-level Python web framework that encourages rapid development and clean, pragmatic design. Codepure deeply understands Django's "batteries-included" structure.
+
+<Info>
+  **Quick Start:** Codepure automatically detects Django projects. We analyze your `requirements.txt`, `settings.py`, `urls.py`, and all application modules.
+</Info>
+
+### How Codepure Scans Django
+
+* **SAST (Static Analysis):** We trace data from `request` objects in your views, understanding Django's URL routing and ORM. This allows us to find vulnerabilities from user input to your models and templates.
+* **SCA (Software Composition Analysis):** We scan your `requirements.txt`, `Pipfile`, or `pyproject.toml` to find vulnerabilities in your `pip` packages.
+* **Secret Scanning:** We scan `settings.py` and `.env` files for your `SECRET_KEY`, database passwords, and cloud API keys.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) in raw Django ORM queries (`.raw()`, `.extra()`).
+* [A03: Injection](/vulnerabilities/xss) in templates that improperly use the `|safe` filter.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) such as leaving `DEBUG = True` in a production `settings.py`.
+* [A01: Broken Access Control](/vulnerabilities/cwe-352) from missing or misconfigured CSRF tokens.

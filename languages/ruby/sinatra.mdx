@@ -1,0 +1,19 @@
+---
+title: 'Ruby: Scanning Sinatra'
+---
+
+## Scanning Sinatra Applications
+
+Sinatra is a lightweight and flexible "micro-framework" for Ruby. Its simplicity makes it a favorite for APIs and smaller apps, and Codepure is perfect for scanning it.
+
+### How Codepure Scans Sinatra
+
+* **SAST (Static Analysis):** We trace data from the `params` hash in your route blocks (e.g., `get '/' do ...`). We follow this data to database queries or template rendering to find vulnerabilities.
+* **SCA (Software Composition Analysis):** We scan your `Gemfile` and `Gemfile.lock` to find vulnerable Gems.
+* **Secret Scanning:** We scan your `.rb` files and `.env` files for hardcoded credentials.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) from building raw SQL queries using the `params` hash.
+* [A03: Injection](/vulnerabilities/xss) from rendering data in `.erb` templates without sanitization.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from a lack of security middleware (e.g., no CSRF protection).

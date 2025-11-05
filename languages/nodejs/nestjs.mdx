@@ -1,0 +1,20 @@
+---
+title: 'Node.js: Scanning NestJS'
+---
+
+## Scanning NestJS Applications
+
+NestJS is a progressive Node.js framework for building efficient, reliable, and scalable server-side applications. Its architecture (heavily inspired by Spring) makes it excellent for SAST analysis.
+
+### How Codepure Scans NestJS
+
+* **SAST (Static Analysis):** NestJS's use of decorators (`@Controller`, `@Body`, `@Query`) and Dependency Injection provides clear, traceable data flows. Our analyzer excels at following data from a request into your services and repositories to find vulnerabilities.
+* **SCA (Software Composition Analysis):** We scan your `package.json` and `yarn.lock` or `package-lock.json` files for vulnerable npm packages.
+* **Secret Scanning:** We scan configuration files, modules, and `.env` files for hardcoded credentials.
+
+### Common Vulnerabilities Found
+
+* [A01: Broken Access Control](/vulnerabilities/cwe-284) from missing or improperly implemented Guards.
+* [A03: Injection](/vulnerabilities/sql-injection) in TypeORM or Sequelize queries.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from misconfigured validation pipes or helmet middleware.
+* [A07: Identification and Authentication Failures](/vulnerabilities/cwe-287) from insecure Passport.js strategy implementations.

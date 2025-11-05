@@ -1,0 +1,24 @@
+---
+title: 'Ruby: Scanning Ruby on Rails'
+---
+
+## Scanning Ruby on Rails Applications
+
+Ruby on Rails revolutionized web development with its "convention over configuration" philosophy. Codepure is an expert in Rails and can find deep security flaws in your application.
+
+<Info>
+  **Quick Start:** Codepure automatically detects Rails projects. We analyze your `Gemfile`, `config/routes.rb`, controllers, models, and `.erb` templates.
+</Info>
+
+### How Codepure Scans Rails
+
+* **SAST (Static Analysis):** We trace data from the `params` hash through your controllers, models (Active Record), and views. We understand Rails conventions to find flaws with high accuracy.
+* **SCA (Software Composition Analysis):** We scan your `Gemfile` and `Gemfile.lock` to find vulnerable Gems (e.g., an old version of Rails itself, or a dependency with a known flaw).
+* **Secret Scanning:** We scan `config/database.yml`, `config/credentials.yml.enc`, and `.env` files for secrets. (We will flag any *unencrypted* secrets).
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) in Active Record queries that use string concatenation (`.where("name = '#{params[:name]}'")`).
+* [A03: Injection](/vulnerabilities/xss) in `.erb` templates that use `raw()` or `<%= raw ... %>`.
+* [A01: Broken Access Control](/vulnerabilities/cwe-352): Mass Assignment vulnerabilities.
+* [A08: Software and Data Integrity Failures](/vulnerabilities/deserialization) from insecure YAML loading (`YAML.load`).

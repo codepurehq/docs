@@ -1,0 +1,20 @@
+---
+title: 'PHP: Scanning Symfony'
+---
+
+## Scanning Symfony Applications
+
+Symfony is a high-performance set of reusable PHP components and a powerful web framework. Codepure's scanner understands Symfony's complex, component-based architecture.
+
+### How Codepure Scans Symfony
+
+* **SAST (Static Analysis):** We trace data from the `Request` object through your controllers and services. We analyze Doctrine (for database injection) and Twig (for XSS) to find data flow vulnerabilities.
+* **SCA (Software Composition Analysis):** We scan your `composer.json` and `composer.lock` files for known vulnerabilities in your Symfony components and other dependencies.
+* **Secret Scanning:** We scan `.env` files and `services.yaml` for database connection strings and other secrets.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) in custom DQL (Doctrine Query Language) or raw SQL queries.
+* [A03: Injection](/vulnerabilities/xss) in Twig templates that use the `|raw` filter on user input.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from misconfigured security policies in `security.yaml`.
+* [A08: Software and Data Integrity Failures](/vulnerabilities/deserialization) from insecure deserialization of untrusted data.

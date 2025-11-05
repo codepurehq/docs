@@ -1,0 +1,20 @@
+---
+title: 'PHP: Scanning CodeIgniter'
+---
+
+## Scanning CodeIgniter Applications
+
+CodeIgniter is a lightweight and fast PHP framework. Its straightforward design is fully supported by Codepure's SAST and SCA scanners.
+
+### How Codepure Scans CodeIgniter
+
+* **SAST (Static Analysis):** We trace data from the `input` class (`$this->input->get()`) through your controllers and models. We analyze database queries using the Active Record pattern for potential SQL injection.
+* **SCA (Software Composition Analysis):** We scan your `composer.json` file (for modern versions) or library folders to identify vulnerable dependencies.
+* **Secret Scanning:** We scan your `database.php` configuration file and `.env` files for hardcoded credentials.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) in Active Record queries where sanitization is disabled or bypassed.
+* [A03: Injection](/vulnerabilities/xss) from failing to sanitize data before rendering it in a view.
+* [A01: Broken Access Control](/vulnerabilities/cwe-352) from disabling the built-in CSRF protection.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from production environments with development-level error reporting.

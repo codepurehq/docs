@@ -1,0 +1,20 @@
+---
+title: 'Python: Scanning Flask'
+---
+
+## Scanning Flask Applications
+
+Flask is a popular, lightweight "micro-framework" for Python. Its simplicity is powerful but can also lead to misconfigurations if not handled carefully. Codepure is ideal for scanning Flask projects.
+
+### How Codepure Scans Flask
+
+* **SAST (Static Analysis):** We trace data from Flask's global `request` object (`request.form`, `request.args`) as it flows through your application's routes. We analyze data passed to templating engines (like Jinja2) and database libraries (like SQLAlchemy).
+* **SCA (Software Composition Analysis):** We scan your `requirements.txt` or `Pipfile` to find vulnerable dependencies.
+* **Secret Scanning:** We scan your configuration files (`config.py`) and `.env` files for hardcoded secrets, such as your `SECRET_KEY`.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/xss) from insecure rendering in Jinja2 templates (e.g., autoescape being disabled).
+* [A03: Injection](/vulnerabilities/sql-injection) in insecure SQLAlchemy queries.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) such as running in debug mode in production.
+* [A08: Software and Data Integrity Failures](/vulnerabilities/deserialization) from using `pickle` for deserialization.

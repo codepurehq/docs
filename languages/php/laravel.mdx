@@ -1,0 +1,24 @@
+---
+title: 'PHP: Scanning Laravel'
+---
+
+## Scanning Laravel Applications
+
+Laravel is the most popular PHP framework, known for its elegant syntax and rich feature set. Codepure provides in-depth scanning for Laravel projects.
+
+<Info>
+  **Quick Start:** Codepure automatically detects Laravel projects. We analyze your `composer.json`, `.env` file, routes, controllers, and Blade templates.
+</Info>
+
+### How Codepure Scans Laravel
+
+* **SAST (Static Analysis):** We trace data from the `Request` object through your routes, controllers, and services. We understand Laravel's Eloquent ORM and Blade templating engine to find vulnerabilities.
+* **SCA (Software Composition Analysis):** We scan your `composer.json` and `composer.lock` files to find vulnerable packages.
+* **Secret Scanning:** We scan your `.env` file (and `.env.example`) for your `APP_KEY`, database credentials, and other secrets.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) from using raw DB queries (`DB::raw()`) with untrusted data.
+* [A03: Injection](/vulnerabilities/xss) in Blade templates using `{!! $data !!}` instead of `{{ $data }}`.
+* [A01: Broken Access Control](/vulnerabilities/cwe-352) from disabled or misconfigured CSRF protection.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) such as leaving `APP_DEBUG` set to `true` in production.

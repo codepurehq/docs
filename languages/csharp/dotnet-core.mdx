@@ -1,0 +1,24 @@
+---
+title: 'C#: Scanning .NET Core & ASP.NET Core'
+---
+
+## Scanning .NET Applications
+
+.NET (including **ASP.NET Core**) is Microsoft's high-performance, cross-platform framework for building modern web applications and APIs. Codepure provides first-class support for C# and the .NET ecosystem.
+
+<Info>
+  **Quick Start:** Codepure automatically detects .NET projects. Just point us at your repository, and we will analyze your `.csproj` files, `appsettings.json`, and C# source code.
+</Info>
+
+### How Codepure Scans .NET
+
+* **SAST (Static Analysis):** Our C# analyzer understands the complete ASP.NET Core framework. We trace data from controller actions and Minimal APIs to database sinks (like Entity Framework Core) and other dangerous APIs.
+* **SCA (Software Composition Analysis):** We parse your `.csproj` files and NuGet package references to find vulnerabilities in third-party libraries.
+* **Secret Scanning:** We scan `appsettings.json`, `appsettings.Development.json`, and `.env` files for connection strings, API keys, and other secrets.
+
+### Common Vulnerabilities Found
+
+* [A01: Broken Access Control](/vulnerabilities/cwe-284) in insecure Controller Action attributes like `[AllowAnonymous]`.
+* [A03: Injection](/vulnerabilities/sql-injection) in raw Entity Framework Core queries (`FromSqlRaw`).
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) such as leaving `EnableDetailedErrors` on in production.
+* [A07: Identification and Authentication Failures](/vulnerabilities/cwe-287) from misconfigured JWT or cookie authentication.

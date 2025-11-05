@@ -1,0 +1,19 @@
+---
+title: 'C#: Scanning Blazor'
+---
+
+## Scanning Blazor Applications
+
+Blazor is a modern component of the .NET framework for building interactive web UIs with C#. Codepure supports scanning Blazor applications (both Blazor Server and Blazor WebAssembly) to find security flaws.
+
+### How Codepure Scans Blazor
+
+* **SAST (Static Analysis):** We analyze your `.razor` files and C# component logic. We trace user-provided data to identify client-side and server-side vulnerabilities.
+* **SCA (Software Composition Analysis):** We analyze your `.csproj` file to find vulnerabilities in your NuGet packages.
+* **Secret Scanning:** For Blazor Server, we scan your `appsettings.json` for secrets. For Blazor WebAssembly, we warn against embedding secrets in `wwwroot`, as they are publicly visible.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/xss) (Cross-Site Scripting) from rendering un-sanitized HTML (`@((MarkupString)myHtml)`) is a primary risk.
+* [A01: Broken Access Control](/vulnerabilities/cwe-284) from improperly implemented `[Authorize]` attributes on pages or components.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) in your application's startup and service configuration.

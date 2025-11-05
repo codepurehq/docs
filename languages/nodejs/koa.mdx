@@ -1,0 +1,19 @@
+---
+title: 'Node.js: Scanning Koa'
+---
+
+## Scanning Koa Applications
+
+Koa is a modern and lightweight Node.js framework built by the team behind Express. Its middleware-centric design is fully supported by Codepure's security scanner.
+
+### How Codepure Scans Koa
+
+* **SAST (Static Analysis):** We trace data from the Koa `ctx` (context) object, such as `ctx.request.body` or `ctx.query`. We follow this data through your `async/await` middleware stack to find where it's used unsafely.
+* **SCA (Software Composition Analysis):** We scan your `package.json` and `yarn.lock` or `package-lock.json` files for vulnerable npm packages and Koa middleware.
+* **Secret Scanning:** We scan `.env` files and your application's configuration for exposed secrets.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/command-injection) from passing context data to OS commands.
+* [A03: Injection](/vulnerabilities/xss) from insecurely rendering data in templates.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from a misconfigured or missing middleware stack (e.g., no body-parser, weak CORS).

@@ -1,0 +1,20 @@
+---
+title: 'Node.js: Scanning Express.js'
+---
+
+## Scanning Express.js Applications
+
+Express.js is the most popular, minimal, and flexible Node.js web application framework. Codepure's JavaScript/TypeScript analyzer is deeply familiar with Express patterns.
+
+### How Codepure Scans Express
+
+* **SAST (Static Analysis):** We trace data from the `req.body`, `req.query`, and `req.params` objects through your application's routes and middleware. We detect when this untrusted data is used in dangerous ways (e.g., database queries, command execution).
+* **SCA (Software Composition Analysis):** We scan your `package.json` and `yarn.lock` or `package-lock.json` files to find vulnerable npm packages, including Express middleware with known flaws.
+* **Secret Scanning:** We scan `.env` files, `.js` configs, and JSON files for hardcoded API keys, database URIs, and JWT secrets.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/command-injection) from passing request data to functions like `child_process.exec()`.
+* [A03: Injection](/vulnerabilities/sql-injection) (NoSQL Injection) in Mongoose or Sequelize queries.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from improperly configured middleware, like missing CSRF protection or weak CORS policies.
+* [A08: Software and Data Integrity Failures](/vulnerabilities/deserialization) from insecurely using `JSON.parse`.
