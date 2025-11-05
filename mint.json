@@ -7,14 +7,14 @@
   },
   "favicon": "/logo/Asset 7@2x-8.png",
   "colors": {
-  "primary": "#2563EB",
-  "light": "#2563EB",
-  "dark": "#3B82F6",
-  "anchors": {
-    "from": "#2563EB",
-    "to": "#3B82F6"
-  }
-},
+    "primary": "#2563EB",
+    "light": "#2563EB",
+    "dark": "#3B82F6",
+    "anchors": {
+      "from": "#2563EB",
+      "to": "#3B82F6"
+    }
+  },
   "topbarLinks": [
     {
       "name": "Support",
@@ -37,7 +37,11 @@
       "group": "Getting Started",
       "icon": "book-open",
       "iconType": "solid",
-      "pages": ["introduction", "quickstart", "team"]
+      "pages": [
+        "introduction",
+        "quickstart",
+        "team"
+      ]
     },
     {
       "group": "Product Guides",
@@ -53,30 +57,111 @@
           "group": "SCA",
           "pages": [
             "sca",
-            {"group": "Maven", "pages":["sca/maven/vulnerable-dependencies", "sca/maven/insecure-repositories", "sca/maven/snapshot-dependencies"]},
-            {"group": "npm", "pages":["sca/npm/vulnerable-dependencies", "sca/npm/unpinned-versions", "sca/npm/insecure-scripts"]},
-            {"group": "pip", "pages":["sca/pip/vulnerable-dependencies", "sca/pip/unpinned-dependencies", "sca/pip/insecure-index-urls"]}
+            {
+              "group": "Maven",
+              "pages": [
+                "sca/maven/vulnerable-dependencies",
+                "sca/maven/insecure-repositories",
+                "sca/maven/snapshot-dependencies"
+              ]
+            },
+            {
+              "group": "npm",
+              "pages": [
+                "sca/npm/vulnerable-dependencies",
+                "sca/npm/unpinned-versions",
+                "sca/npm/insecure-scripts"
+              ]
+            },
+            {
+              "group": "pip",
+              "pages": [
+                "sca/pip/vulnerable-dependencies",
+                "sca/pip/unpinned-dependencies",
+                "sca/pip/insecure-index-urls"
+              ]
+            }
           ]
         },
         {
           "group": "Container Security",
           "pages": [
             "container_security",
-            {"group": "Docker", "pages":["container-security/docker/running-as-root", "container-security/docker/exposed-docker-socket", "container-security/docker/using-latest-tags"]},
-            {"group": "Docker Compose", "pages":["container-security/docker-compose/hardcoded-secrets", "container-security/docker-compose/privileged-containers", "container-security/docker-compose/sensitive-host-mounts"]},
-            {"group": "Kubernetes", "pages":["container-security/kubernetes/allowing-privileged-pods", "container-security/kubernetes/missing-network-policies", "container-security/kubernetes/default-service-accounts"]}
+            {
+              "group": "Docker",
+              "pages": [
+                "container-security/docker/running-as-root",
+                "container-security/docker/exposed-docker-socket",
+                "container-security/docker/using-latest-tags"
+              ]
+            },
+            {
+              "group": "Docker Compose",
+              "pages": [
+                "container-security/docker-compose/hardcoded-secrets",
+                "container-security/docker-compose/privileged-containers",
+                "container-security/docker-compose/sensitive-host-mounts"
+              ]
+            },
+            {
+              "group": "Kubernetes",
+              "pages": [
+                "container-security/kubernetes/allowing-privileged-pods",
+                "container-security/kubernetes/missing-network-policies",
+                "container-security/kubernetes/default-service-accounts"
+              ]
+            }
           ]
         },
         {
           "group": "Secret Scanning",
           "pages": [
             "secret_scanning",
-            {"group": "Cloud Providers", "pages":["secret-scanning/cloude-providers/aws-credentials", "secret-scanning/cloude-providers/azure-secrets", "secret-scanning/cloude-providers/gcp-keys", "secret-scanning/cloude-providers/multi-cloud-credentials"]},
-            {"group": "Databases", "pages":["secret-scanning/databases/sql-connection-strings", "secret-scanning/databases/nosql-credentials", "secret-scanning/databases/database-passwords"]},
-            {"group": "API Keys", "pages":["secret-scanning/api-keys/payment-gateway-keys", "secret-scanning/api-keys/third-party-apis", "secret-scanning/api-keys/jwt-secrets"]},
-            {"group": "Certificates", "pages":["secret-scanning/certificates/ssh-keys"]},
-            {"group": "Application Secrets", "pages":["secret-scanning/application-secrets/env-files"]},
-            {"group": "Source Control", "pages":["secret-scanning/source-control/github-tokens", "secret-scanning/source-control/gitlab-credentials", "secret-scanning/source-control/git-secrets"]}
+            {
+              "group": "Cloud Providers",
+              "pages": [
+                "secret-scanning/cloude-providers/aws-credentials",
+                "secret-scanning/cloude-providers/azure-secrets",
+                "secret-scanning/cloude-providers/gcp-keys",
+                "secret-scanning/cloude-providers/multi-cloud-credentials"
+              ]
+            },
+            {
+              "group": "Databases",
+              "pages": [
+                "secret-scanning/databases/sql-connection-strings",
+                "secret-scanning/databases/nosql-credentials",
+                "secret-scanning/databases/database-passwords"
+              ]
+            },
+            {
+              "group": "API Keys",
+              "pages": [
+                "secret-scanning/api-keys/payment-gateway-keys",
+                "secret-scanning/api-keys/third-party-apis",
+                "secret-scanning/api-keys/jwt-secrets"
+              ]
+            },
+            {
+              "group": "Certificates",
+              "pages": [
+                "secret-scanning/certificates/ssh-keys"
+              ]
+            },
+            {
+              "group": "Application Secrets",
+              "pages": [
+                "secret-scanning/application-secrets/env-files"
+              ]
+            },
+            {
+              "group": "Source Control",
+              "pages": [
+                "secret-scanning/source-control/github-tokens",
+                "secret-scanning/source-control/gitlab-credentials",
+                "secret-scanning/source-control/git-secrets"
+              ]
+            }
           ]
         }
       ]
@@ -86,9 +171,67 @@
       "icon": "plug",
       "pages": [
         "devsecops",
-        "github", 
-        "gitlab", 
+        "github",
+        "gitlab",
         "bitbucket"
+      ]
+    },
+    {
+      "group": "Supported Languages",
+      "icon": "globe",
+      "pages": [
+        {
+          "group": "Java",
+          "icon": "coffee",
+          "pages": [
+            "languages/java/spring",
+            "languages/java/play",
+            "languages/java/struts"
+          ]
+        },
+        {
+          "group": "C#",
+          "icon": "hashtag",
+          "pages": [
+            "languages/csharp/dotnet-core",
+            "languages/csharp/blazor"
+          ]
+        },
+        {
+          "group": "Node.js",
+          "icon": "node-js",
+          "pages": [
+            "languages/nodejs/express",
+            "languages/nodejs/nestjs",
+            "languages/nodejs/koa"
+          ]
+        },
+        {
+          "group": "Python",
+          "icon": "python",
+          "pages": [
+            "languages/python/django",
+            "languages/python/flask",
+            "languages/python/fastapi"
+          ]
+        },
+        {
+          "group": "PHP",
+          "icon": "php",
+          "pages": [
+            "languages/php/laravel",
+            "languages/php/symfony",
+            "languages/php/codeigniter"
+          ]
+        },
+        {
+          "group": "Ruby",
+          "icon": "gem",
+          "pages": [
+            "languages/ruby/rails",
+            "languages/ruby/sinatra"
+          ]
+        }
       ]
     },
     {
@@ -210,12 +353,17 @@
     {
       "group": "User Management",
       "icon": "users-cog",
-      "pages": ["role_perm"]
+      "pages": [
+        "role_perm"
+      ]
     },
     {
       "group": "Releases & Roadmap",
       "icon": "map-signs",
-      "pages": ["changelog", "roadmap"]
+      "pages": [
+        "changelog",
+        "roadmap"
+      ]
     }
   ],
   "footerSocials": {
