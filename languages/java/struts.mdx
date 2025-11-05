@@ -1,0 +1,23 @@
+---
+title: 'Java: Scanning Apache Struts'
+---
+
+## Scanning Apache Struts Applications
+
+Apache Struts is a classic, enterprise-level framework for Java web applications. Due to its history and complexity, scanning Struts applications is critical for security. Codepure is equipped to scan Struts projects for critical vulnerabilities.
+
+<Warning>
+  **Historical Vulnerabilities:** Struts is famous for critical Remote Code Execution (RCE) vulnerabilities (e.g., Equifax breach). **SCA** is the most critical scan to run on a Struts app to ensure you are not using a known-vulnerable version.
+</Warning>
+
+### How Codepure Scans Struts
+
+* **SAST (Static Analysis):** Our engine parses Struts's XML configuration files (`struts.xml`) to understand action mappings and data flow. We analyze Action classes for vulnerabilities stemming from user input.
+* **SCA (Software Composition Analysis):** This is essential for Struts. We check your `pom.xml` or `lib` directory to identify which version of Struts you are using and alert you if it's vulnerable to RCE or other critical flaws.
+* **Secret Scanning:** We identify hardcoded credentials in configuration files.
+
+### Common Vulnerabilities Found
+
+* [A06: Vulnerable and Outdated Components](/vulnerabilities/cwe-1104): **This is the #1 risk.** Using an old version of Struts is a critical vulnerability.
+* [A03: Injection](/vulnerabilities/command-injection) such as OGNL injection, which has historically led to RCE.
+* [A02: Cryptographic Failures](/vulnerabilities/cwe-327) from weak crypto implementations.

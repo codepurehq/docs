@@ -1,0 +1,28 @@
+---
+title: 'Java: Scanning Spring & Spring Boot'
+---
+
+## Scanning Spring Applications
+
+Spring (and its modern incarnation, **Spring Boot**) is the most popular framework for building enterprise-grade Java applications. Codepure provides comprehensive, automated security analysis for your Spring projects.
+
+<Info>
+  **Quick Start:** No special configuration is needed. When Codepure scans your Java project, it automatically detects the Spring framework and applies all relevant security rules.
+</Info>
+
+### How Codepure Scans Spring
+
+Codepure's support for Spring is multi-layered, engaging different parts of our platform:
+
+* **SAST (Static Analysis):** Our engine understands Spring-specific constructs like annotations (`@Autowired`, `@RequestMapping`), XML configurations, and conventions. This allows us to trace data flow from web requests (`@RequestParam`) to dangerous sinks (like database queries), finding high-accuracy vulnerabilities.
+* **SCA (Software Composition Analysis):** We scan your `pom.xml` or `build.gradle` file to find vulnerable Spring dependencies (e.g., an outdated `spring-core` or `spring-web`) and other third-party libraries.
+* **Secret Scanning:** We'll find hardcoded secrets in your `application.properties` or `.yml` files, such as database passwords or API keys.
+
+### Common Vulnerabilities Found
+
+Codepure is highly effective at finding common Spring vulnerabilities, including:
+
+* [A01: Broken Access Control](/vulnerabilities/cwe-284) in insecure `@PreAuthorize` or `@Secured` configurations.
+* [A03: Injection](/vulnerabilities/sql-injection) from insecurely built JPA queries or `JdbcTemplate` usages.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) such as disabling CSRF protection by default.
+* [A08: Software and Data Integrity Failures](/vulnerabilities/deserialization) from insecure Java Deserialization.

@@ -1,0 +1,19 @@
+---
+title: 'Java: Scanning Play Framework'
+---
+
+## Scanning Play Framework Applications
+
+The Play Framework is a high-performance framework for building scalable web applications in Java and Scala. Codepure fully supports scanning Play projects to identify security vulnerabilities.
+
+### How Codepure Scans Play
+
+* **SAST (Static Analysis):** Codepure analyzes Play's routing files (`routes`) and controller logic to trace user-controllable data. We understand how data flows from a request into your Java code, allowing us to detect code-level vulnerabilities.
+* **SCA (Software Composition Analysis):** We parse your `build.sbt` or `pom.xml` to find known vulnerabilities in your project's dependencies, including the Play framework itself.
+* **Secret Scanning:** We scan configuration files like `application.conf` for exposed database credentials, API keys, and application secrets.
+
+### Common Vulnerabilities Found
+
+* [A03: Injection](/vulnerabilities/sql-injection) in database access logic.
+* [A05: Security Misconfiguration](/vulnerabilities/cwe-11) from improper configuration in `application.conf`.
+* [A09: Security Logging and Monitoring Failures](/vulnerabilities/cwe-532) by logging sensitive data in production.
