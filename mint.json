@@ -177,64 +177,6 @@
       ]
     },
     {
-      "group": "Supported Languages",
-      "icon": "globe",
-      "pages": [
-        {
-          "group": "Java",
-          "icon": "coffee",
-          "pages": [
-            "languages/java/spring",
-            "languages/java/play",
-            "languages/java/struts"
-          ]
-        },
-        {
-          "group": "C#",
-          "icon": "hashtag",
-          "pages": [
-            "languages/csharp/dotnet-core",
-            "languages/csharp/blazor"
-          ]
-        },
-        {
-          "group": "Node.js",
-          "icon": "node-js",
-          "pages": [
-            "languages/nodejs/express",
-            "languages/nodejs/nestjs",
-            "languages/nodejs/koa"
-          ]
-        },
-        {
-          "group": "Python",
-          "icon": "python",
-          "pages": [
-            "languages/python/django",
-            "languages/python/flask",
-            "languages/python/fastapi"
-          ]
-        },
-        {
-          "group": "PHP",
-          "icon": "php",
-          "pages": [
-            "languages/php/laravel",
-            "languages/php/symfony",
-            "languages/php/codeigniter"
-          ]
-        },
-        {
-          "group": "Ruby",
-          "icon": "gem",
-          "pages": [
-            "languages/ruby/rails",
-            "languages/ruby/sinatra"
-          ]
-        }
-      ]
-    },
-    {
       "group": "Vulnerability Reference",
       "icon": "shield-virus",
       "pages": [
