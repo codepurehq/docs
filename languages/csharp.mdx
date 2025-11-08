@@ -3,13 +3,41 @@ title: 'Supported C# Frameworks'
 icon: 'hashtag'
 ---
 
-Codepure provides comprehensive security scanning for the following C# frameworks.
+Codepure provides deep, pattern-specific security scanning for a wide range of C# and .NET frameworks, from modern ASP.NET Core to legacy ASP.NET.
+
+## Modern .NET Frameworks
+
+We scan the latest .NET patterns, understanding the specific risks associated with each.
 
 <CardGroup cols={2}>
-  <Card title=".NET & ASP.NET Core" icon="laptop-code">
-    Support for Microsoft's primary, cross-platform framework for web apps and APIs.
+  <Card title="ASP.NET Core API" icon="server">
+    Support for Minimal APIs and controllers, finding EF Core injection and auth flaws.
   </Card>
-  <Card title="Blazor" icon="window-maximize">
-    Support for building interactive web UIs with C# and .NET.
+  <Card title="ASP.NET Core Razor Pages" icon="file-invoice">
+    Finds vulnerabilities like XSS and missing AntiForgery tokens in Razor Page models.
+  </Card>
+  <Card title="Blazor Server" icon="display">
+    Scans for insecure state management and component-level access control issues.
+  </Card>
+  <Card title="Blazor WebAssembly (WASM)" icon="window-maximize">
+    Detects client-side risks, such as hardcoded secrets in WASM-deployed code.
+  </Card>
+</CardGroup>
+
+---
+
+## Legacy .NET Frameworks
+
+We also provide critical security coverage for legacy .NET applications.
+
+<CardGroup cols={3}>
+  <Card title="ASP.NET Web Forms" icon="table-list">
+    Finds legacy risks like `debug="true"`, XSS, and `EnableViewStateMac="false"`.
+  </Card>
+  <Card title="ASP.NET MVC 5" icon="layer-group">
+    Detects missing `[ValidateAntiForgeryToken]` attributes and other classic MVC flaws.
+  </Card>
+  <Card title="ASP.NET Web API 2" icon="network-wired">
+    Scans for authentication, authorization, and configuration issues in legacy APIs.
   </Card>
 </CardGroup>
