@@ -163,6 +163,12 @@
               ]
             }
           ]
+        },
+        {
+          "group": "API Security",
+          "pages": [
+            "api-security"
+          ]
         }
       ]
     },
