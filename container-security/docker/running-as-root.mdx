@@ -1,7 +1,13 @@
 ---
-title: Running Containers as Root
+title: Running Containers as Root (CIS 4.1)
 description: Security risks and mitigation strategies for containers running with root privileges
 ---
+
+## Impact & Risk Analysis
+| **Severity** | **High** |
+| :--- | :--- |
+| **CIS Benchmark** | CIS 4.1 |
+| **Impact** | **Container Escape.** Running as root increases the attack surface. If a vulnerability (like a buffer overflow) is exploited, the attacker immediately has root privileges inside the container, making it significantly easier to break out to the host. |
 
 ## Common Misconfiguration
 
@@ -21,6 +27,7 @@ COPY . .
 
 EXPOSE 3000
 CMD ["node", "server.js"]
+
 ```
 
 ## Secure Example
@@ -29,15 +36,17 @@ CMD ["node", "server.js"]
 # Secure Dockerfile
 FROM node:18-alpine
 
-# Create a non-root user
-RUN addgroup -g 1001 -S nodejs &&     adduser -S nodejs -u 1001
+# 1. Create a non-root user
+# (Note: For Debian/Ubuntu images, use: useradd -m -u 1001 nodejs)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
 WORKDIR /app
 
-# Change ownership of the app directory
+# 2. Change ownership of the app directory so the user can access it
 COPY --chown=nodejs:nodejs package*.json ./
 
-# Switch to non-root user before installing dependencies
+# 3. Switch to non-root user before installing dependencies
 USER nodejs
 
 RUN npm install
@@ -45,6 +54,7 @@ COPY --chown=nodejs:nodejs . .
 
 EXPOSE 3000
 CMD ["node", "server.js"]
+
 ```
 
 ## Additional Security Measures
@@ -55,12 +65,16 @@ version: '3.8'
 services:
   app:
     build: .
+    # Ensure the container runs as the specific user ID
     user: "1001:1001"
+    # Prevent the container from gaining new privileges (e.g., sudo)
     security_opt:
       - no-new-privileges:true
+    # Make the root filesystem read-only for extra security
     read_only: true
     tmpfs:
       - /tmp
+
 ```
 
 ## Verification
@@ -73,4 +87,5 @@ docker exec <container-id> whoami
 # Verify UID
 docker exec <container-id> id
 # Should show: uid=1001(nodejs) gid=1001(nodejs)
+
 ```
