@@ -1,0 +1,64 @@
+---
+title: Healthcheck Instruction Missing (CIS 4.6)
+description: Importance of defining HEALTHCHECK instructions for container availability
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Low
+* **CIS Benchmark:** CIS 4.6
+* **Impact:** **Silent Failures.** Without a health check, a container might be "running" but stuck in a broken state (e.g., infinite loop, deadlock). Orchestrators like Docker Swarm or Kubernetes won't know to restart it, leading to downtime.
+
+## Common Misconfiguration
+
+Failing to include the `HEALTHCHECK` instruction in the Dockerfile. While orchestrators (like Kubernetes) have their own probes, defining it in the Dockerfile provides a consistent standard for the image itself.
+
+## Vulnerable Example
+
+```dockerfile
+# Vulnerable Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+COPY . .
+CMD ["node", "server.js"]
+
+# Missing HEALTHCHECK instruction
+# If server.js hangs, Docker still reports status as "Up"
+
+```
+
+## Secure Example
+
+```dockerfile
+# Secure Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+COPY . .
+
+# Add a check that runs every 30s to verify the app is responsive
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+CMD ["node", "server.js"]
+
+```
+
+## Additional Security Measures
+
+If you cannot modify the Dockerfile (e.g., using a third-party image), define the health check in `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+services:
+  app:
+    image: third-party-app:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+```
+

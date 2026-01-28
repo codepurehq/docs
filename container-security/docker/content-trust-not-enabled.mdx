@@ -1,0 +1,66 @@
+---
+title: Content Trust Not Enabled (CIS 4.5)
+description: Risks of pulling unsigned Docker images and enabling Content Trust
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 4.5
+* **Impact:** **Supply Chain Attack.** Without Content Trust, the Docker client will pull any image from a registry, even if it has been tampered with or replaced by a malicious actor (Man-in-the-Middle attack).
+
+## Common Misconfiguration
+
+Content Trust is disabled by default in the Docker client. This means verification of the image publisher is not enforced, allowing the use of potentially compromised or malicious images.
+
+## Vulnerable Example
+
+```bash
+# Vulnerable: Pulling an image without validation
+# If a hacker compromises the registry or the network, 
+# you might download a malicious version of 'postgres'.
+docker pull postgres:16
+
+```
+
+```yaml
+# Vulnerable CI/CD Pipeline Step
+steps:
+  - name: Build and Push
+    run: |
+      docker build -t myapp:latest .
+      # No signing key is used; the image is unsigned.
+      docker push myapp:latest
+
+```
+
+## Secure Example
+
+```bash
+# Secure: Enabling Content Trust
+# This forces Docker to verify the signature before pulling.
+export DOCKER_CONTENT_TRUST=1
+docker pull postgres:16
+
+```
+
+```yaml
+# Secure CI/CD Pipeline Step
+steps:
+  - name: Build and Push with Signing
+    env:
+      DOCKER_CONTENT_TRUST: 1
+      DOCKER_CONTENT_TRUST_REPOSITORY_KEY: ${{ secrets.REPO_KEY }}
+    run: |
+      docker build -t myapp:latest .
+      # Docker will now require a valid signature key to push
+      docker push myapp:latest
+
+```
+
+## Security Best Practices
+
+* Set `export DOCKER_CONTENT_TRUST=1` in your shell profile (`.bashrc` or `.zshrc`) and in your CI/CD pipelines.
+* Use a private registry (like Harbor or Artifactory) that enforces image signing.
+
+```
