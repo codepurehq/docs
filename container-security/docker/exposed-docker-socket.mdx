@@ -1,7 +1,13 @@
 ---
-title: Exposed Docker Socket
+title: Exposed Docker Socket (CIS 5.32)
 description: Risks of mounting Docker socket inside containers and secure alternatives
 ---
+
+## Impact & Risk Analysis
+
+* **Severity:** Critical
+* **CIS Benchmark:** CIS 5.32
+* **Impact:** **Full Host Compromise.** The Docker socket (`/var/run/docker.sock`) is the API endpoint for the Docker daemon. Access to this socket is equivalent to having `root` access to the host, as an attacker can launch privileged containers to bypass all restrictions.
 
 ## Common Misconfiguration
 
@@ -21,6 +27,7 @@ services:
     ports:
       - "8080:8080"
     user: root  # Even worse when combined with root
+
 ```
 
 ```bash
@@ -29,6 +36,7 @@ docker run -d -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v jenkins_home:/var/jenkins_home \
   jenkins/jenkins:lts
+
 ```
 
 ## Secure Example
@@ -53,7 +61,7 @@ services:
 
   docker:
     image: docker:dind
-    privileged: true  # Required for DinD
+    privileged: true  # Required for DinD to function securely
     environment:
       - DOCKER_TLS_CERTDIR=/certs
     volumes:
@@ -73,12 +81,13 @@ volumes:
 
 networks:
   jenkins:
+
 ```
 
 ## Alternative: Using Kaniko for Building Images
 
 ```yaml
-# Using Kaniko for rootless builds
+# Using Kaniko for rootless builds (Kubernetes)
 apiVersion: v1
 kind: Pod
 metadata:
@@ -88,7 +97,7 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     args:
-      - "--context=git://github.com/your-repo/project.git"
+      - "--context=git://[github.com/your-repo/project.git](https://github.com/your-repo/project.git)"
       - "--destination=your-registry/image:tag"
       - "--cache=true"
     volumeMounts:
@@ -98,11 +107,14 @@ spec:
   - name: docker-config
     secret:
       secretName: docker-registry-credentials
+
 ```
 
 ## Security Best Practices
 
-- Never mount Docker socket unless absolutely necessary.  
-- Use Docker-in-Docker (DinD) with TLS for CI/CD pipelines.  
-- Consider rootless alternatives like Kaniko or Buildah.   
-- Implement socket proxies with restricted API access.  
+* Never mount the Docker socket unless absolutely necessary.
+* Use Docker-in-Docker (DinD) with TLS for CI/CD pipelines to isolate the daemon.
+* Consider rootless alternatives like Kaniko or Buildah which do not require privileged access.
+* Implement socket proxies with restricted API access if you must expose the socket.
+
+```

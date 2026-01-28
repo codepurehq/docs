@@ -1,7 +1,13 @@
 ---
-title: Using Latest Tags
+title: Using Latest Tags (CIS 4.4)
 description: Security and stability risks of using 'latest' tags in production environments
 ---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 4.4
+* **Impact:** **Unpredictable Vulnerabilities.** Using `latest` implies that you do not control which version of the software is running. Your production environment might silently pull a new version containing breaking changes or unpatched vulnerabilities, rendering incident response and rollbacks impossible.
 
 ## Common Misconfiguration
 
@@ -19,6 +25,7 @@ COPY app.py /app/
 WORKDIR /app
 
 CMD ["python", "app.py"]
+
 ```
 
 ```yaml
@@ -37,6 +44,7 @@ services:
   
   cache:
     image: redis  # No tag specified
+
 ```
 
 ## Secure Example
@@ -58,6 +66,7 @@ WORKDIR /app
 USER 1000:1000
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "app:app"]
+
 ```
 
 ```yaml
@@ -95,6 +104,7 @@ secrets:
 volumes:
   postgres_data:
   redis_data:
+
 ```
 
 ## Version Management Strategy
@@ -105,6 +115,7 @@ NGINX_VERSION=1.25.3-alpine3.18
 POSTGRES_VERSION=16.1-alpine3.19
 REDIS_VERSION=7.2.3-alpine3.19
 APP_VERSION=v2.1.5
+
 ```
 
 ```yaml
@@ -119,6 +130,7 @@ services:
     
   app:
     image: myregistry/myapp:${APP_VERSION}
+
 ```
 
 ## Automated Security Scanning
@@ -147,4 +159,5 @@ jobs:
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-results.sarif'
+
 ```
