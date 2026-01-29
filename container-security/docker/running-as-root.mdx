@@ -1,32 +1,31 @@
 ---
-title: Running Containers as Root (CIS 4.1)
-description: Security risks and mitigation strategies for containers running with root privileges
+title: Ensure User Created (CIS 4.1)
+description: Containers should run as a non-root user to minimize security risks
 ---
 
 ## Impact & Risk Analysis
 
 * **Severity:** High
 * **CIS Benchmark:** CIS 4.1
-* **Impact:** **Container Escape.** Running as root increases the attack surface. If a vulnerability (like a buffer overflow) is exploited, the attacker immediately has root privileges inside the container, making it significantly easier to break out to the host.
+* **Impact:** **Privilege Escalation & Bind Mount Issues.** By default, containers run with root privileges. This increases the risk of privilege escalation if the container is compromised. Additionally, running as root can create permission challenges when bind-mounting volumes from the underlying host, as files created by the container will be owned by root on the host.
 
 ## Common Misconfiguration
 
-Running containers as the root user (UID 0) is a critical security risk. If an attacker compromises the application, they gain root privileges within the container, potentially leading to container escape or host compromise.
+Failing to create a specific user in the Dockerfile or failing to switch to that user using the `USER` directive. By default, Docker containers run as the root user inside the container.
 
 ## Vulnerable Example
 
 ```dockerfile
 # Vulnerable Dockerfile
-FROM node:18-alpine
+# No USER directive is specified, so this runs as Root (UID 0)
+FROM ubuntu:22.04
 
-# No user specified - runs as root by default
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
 COPY . .
 
-EXPOSE 3000
-CMD ["node", "server.js"]
+# Default behavior:
+# The process started by CMD will have full root privileges
+CMD ["./start-app.sh"]
 
 ```
 
@@ -34,58 +33,51 @@ CMD ["node", "server.js"]
 
 ```dockerfile
 # Secure Dockerfile
-FROM node:18-alpine
+FROM ubuntu:22.04
 
-# 1. Create a non-root user
-# (Note: For Debian/Ubuntu images, use: useradd -m -u 1001 nodejs)
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+# Remediation: Create a specific user before the USER instruction
+# Using the command specified in CIS Benchmark:
+RUN useradd -d /home/appuser -m -s /bin/bash appuser
 
 WORKDIR /app
 
-# 2. Change ownership of the app directory so the user can access it
-COPY --chown=nodejs:nodejs package*.json ./
+# Ensure the new user owns the application files
+COPY --chown=appuser:appuser . .
 
-# 3. Switch to non-root user before installing dependencies
-USER nodejs
+# Switch to the non-root user
+USER appuser
 
-RUN npm install
-COPY --chown=nodejs:nodejs . .
-
-EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["./start-app.sh"]
 
 ```
 
-## Additional Security Measures
+## Alternative Remediation (Entrypoint Script)
 
-```yaml
-# docker-compose.yml with security context
-version: '3.8'
-services:
-  app:
-    build: .
-    # Ensure the container runs as the specific user ID
-    user: "1001:1001"
-    # Prevent the container from gaining new privileges (e.g., sudo)
-    security_opt:
-      - no-new-privileges:true
-    # Make the root filesystem read-only for extra security
-    read_only: true
-    tmpfs:
-      - /tmp
-
-```
-
-## Verification
+If it is not possible to set the `USER` directive in the Dockerfile (e.g., you need root to install dependencies at runtime), use a script to drop privileges:
 
 ```bash
-# Check the user running inside the container
-docker exec <container-id> whoami
-# Should output: nodejs (not root)
+#!/bin/bash
+# entrypoint.sh
+# Do root work here (if absolutely necessary)
+chown -R appuser:appuser /app/data
 
-# Verify UID
-docker exec <container-id> id
-# Should show: uid=1001(nodejs) gid=1001(nodejs)
+# Switch to non-root user to run the main process
+exec gosu appuser "$@"
+
+```
+
+## Audit Procedure
+
+To verify if a container is running as root, run the following command on the host:
+
+```bash
+# CIS Audit Command
+docker ps --quiet | xargs --max-args=1 -I{} docker exec {} cat /proc/1/status | grep '^Uid:' | awk '{print $3}'
+
+```
+
+* **Result:** This returns the effective UID.
+* **Fail:** If it returns `0`, the container process is running as root.
+* **Pass:** If it returns a non-zero ID (e.g., `1000`), it is compliant.
 
 ```
