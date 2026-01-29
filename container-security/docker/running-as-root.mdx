@@ -7,7 +7,7 @@ description: Containers should run as a non-root user to minimize security risks
 
 * **Severity:** High
 * **CIS Benchmark:** CIS 4.1
-* **Impact:** **Privilege Escalation & Bind Mount Issues.** By default, containers run with root privileges. This increases the risk of privilege escalation if the container is compromised. Additionally, running as root can create permission challenges when bind-mounting volumes from the underlying host, as files created by the container will be owned by root on the host.
+* **Impact:** **Privilege Escalation & Bind Mount Issues.** By default, containers run with root privileges. This increases the risk of privilege escalation if the container is compromised. Additionally, running as root can create permission challenges when bind-mounting volumes from the underlying host.
 
 ## Common Misconfiguration
 
@@ -35,8 +35,7 @@ CMD ["./start-app.sh"]
 # Secure Dockerfile
 FROM ubuntu:22.04
 
-# Remediation: Create a specific user before the USER instruction
-# Using the command specified in CIS Benchmark:
+# Create a specific user before the USER instruction
 RUN useradd -d /home/appuser -m -s /bin/bash appuser
 
 WORKDIR /app
@@ -71,7 +70,7 @@ exec gosu appuser "$@"
 To verify if a container is running as root, run the following command on the host:
 
 ```bash
-# CIS Audit Command
+# Verify UID
 docker ps --quiet | xargs --max-args=1 -I{} docker exec {} cat /proc/1/status | grep '^Uid:' | awk '{print $3}'
 
 ```
@@ -80,4 +79,3 @@ docker ps --quiet | xargs --max-args=1 -I{} docker exec {} cat /proc/1/status | 
 * **Fail:** If it returns `0`, the container process is running as root.
 * **Pass:** If it returns a non-zero ID (e.g., `1000`), it is compliant.
 
-```
