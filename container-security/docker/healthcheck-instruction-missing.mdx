@@ -1,17 +1,17 @@
 ---
 title: Healthcheck Instruction Missing (CIS 4.6)
-description: Importance of defining HEALTHCHECK instructions for container availability
+description: Ensure that health checks are executed against running containers to maintain availability
 ---
 
 ## Impact & Risk Analysis
 
 * **Severity:** Low
 * **CIS Benchmark:** CIS 4.6
-* **Impact:** **Silent Failures.** Without a health check, a container might be "running" but stuck in a broken state (e.g., infinite loop, deadlock). Orchestrators like Docker Swarm or Kubernetes won't know to restart it, leading to downtime.
+* **Impact:** **Availability Loss.** An important security control is availability. Without a `HEALTHCHECK` instruction, the Docker engine cannot verify if a container is still operational. A container might be running but unresponsive (e.g., deadlocked), and the engine will not know to terminate and restart it.
 
 ## Common Misconfiguration
 
-Failing to include the `HEALTHCHECK` instruction in the Dockerfile. While orchestrators (like Kubernetes) have their own probes, defining it in the Dockerfile provides a consistent standard for the image itself.
+Failing to add the `HEALTHCHECK` instruction to Docker container images. By default, `HEALTHCHECK` is not set, meaning the Docker engine assumes the container is healthy as long as the process is running, even if it is stuck or erroring out.
 
 ## Vulnerable Example
 
@@ -21,10 +21,10 @@ FROM node:18-alpine
 
 WORKDIR /app
 COPY . .
-CMD ["node", "server.js"]
 
 # Missing HEALTHCHECK instruction
-# If server.js hangs, Docker still reports status as "Up"
+# If the app hangs (infinite loop), Docker won't restart it.
+CMD ["node", "server.js"]
 
 ```
 
@@ -37,7 +37,8 @@ FROM node:18-alpine
 WORKDIR /app
 COPY . .
 
-# Add a check that runs every 30s to verify the app is responsive
+# Add the HEALTHCHECK instruction
+# Check every 30s, timeout after 3s, and fail after 3 retries
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
@@ -45,20 +46,19 @@ CMD ["node", "server.js"]
 
 ```
 
-## Additional Security Measures
+## Audit Procedure
 
-If you cannot modify the Dockerfile (e.g., using a third-party image), define the health check in `docker-compose.yml`:
+You should run the command below to ensure that Docker images have the appropriate `HEALTHCHECK` instruction configured:
 
-```yaml
-version: '3.8'
-services:
-  app:
-    image: third-party-app:latest
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+```bash
+# Inspect the image configuration
+docker inspect --format='{{ .Config.Healthcheck }}' <IMAGE_ID>
 
 ```
 
+* **Result:** This should return the configured health check parameters.
+* **Fail:** If it returns `<no value>` or `nil`, the instruction is missing.
+
+## Remediation
+
+You should follow the Docker documentation and rebuild your container images to include the `HEALTHCHECK` instruction. This ensures that the Docker engine periodically checks the running container instances against that instruction to verify they are operational.
