@@ -1,0 +1,79 @@
+---
+title: Use COPY Instead of ADD (CIS 4.9)
+description: Security risks of using the ADD instruction in Dockerfiles and secure alternatives
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 4.9
+* **Impact:** **Malicious File Download & Zip Bombs.** The `ADD` instruction can retrieve files from remote URLs and automatically unpack them. This introduces security risks where malicious files might be downloaded without scanning, or vulnerabilities associated with decompression (like Zip Bombs) could be exploited.
+
+## Common Misconfiguration
+
+Using the `ADD` instruction to copy files into the image. While `ADD` allows for remote file retrieval and auto-extraction, these features make the build process unpredictable and potentially insecure compared to the `COPY` instruction.
+
+## Vulnerable Example
+
+```dockerfile
+# Vulnerable Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# VULNERABLE: ADD downloads remote files directly
+# This bypasses potential virus scanning and verification
+ADD [https://example.com/potentially-malicious-script.sh](https://example.com/potentially-malicious-script.sh) ./install.sh
+
+# VULNERABLE: ADD automatically unzips archives
+# This can lead to unexpected file overwrites or decompression attacks
+ADD my-archive.tar.gz /
+
+CMD ["./install.sh"]
+
+```
+
+## Secure Example
+
+```dockerfile
+# Secure Dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Secure: COPY simply copies local files to the container
+# It does not support remote URLs or auto-extraction
+COPY package.json ./
+COPY src/ ./src/
+
+# Secure: Use explicit commands for remote downloads
+# This allows you to verify checksums before execution
+RUN apk add --no-cache curl && \
+    curl -o install.sh [https://example.com/script.sh](https://example.com/script.sh) && \
+    sha256sum install.sh | grep "expected-hash-value"
+
+CMD ["./install.sh"]
+
+```
+
+## Audit Procedure
+
+Run the command below to get the list of images:
+
+```bash
+docker images
+
+```
+
+Run the command below against each image in the list above and look for any `ADD` instructions:
+
+```bash
+docker history <IMAGE_ID>
+
+```
+
+Alternatively, if you have access to the Dockerfile for the image, verify that there are no `ADD` instructions present.
+
+## Remediation
+
+You should use `COPY` rather than `ADD` instructions in Dockerfiles. The `COPY` instruction simply copies files from the local host machine to the container file system without the risks associated with remote URL retrieval or automatic decompression.

@@ -95,7 +95,8 @@
                 "container-security/docker/using-latest-tags",
                 "container-security/docker/content-trust-not-enabled",
                 "container-security/docker/healthcheck-instruction-missing",
-                "container-security/docker/seccomp-profile-not-set"
+                "container-security/docker/seccomp-profile-not-set",
+                "container-security/docker/use-copy-instead-of-add"
               ]
             },
             {
