@@ -1,66 +1,66 @@
 ---
 title: Content Trust Not Enabled (CIS 4.5)
-description: Risks of pulling unsigned Docker images and enabling Content Trust
+description: Ensure Content Trust is enabled to verify the integrity and publisher of Docker images
 ---
 
 ## Impact & Risk Analysis
 
 * **Severity:** Medium
 * **CIS Benchmark:** CIS 4.5
-* **Impact:** **Supply Chain Attack.** Without Content Trust, the Docker client will pull any image from a registry, even if it has been tampered with or replaced by a malicious actor (Man-in-the-Middle attack).
+* **Impact:** **Spoofing & Compromised Provenance.** Content trust provides the ability to use digital signatures for data sent to and received from remote Docker registries. Without it, there is no client-side verification of the identity and the publisher of specific image tags, allowing potential spoofing or the use of compromised images.
 
 ## Common Misconfiguration
 
-Content Trust is disabled by default in the Docker client. This means verification of the image publisher is not enforced, allowing the use of potentially compromised or malicious images.
+Content trust is disabled by default in the Docker client. Unless explicitly enabled, Docker commands will not verify the signatures of images, and users might unknowingly pull malicious or untrusted images.
 
 ## Vulnerable Example
 
 ```bash
-# Vulnerable: Pulling an image without validation
-# If a hacker compromises the registry or the network, 
-# you might download a malicious version of 'postgres'.
-docker pull postgres:16
+# Vulnerable Environment (Default)
+# DOCKER_CONTENT_TRUST is not set.
+# The user pulls an image without verifying its provenance.
+docker pull postgres:latest
 
 ```
 
-```yaml
-# Vulnerable CI/CD Pipeline Step
-steps:
-  - name: Build and Push
-    run: |
-      docker build -t myapp:latest .
-      # No signing key is used; the image is unsigned.
-      docker push myapp:latest
+```dockerfile
+# Vulnerable CI/CD Step
+# No trust environment variable is defined.
+RUN docker build -t myapp:latest .
 
 ```
 
 ## Secure Example
 
 ```bash
-# Secure: Enabling Content Trust
-# This forces Docker to verify the signature before pulling.
+# Secure Environment
+# Enabling Content Trust enforces signature verification.
 export DOCKER_CONTENT_TRUST=1
-docker pull postgres:16
+
+# Now, this command will fail if the image is not signed or the signature is invalid.
+docker pull postgres:latest
 
 ```
 
-```yaml
-# Secure CI/CD Pipeline Step
-steps:
-  - name: Build and Push with Signing
-    env:
-      DOCKER_CONTENT_TRUST: 1
-      DOCKER_CONTENT_TRUST_REPOSITORY_KEY: ${{ secrets.REPO_KEY }}
-    run: |
-      docker build -t myapp:latest .
-      # Docker will now require a valid signature key to push
-      docker push myapp:latest
+## Audit Procedure
+
+You should execute the following command to verify if Content Trust is enabled:
+
+```bash
+echo $DOCKER_CONTENT_TRUST
 
 ```
 
-## Security Best Practices
+* **Result:** This should return a value of `1`.
+* **Fail:** If it returns an empty line or `0`, Content Trust is disabled.
 
-* Set `export DOCKER_CONTENT_TRUST=1` in your shell profile (`.bashrc` or `.zshrc`) and in your CI/CD pipelines.
-* Use a private registry (like Harbor or Artifactory) that enforces image signing.
+## Remediation
+
+To enable content trust in a bash shell, you should enter the following command:
+
+```bash
+export DOCKER_CONTENT_TRUST=1
 
 ```
+
+Alternatively, you could set this environment variable in your profile file (e.g., `.bashrc` or `.zshrc`) so that content trust is enabled on every login.

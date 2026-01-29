@@ -91,12 +91,12 @@
               "group": "Docker",
               "pages": [
                 "container-security/docker/running-as-root",
-                "container-security/docker/exposed-docker-socket",
-                "container-security/docker/using-latest-tags",
+                "container-security/docker/ensure-images-scanned",
                 "container-security/docker/content-trust-not-enabled",
                 "container-security/docker/healthcheck-instruction-missing",
-                "container-security/docker/seccomp-profile-not-set",
-                "container-security/docker/use-copy-instead-of-add"
+                "container-security/docker/update-instructions-alone",
+                "container-security/docker/use-copy-instead-of-add",
+                "container-security/docker/secrets-in-dockerfile"
               ]
             },
             {

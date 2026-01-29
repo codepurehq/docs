@@ -1,0 +1,76 @@
+---
+title: Ensure Update Instructions Are Not Used Alone (CIS 4.7)
+description: Prevent stale cache layers by combining update and install instructions
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 4.7
+* **Impact:** **Stale Package Cache.** Adding update instructions (like `apt-get update`) in a single line causes the update layer to be cached. If you build the image later, Docker reuses this cached layer, meaning your package lists are not refreshed. This can prevent fresh security updates from being applied or cause build failures if the referenced package version no longer exists in the repository.
+
+## Common Misconfiguration
+
+Using OS package manager update instructions (such as `apt-get update` or `yum update`) alone or in a distinct `RUN` instruction separate from the installation command.
+
+## Vulnerable Example
+
+```dockerfile
+# Vulnerable Dockerfile
+FROM ubuntu:22.04
+
+# VULNERABLE: This layer will be cached by Docker.
+# Future builds will NOT check for new package updates.
+RUN apt-get update
+
+# If the package list above is old, this might install outdated versions
+# or fail if the package version has moved.
+RUN apt-get install -y python3
+
+```
+
+## Secure Example
+
+```dockerfile
+# Secure Dockerfile
+FROM ubuntu:22.04
+
+# SECURE: Combine update and install in a single instruction.
+# This forces the update to run every time the cache for this layer is invalidated.
+# Using version pinning is also recommended.
+RUN apt-get update && apt-get install -y \
+    python3 \
+    nginx=1.18.* \
+    && rm -rf /var/lib/apt/lists/*
+
+```
+
+## Audit Procedure
+
+Step 1: Run the command below to get the list of images:
+
+```bash
+docker images
+
+```
+
+Step 2: Run the command below against each image in the list above, looking for any update instructions which are incorporated in a single line:
+
+```bash
+docker history <IMAGE_ID>
+
+```
+
+Alternatively, if you have access to the Dockerfile for the image, verify that there are no update instructions configured alone or in a single line.
+
+## Remediation
+
+You should use update instructions together with install instructions and version pinning for packages while installing them. This will prevent caching and force the extraction of the required versions.
+
+Alternatively, you could use the `--no-cache` flag during the docker build process to avoid using cached layers:
+
+```bash
+docker build --no-cache -t myapp:latest .
+
+```
+

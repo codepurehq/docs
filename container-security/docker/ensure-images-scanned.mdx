@@ -1,0 +1,85 @@
+---
+title: Ensure Images are Scanned and Rebuilt (CIS 4.4)
+description: Regularly scan and rebuild container images to patch known vulnerabilities
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 4.4
+* **Impact:** **Exploitation of Known Vulnerabilities.** Vulnerabilities are loopholes or bugs in software that can be exploited by hackers. If images are not scanned and rebuilt frequently, they may contain outdated software with known security flaws (CVEs), making the container easy to compromise even if the configuration is secure.
+
+## Common Misconfiguration
+
+Deploying an image once and leaving it running for months without updates ("Stale Images"). Even if an image was secure when first built, new vulnerabilities are discovered daily. Failing to integrate a vulnerability scanner into the CI/CD pipeline allows these vulnerable images to reach production.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable CI/CD Pipeline (No Scanning)
+# This pipeline builds and pushes the image blindly.
+# If the base image 'node:14' has a new critical vulnerability,
+# it will be pushed to production immediately.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker Image
+        run: docker build -t myapp:latest .
+      - name: Push to Registry
+        run: docker push myapp:latest
+
+```
+
+## Secure Example
+
+```yaml
+# Secure CI/CD Pipeline (Automated Scanning)
+# This pipeline fails the build if critical vulnerabilities are found.
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Build Docker Image
+        run: docker build -t myapp:latest .
+      
+      # Remediation: Run an image vulnerability assessment tool
+      - name: Scan Image for Vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:latest'
+          format: 'table'
+          exit-code: '1'        # Fail the pipeline if issues are found
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push to Registry
+        if: success()  # Only push if the scan passed
+        run: docker push myapp:latest
+
+```
+
+## Audit Procedure
+
+List all running instances of containers:
+
+```bash
+docker ps --quiet
+
+```
+
+For each container instance, verify if it has been scanned recently. Alternatively, run an image vulnerability assessment tool against all images in your environment:
+
+```bash
+# Example using Trivy to scan an image manually
+trivy image <IMAGE_ID>
+
+```
+
+## Remediation
+
+Images should be re-built ensuring that the latest version of the base images are used to keep the operating system patch level at an appropriate level. Once the images have been re-built and scanned, containers should be re-started making use of the updated images.
+
