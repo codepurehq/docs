@@ -1,0 +1,77 @@
+---
+title: Ensure Privileged Containers Are Not Used (CIS 5.5)
+description: Prevent containers from accessing host devices and kernel capabilities by disabling privileged mode
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.5
+* **Impact:** **Full Host Compromise.** Using the `--privileged` flag provides all Linux kernel capabilities to the container and lifts all limitations enforced by the device cgroup controller. As a consequence, the container has most of the rights of the underlying host, allowing a compromised container to potentially gain root access to the server.
+
+## Common Misconfiguration
+
+Running containers with the `--privileged` flag enabled. This is often done to allow for specific use cases (like running Docker-in-Docker) or to lazily bypass permission errors, but it effectively disables the security isolation between the container and the host.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Grants full host access
+    privileged: true
+    ports:
+      - "80:80"
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run --interactive --tty --privileged centos /bin/bash
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Explicitly set to false (default)
+    privileged: false
+    ports:
+      - "80:80"
+    # If specific capabilities are needed, add them individually instead
+    cap_add:
+      - NET_BIND_SERVICE
+
+```
+
+```bash
+# Secure Docker Run Command
+# Do not use the --privileged flag
+docker run --interactive --tty centos /bin/bash
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the privileged status of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: Privileged={{ .HostConfig.Privileged }}'
+
+```
+
+* **Result:** The command should return `Privileged=false` for each container instance.
+* **Fail:** If any container returns `Privileged=true`.
+
+## Remediation
+
+You should not run containers with the `--privileged` flag. If your application requires specific permissions (like binding to a port), grant only those specific Linux capabilities using `--cap-add` instead of granting full privileged access.
+

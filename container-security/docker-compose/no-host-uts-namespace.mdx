@@ -1,0 +1,72 @@
+---
+title: Ensure Host UTS Namespace Is Not Shared (CIS 5.21)
+description: Prevent containers from modifying the host's hostname and NIS domain name
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.21
+* **Impact:** **Hostname Modification.** The UTS namespace isolates the system identifiers: hostname and NIS domain name. If a container shares the host's UTS namespace, it has full permission to change the hostname of the host server. This can cause confusion for system administration, break hostname-based authentication, or disrupt logging systems that rely on accurate hostnames.
+
+## Common Misconfiguration
+
+Starting a container with the `--uts=host` flag. This removes the isolation between the container's hostname and the host's hostname.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Container shares the host UTS namespace
+    uts: host
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+# The --uts=host flag disables UTS isolation
+docker run --rm --interactive --tty --uts=host rhel7.2
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Do not define 'uts: host'.
+    # Default behavior creates a separate UTS namespace.
+
+```
+
+```bash
+# Secure Docker Run Command
+# Standard isolation
+docker run -d nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the UTS mode of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: UTSMode={{ .HostConfig.UTSMode }}'
+
+```
+
+* **Result:** Check the `UTSMode` value for each container.
+* **Fail:** If it returns `host`.
+* **Pass:** If it returns an empty string (indicating private namespace).
+
+## Remediation
+
+You should not start a container with the `--uts=host` argument. By default, all containers have the UTS namespace enabled, ensuring that the host's hostname and domain name are not shared with any containers.
+

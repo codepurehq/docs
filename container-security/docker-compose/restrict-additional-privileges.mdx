@@ -1,0 +1,73 @@
+---
+title: Ensure Container is Restricted from Acquiring Additional Privileges (CIS 5.26)
+description: Prevent privilege escalation by blocking the no_new_priv bit
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.26
+* **Impact:** **Privilege Escalation.** By default, a process inside a container can elevate its privileges by executing "setuid" (suid) or "setgid" binaries (like `sudo` or `passwd`). If an attacker compromises an application, they can exploit these privileged binaries to gain root access. Setting the `no_new_priv` bit ensures that the process and its children cannot gain any additional privileges, even if they run a suid binary.
+
+## Common Misconfiguration
+
+Running containers without the `no-new-privileges` security option. By default, new privileges are not restricted, allowing processes to potentially escalate their access level.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: ubuntu:latest
+    # VULNERABLE: No security options defined.
+    # An attacker could run a setuid binary to gain root.
+    command: sleep 1000
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -d ubuntu:latest sleep 1000
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: ubuntu:latest
+    # SECURE: Explicitly prevent acquiring new privileges
+    security_opt:
+      - no-new-privileges:true
+    command: sleep 1000
+
+```
+
+```bash
+# Secure Docker Run Command
+# Enforce the security option at runtime
+docker run -d --security-opt=no-new-privileges ubuntu:latest sleep 1000
+
+```
+
+## Audit Procedure
+
+Run the following command to inspect the security options:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: SecurityOpt={{ .HostConfig.SecurityOpt }}'
+
+```
+
+* **Result:** Check the output for `no-new-privileges`.
+* **Fail:** If the output does not contain `no-new-privileges`.
+* **Pass:** If the list includes `no-new-privileges`.
+
+## Remediation
+
+You should start your container with the `no-new-privileges` option. This prevents LSMs (like SELinux) and standard kernel mechanisms from allowing processes to acquire new privileges via suid/sgid bits.

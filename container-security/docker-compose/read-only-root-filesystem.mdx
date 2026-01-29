@@ -1,0 +1,92 @@
+---
+title: Ensure Container Root Filesystem is Mounted Read-Only (CIS 5.13)
+description: Enforce immutable infrastructure by preventing writes to the container's root filesystem
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.13
+* **Impact:** **Malware Persistence & Tampering.** The container's root filesystem should be treated as a 'golden image'. If it is writable, an attacker who compromises the container can modify system binaries, install malware, or alter configuration files. Mounting the root filesystem as read-only reduces these attack vectors since the filesystem cannot be tampered with.
+
+## Common Misconfiguration
+
+Running containers with the default writable root filesystem. This allows any process inside the container to modify files, violating the principle of immutable infrastructure.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Default behavior is writable root.
+    # An attacker can overwrite /etc/nginx/nginx.conf or /bin/ls
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -d nginx:latest
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Enforce read-only root filesystem
+    read_only: true
+    
+    # REQUIRED: You must define where the container CAN write.
+    # Nginx needs to write to these folders to start.
+    tmpfs:
+      - /var/run
+      - /tmp
+      - /var/cache/nginx
+
+```
+
+```bash
+# Secure Docker Run Command
+# Mount root as read-only, but allow writing to /tmp and /run via tmpfs
+docker run -d \
+  --read-only \
+  --tmpfs /run \
+  --tmpfs /tmp \
+  nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the following command on the Docker host:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: ReadonlyRootfs={{ .HostConfig.ReadonlyRootfs }}'
+
+```
+
+* **Result:** Check the `ReadonlyRootfs` value.
+* **Fail:** If it returns `false`, the root filesystem is writable.
+* **Pass:** If it returns `true`.
+
+## Remediation
+
+You should add a `--read-only` flag at a container's runtime to enforce the container's root filesystem being mounted as read-only.
+
+Since many applications need to write temporary files (like logs, PID files, or caches), you must explicitly define these writable locations using:
+
+1. **`--tmpfs`**: For temporary, non-persistent data (e.g., `/tmp`, `/run`).
+2. **Volumes (`-v`)**: For persistent data that needs to be saved (e.g., `/app/data`).
+
+```bash
+docker run --interactive --tty --read-only --tmpfs "/run" --tmpfs "/tmp" centos /bin/bash
+
+```
+

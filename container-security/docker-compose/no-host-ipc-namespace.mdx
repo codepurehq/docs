@@ -1,0 +1,72 @@
+---
+title: Ensure Host IPC Namespace Is Not Shared (CIS 5.17)
+description: Prevent containers from accessing host shared memory segments and semaphores
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.17
+* **Impact:** **Shared Memory Access & Data Leakage.** The IPC (Inter-Process Communication) namespace provides separation of named shared memory segments, semaphores, and message queues. If a container shares the host's IPC namespace, processes inside the container can see all IPC communications on the host system. An attacker could potentially read sensitive data from shared memory or manipulate semaphores to crash host applications.
+
+## Common Misconfiguration
+
+Starting a container with the `--ipc=host` flag. This is sometimes done for high-performance applications that need to communicate with the host via shared memory, but it removes a critical layer of isolation.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  database:
+    image: postgres:15
+    # VULNERABLE: Container shares the host IPC namespace
+    ipc: host
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+# The --ipc=host flag disables IPC isolation
+docker run --interactive --tty --ipc=host centos /bin/bash
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  database:
+    image: postgres:15
+    # SECURE: Do not define 'ipc: host'.
+    # Default behavior creates a separate IPC namespace.
+
+```
+
+```bash
+# Secure Docker Run Command
+# Standard isolation
+docker run -d postgres:15
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the IPC mode of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: IpcMode={{ .HostConfig.IpcMode }}'
+
+```
+
+* **Result:** Check the `IpcMode` value for each container.
+* **Fail:** If it returns `host`.
+* **Pass:** If it returns `private` or `shareable` (default), or the container's own ID.
+
+## Remediation
+
+You should not start a container with the `--ipc=host` argument. By default, all containers have their own IPC namespace enabled, ensuring that shared memory segments and message queues are isolated from the host system.
+

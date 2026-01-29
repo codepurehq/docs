@@ -1,0 +1,83 @@
+---
+title: Ensure Memory Usage for Containers is Limited (CIS 5.11)
+description: Prevent Denial of Service (DoS) by enforcing memory limits on containers
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.11
+* **Impact:** **Denial of Service (DoS).** By default, a single container can consume all available memory on the host. If a container has a memory leak or is compromised to run a resource-heavy process (like a cryptominer), it can starve other containers or crash the host system entirely, rendering the service unusable.
+
+## Common Misconfiguration
+
+Running containers without defining resource limits. By default, all containers on a Docker host share resources equally and no memory limits are enforced, meaning a container can use unlimited RAM.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  app:
+    image: node:18
+    # VULNERABLE: No memory limits defined.
+    # This app can consume 100% of the host memory.
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -d my-app:latest
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  app:
+    image: node:18
+    deploy:
+      resources:
+        limits:
+          memory: 512M   # Hard limit: Container killed if it exceeds this
+          cpus: '0.50'   # Good practice to limit CPU as well
+        reservations:
+          memory: 128M   # Soft limit: Guaranteed memory
+
+```
+
+```bash
+# Secure Docker Run Command
+# Limits the container to 256MB of RAM
+docker run -d --memory 256m my-app:latest
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the memory limits of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: Memory={{ .HostConfig.Memory }}'
+
+```
+
+* **Result:** This returns the memory limit in bytes.
+* **Fail:** If it returns `0`, it means no memory limits are in place.
+* **Pass:** If it returns a non-zero value (e.g., `268435456` for 256MB), limits are enforced.
+
+## Remediation
+
+You should run the container with only as much memory as it requires using the `--memory` argument or the `mem_limit` / `deploy.resources` configuration in Docker Compose.
+
+For example, to limit a container to 256 MB:
+
+```bash
+docker run -d --memory 256m centos sleep 1000
+
+```
+

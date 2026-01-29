@@ -1,0 +1,75 @@
+---
+title: Ensure Docker Socket is Not Mounted (CIS 5.32)
+description: Prevent full host compromise by restricting access to the Docker socket
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Critical
+* **CIS Benchmark:** CIS 5.32
+* **Impact:** **Full Host Compromise.** The Docker socket (`/var/run/docker.sock`) is the main entry point for the Docker API. If this socket is mounted inside a container, processes within that container can execute Docker commands. This allows an attacker to create new privileged containers, mount the host's root filesystem, and effectively gain root access to the entire host server.
+
+## Common Misconfiguration
+
+Mounting the Docker socket to allow a container to manage other containers. This is common in CI/CD agents (like Jenkins or GitLab Runner) and management tools (like Portainer), but it breaks the container isolation model completely.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  ci_agent:
+    image: jenkins/agent:latest
+    volumes:
+      # VULNERABLE: Mounting the Docker socket gives root access to the host
+      - /var/run/docker.sock:/var/run/docker.sock
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -v /var/run/docker.sock:/var/run/docker.sock -d my-app
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  ci_agent:
+    image: jenkins/agent:latest
+    # SECURE: Do not mount the socket.
+    # If Docker access is absolutely required, use a secure socket proxy
+    # or a remote Docker daemon with TLS authentication.
+    volumes:
+      - ./app-data:/app/data
+
+```
+
+```bash
+# Secure Docker Run Command
+# No socket mount included
+docker run -d my-app
+
+```
+
+## Audit Procedure
+
+Run the following command to check for mapped sockets:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: Volumes={{ .Mounts }}' | grep docker.sock
+
+```
+
+* **Result:** The command returns any instances where `docker.sock` has been mapped to a container as a volume.
+* **Fail:** If any output is returned.
+* **Pass:** If the command returns no output.
+
+## Remediation
+
+You should ensure that no containers mount `docker.sock` as a volume. If your application requires Docker interaction, investigate safer alternatives such as using the Docker API over a secured network connection or using a restricted socket proxy that filters dangerous commands.
+

@@ -102,9 +102,20 @@
             {
               "group": "Docker Compose",
               "pages": [
-                "container-security/docker-compose/hardcoded-secrets",
-                "container-security/docker-compose/privileged-containers",
-                "container-security/docker-compose/sensitive-host-mounts"
+                "container-security/docker-compose/restrict-kernel-capabilities",
+                "container-security/docker-compose/no-privileged-containers",
+                "container-security/docker-compose/no-host-network-namespace",
+                "container-security/docker-compose/limit-container-memory",
+                "container-security/docker-compose/limit-cpu-priority",
+                "container-security/docker-compose/read-only-root-filesystem",
+                "container-security/docker-compose/limit-restart-policy",
+                "container-security/docker-compose/no-host-pid-namespace",
+                "container-security/docker-compose/no-host-ipc-namespace",
+                "container-security/docker-compose/no-host-uts-namespace",
+                "container-security/docker-compose/ensure-seccomp-profile-enabled",
+                "container-security/docker-compose/restrict-additional-privileges",
+                "container-security/docker-compose/no-host-user-namespace",
+                "container-security/docker-compose/no-docker-socket-mount"
               ]
             },
             {

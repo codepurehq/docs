@@ -1,0 +1,93 @@
+---
+title: Ensure Linux Kernel Capabilities Are Restricted (CIS 5.4)
+description: Minimize the attack surface by dropping unnecessary Linux kernel capabilities
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.4
+* **Impact:** **Network Spoofing & Privilege Escalation.** By default, Docker containers retain capabilities like `NET_RAW`, which allows an attacker to create spoofed network traffic. If a container is compromised, having unnecessary kernel capabilities (like `SYS_CHROOT` or `DAC_OVERRIDE`) allows the attacker to bypass file permissions or escape the container isolation.
+
+## Common Misconfiguration
+
+Running containers with the default Docker capability set, or worse, using `--cap-add=ALL`. The default set includes capabilities like `NET_RAW` which are often not required for standard web applications but pose a security risk.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    # VULNERABLE: No capabilities are dropped.
+    # The container implicitly has NET_RAW, AUDIT_WRITE, SETUID, etc.
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+# Implicitly grants default capabilities including NET_RAW
+docker run -d nginx:latest
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    # SECURE: Drop ALL capabilities first, then add only what is strictly needed.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # Required to bind to port 80
+      - CHOWN             # Required if Nginx needs to change file ownership
+
+```
+
+```bash
+# Secure Docker Run Command
+# Drops all capabilities and adds only NET_BIND_SERVICE
+docker run -d --cap-drop=all --cap-add=NET_BIND_SERVICE nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the following command to inspect the capabilities of running containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: CapAdd={{ .HostConfig.CapAdd }} CapDrop={{ .HostConfig.CapDrop }}'
+
+```
+
+* **Result:** Review the output for each container.
+* **Fail:** If `NET_RAW` is not in `CapDrop` (unless explicitly required), or if `CapAdd` contains unnecessary privileges.
+* **Pass:** If the container uses `CapDrop=ALL` or explicitly drops `NET_RAW` and other unused capabilities.
+
+## Remediation
+
+You should restrict the capabilities to the minimum required for the container to function.
+
+To remove unneeded capabilities (specifically `NET_RAW`):
+
+```bash
+docker run --cap-drop=NET_RAW myimage
+
+```
+
+The most secure approach is to remove all capabilities and then restore only the ones specifically used:
+
+```bash
+docker run --cap-drop=all --cap-add=NET_BIND_SERVICE myimage
+
+```

@@ -1,0 +1,72 @@
+---
+title: Ensure Host Process Namespace Is Not Shared (CIS 5.16)
+description: Prevent containers from accessing or manipulating host processes by maintaining PID isolation
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.16
+* **Impact:** **Process Manipulation & Host Shutdown.** The Process ID (PID) namespace isolates the process ID space. If a container shares the host's PID namespace, processes inside the container can see **all** processes on the host system. A malicious user with access to the container could identify, manipulate, or kill critical host processes (even `systemd` or other containers), potentially shutting down the entire server.
+
+## Common Misconfiguration
+
+Starting a container with the `--pid=host` flag. This is sometimes done for monitoring or debugging tools (like `htop` in a container) but is dangerous for standard applications as it breaks process-level isolation.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  monitor:
+    image: htop:latest
+    # VULNERABLE: Container sees all host processes
+    pid: host
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+# The --pid=host flag disables PID isolation
+docker run --interactive --tty --pid=host centos /bin/bash
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Do not define 'pid: host'.
+    # Default behavior creates a separate PID namespace.
+
+```
+
+```bash
+# Secure Docker Run Command
+# Standard isolation
+docker run -d nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the PID mode of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: PidMode={{ .HostConfig.PidMode }}'
+
+```
+
+* **Result:** Check the `PidMode` value for each container.
+* **Fail:** If it returns `host`.
+* **Pass:** If it returns an empty string or the container's own ID (indicating private namespace).
+
+## Remediation
+
+You should not start a container with the `--pid=host` argument unless explicitly required for debugging host processes. By default, all containers have the PID namespace enabled, meaning they cannot see or interact with processes outside their own sandbox.
+

@@ -1,0 +1,94 @@
+---
+title: Ensure CPU Priority is Set Appropriately (CIS 5.12)
+description: Prevent resource starvation by prioritizing CPU usage for critical containers
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.12
+* **Impact:** **Resource Starvation / Denial of Service.** By default, CPU time is divided equally between containers. If CPU priorities are not set, a low-priority background task (like a batch job) could consume excessive CPU cycles, "starving" high-priority containers (like a web server) and causing them to become unresponsive or suffer from high latency.
+
+## Common Misconfiguration
+
+Running containers without defining CPU shares. By default, all containers on a Docker host share CPU resources equally (default weight of 1024). This means critical applications have to fight for resources with non-critical tasks.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web_server:
+    image: nginx:latest
+    # VULNERABLE: No CPU shares defined.
+    # This critical service fights equally with the background worker.
+
+  background_worker:
+    image: python:3.9
+    command: python data_cruncher.py
+    # VULNERABLE: Can consume 100% of CPU, slowing down the web server.
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -d my-background-worker
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web_server:
+    image: nginx:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+        reservations:
+          cpus: '0.5'
+    # SECURE: High priority (Default is 1024, so this gets standard priority)
+    # or explicitly set higher if using legacy version 2 syntax:
+    # cpu_shares: 1024
+
+  background_worker:
+    image: python:3.9
+    command: python data_cruncher.py
+    # SECURE: Low priority (512 is 50% of the default 1024)
+    # If the CPU is busy, this container gets half the time of the web server.
+    cpu_shares: 512
+
+```
+
+```bash
+# Secure Docker Run Command
+# Start the less important container with lower priority (512 shares)
+docker run -d --cpu-shares 512 my-background-worker
+
+```
+
+## Audit Procedure
+
+Run the following command to check CPU shares:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: CpuShares={{ .HostConfig.CpuShares }}'
+
+```
+
+* **Result:** Returns the CPU shares value.
+* **Fail:** If it returns `0` or `1024`, defaults are in use (no prioritization).
+* **Pass:** If it returns a non-zero value other than `1024` (e.g., `512`), priorities are enforced.
+
+## Remediation
+
+You should manage the CPU runtime between your containers dependent on their priority within your organization. Use the `--cpu-shares` argument (or `cpu_shares` in Docker Compose) to assign weights.
+
+* **1024**: Default priority.
+* **512**: Low priority (gets 50% of the CPU time compared to a default container).
+* **2048**: High priority (gets 2x the CPU time compared to a default container).
+

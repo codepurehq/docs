@@ -1,0 +1,74 @@
+---
+title: Ensure Default Seccomp Profile is Not Disabled (CIS 5.22)
+description: Reduce the kernel attack surface by maintaining the default seccomp whitelist
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.22
+* **Impact:** **Increased Kernel Attack Surface.** Seccomp (Secure Computing Mode) restricts the system calls a process can make to the Linux kernel. A large number of system calls are exposed to every userland process, but most applications only need a small subset. Disabling the default seccomp profile exposes the container to all available kernel syscalls, significantly increasing the risk if the application is compromised.
+
+## Common Misconfiguration
+
+Explicitly disabling the default seccomp profile using `seccomp:unconfined`. This is often done to debug "permission denied" errors when an application tries to make a blocked system call, but it removes a critical layer of defense.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Disables the default syscall filter
+    security_opt:
+      - seccomp:unconfined
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run --security-opt seccomp=unconfined nginx
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Do not disable seccomp.
+    # By default, Docker applies a safe profile that blocks dangerous syscalls.
+
+```
+
+```bash
+# Secure Docker Run Command
+# Uses the default seccomp profile automatically
+docker run -d nginx
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the security options of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: SecurityOpt={{ .HostConfig.SecurityOpt }}'
+
+```
+
+* **Result:** Check the `SecurityOpt` value for each container.
+* **Fail:** If it returns `[seccomp:unconfined]`.
+* **Pass:** If it returns `null`, `[]`, or a specific profile path (e.g., `[name=seccomp,profile=default]`), it means a profile is active.
+
+## Remediation
+
+By default, seccomp profiles are enabled. You do not need to do anything unless you have explicitly disabled it. Ensure that you do not pass `--security-opt=seccomp:unconfined` on `docker run` or include it in your `docker-compose.yml`.
+
+If your application requires a specific system call that is blocked by default, do not disable seccomp entirely. Instead, create a custom JSON profile that whitelists only the specific syscalls you need.
+

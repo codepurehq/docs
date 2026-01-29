@@ -1,0 +1,80 @@
+---
+title: Ensure Container Restart Policy is Set to on-failure:5 (CIS 5.15)
+description: Prevent resource exhaustion by limiting container restart attempts
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Low
+* **CIS Benchmark:** CIS 5.15
+* **Impact:** **Denial of Service (DoS) & Masked Failures.** If you indefinitely keep trying to start a broken container, it can consume excessive host resources (CPU/IO), potentially leading to a Denial of Service. Additionally, always restarting a container masks the underlying root cause of the crash, preventing proper investigation.
+
+## Common Misconfiguration
+
+Using `restart: always` or `restart: unless-stopped`. While convenient for keeping services up, this configuration creates an infinite loop if the application crashes immediately upon startup, spamming the logs and burdening the Docker daemon.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Will restart infinitely if it crashes
+    restart: always
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run -d --restart always nginx
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    deploy:
+      restart_policy:
+        # SECURE: Restart only on failure, max 5 times
+        condition: on-failure
+        max_attempts: 5
+
+```
+
+```bash
+# Secure Docker Run Command
+# Limit restarts to 5 attempts
+docker run -d --restart=on-failure:5 nginx
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the restart policy of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: RestartPolicyName={{ .HostConfig.RestartPolicy.Name }} MaximumRetryCount={{ .HostConfig.RestartPolicy.MaximumRetryCount }}'
+
+```
+
+* **Result:** Check the `RestartPolicyName` and `MaximumRetryCount`.
+* **Fail:** If `RestartPolicyName` is `always` or `unless-stopped`.
+* **Fail:** If `RestartPolicyName` is `on-failure` but `MaximumRetryCount` is greater than 5 or 0 (unlimited).
+* **Pass:** If `RestartPolicyName` is `on-failure` and `MaximumRetryCount` is 5 or less.
+
+## Remediation
+
+You should use the `on-failure` restart policy and limit the number of container restarts to a maximum of 5 attempts. This ensures that if a container repeatedly fails, it stops eventually so you can investigate the error log.
+
+```bash
+docker run --detach --restart=on-failure:5 nginx
+
+```
+

@@ -1,0 +1,72 @@
+---
+title: Ensure Host User Namespace Is Not Shared (CIS 5.31)
+description: Prevent privilege escalation by isolating container users from host users
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.31
+* **Impact:** **Privilege Escalation.** User namespaces provide a critical layer of isolation by mapping the "root" user inside the container to a non-privileged user (like "nobody") on the host. If the host's user namespace is shared (`--userns=host`), a process running as root inside the container is effectively running as the actual root user on the host machine. If an attacker breaks out of the container, they have full control of the server.
+
+## Common Misconfiguration
+
+Explicitly setting the user namespace mode to `host`. This disables the user remapping feature and bridges the isolation gap between container users and host users.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Container shares the host user namespace.
+    # Root inside = Root outside.
+    userns_mode: host
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+docker run --rm -it --userns=host ubuntu bash
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Do not define 'userns_mode: host'.
+    # This allows Docker to use its configured user remapping (if enabled in daemon).
+
+```
+
+```bash
+# Secure Docker Run Command
+# Standard isolation
+docker run -d nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the User Namespace mode of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: UsernsMode={{ .HostConfig.UsernsMode }}'
+
+```
+
+* **Result:** Check the `UsernsMode` value for each container.
+* **Fail:** If it returns `host`.
+* **Pass:** If it returns an empty string or `private`.
+
+## Remediation
+
+You should not share user namespaces between the host and containers. Ensure you do not start a container with the `--userns=host` argument. This ensures that users inside the container remain distinct from users on the underlying host.
+

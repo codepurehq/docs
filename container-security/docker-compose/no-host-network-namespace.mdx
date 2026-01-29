@@ -1,0 +1,78 @@
+---
+title: Ensure Host Network Namespace Is Not Shared (CIS 5.10)
+description: Prevent containers from accessing the host network stack to avoid privilege escalation
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.10
+* **Impact:** **Host Compromise & Service Denial.** When a container shares the host's network namespace, it lives "outside" the container isolation. It can open reserved low-numbered ports, access critical network services like D-Bus on the host, and even potentially shut down the Docker host or spoof network traffic.
+
+## Common Misconfiguration
+
+Setting the networking mode to `host` (`--net=host`). This instructs Docker not to containerize the networking, effectively giving the container full access to the host's network interfaces.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # VULNERABLE: Container shares the host network stack
+    network_mode: host
+
+```
+
+```bash
+# Vulnerable Docker Run Command
+# The --net=host flag disables network isolation
+docker run -d --net=host nginx:latest
+
+```
+
+## Secure Example
+
+```yaml
+# Secure docker-compose.yml
+version: '3.8'
+services:
+  web:
+    image: nginx:latest
+    # SECURE: Use the default bridge or a user-defined network
+    ports:
+      - "80:80"
+    networks:
+      - web-net
+
+networks:
+  web-net:
+
+```
+
+```bash
+# Secure Docker Run Command
+# Defaults to bridge mode (secure)
+docker run -d -p 80:80 nginx:latest
+
+```
+
+## Audit Procedure
+
+Run the command below to inspect the network mode of all containers:
+
+```bash
+docker ps --quiet --all | xargs docker inspect --format '{{ .Id }}: NetworkMode={{ .HostConfig.NetworkMode }}'
+
+```
+
+* **Result:** Check the `NetworkMode` value for each container.
+* **Fail:** If it returns `NetworkMode=host`.
+* **Pass:** If it returns `default`, `bridge`, or the name of a custom network.
+
+## Remediation
+
+You should not pass the `--net=host` option when starting any container unless there is a very specific, unavoidable reason. By default, containers connect to the Docker bridge and do not run in the context of the host's network stack.
+
