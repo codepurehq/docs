@@ -1,0 +1,78 @@
+---
+title: Ensure Seccomp Profile is Set to RuntimeDefault (CIS 5.6.2)
+description: Reduce the kernel attack surface by enabling the default seccomp profile
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium (Level 2 - Defense in Depth)
+* **CIS Benchmark:** CIS 5.6.2
+* **Impact:** **Unrestricted Kernel Access.** Seccomp (Secure Computing Mode) acts as a firewall for system calls. Without it (the default `unconfined` state), a container process can make any system call to the kernel. If a container is compromised, the attacker can use obscure or dangerous system calls to bypass isolation mechanisms.
+
+## Common Misconfiguration
+
+Omitting the `seccompProfile` field in the Pod spec. Historically, Kubernetes disabled seccomp by default to ensure maximum compatibility, meaning most legacy manifests are vulnerable unless explicitly updated.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unconfined-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    # VULNERABLE: No seccompProfile defined.
+    # Defaults to "Unconfined" in many clusters (pre-v1.27 default).
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  securityContext:
+    # SECURE: Explicitly use the container runtime's default profile
+    # (blocks dangerous syscalls like reboot, swapoff, etc.)
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: app
+    image: nginx
+
+```
+
+## Audit Procedure
+
+Review the pod definitions in your cluster to ensure they explicitly enable the default profile.
+
+```bash
+# Check running pods for the correct Seccomp profile type
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.securityContext.seccompProfile.type}\n{end}'
+
+```
+
+* **Result:** The output should show `RuntimeDefault` (or `Localhost` if using a custom profile).
+* **Fail:** If the output is empty or shows `Unconfined`.
+
+## Remediation
+
+Update your Pod, Deployment, and DaemonSet manifests to include the `seccompProfile` in the `securityContext`.
+
+```yaml
+spec:
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+```
+
+**Note:** If `RuntimeDefault` breaks your application (e.g., it needs specific blocked syscalls), you may need to define a custom profile (`type: Localhost`) instead of reverting to `Unconfined`.

@@ -1,0 +1,71 @@
+---
+title: Ensure All Namespaces Have Network Policies Defined (CIS 5.3.2)
+description: Enforce network segmentation by defining traffic isolation rules for all namespaces
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium (Level 2 - Defense in Depth)
+* **CIS Benchmark:** CIS 5.3.2
+* **Impact:** **Lateral Movement.** By default, Kubernetes allows all traffic between all pods in all namespaces (a flat network). If an attacker compromises a single pod (e.g., a frontend web server), they can scan and attack any other service in the cluster, including internal databases or management tools in other namespaces.
+
+
+
+## Common Misconfiguration
+
+Running a cluster without any `NetworkPolicy` objects. This leaves the cluster in a "default allow" state, where network segmentation relies solely on obscurity rather than active enforcement.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable State
+# No YAML to show.
+# If you create a Namespace and put Pods in it without a NetworkPolicy,
+# they can talk to the entire internet and the entire cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: insecure-namespace
+
+```
+
+## Secure Example
+
+```yaml
+# Secure: Default Deny Policy
+# This policy selects ALL pods in the namespace and blocks ALL traffic.
+# You must then add separate policies to explicitly allow specific traffic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: secure-namespace
+spec:
+  # Selects all pods in this namespace
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+```
+
+## Audit Procedure
+
+Run the command below to review the Network Policy objects created in the cluster:
+
+```bash
+kubectl get networkpolicy --all-namespaces
+
+```
+
+* **Result:** The output lists all active policies.
+* **Fail:** If you see namespaces (containing user workloads) that are not listed in the output. Every namespace should generally have at least a "default deny" policy or specific traffic rules.
+
+## Remediation
+
+Create a `NetworkPolicy` for each namespace.
+
+1. **Start with Default Deny:** Apply a "Deny All" policy (see Secure Example) to switch the namespace from "Default Allow" to "Default Deny".
+2. **Whitelist Traffic:** Create additional policies to explicitly allow necessary communication (e.g., "Allow Frontend to talk to Backend").
+
+**Note:** Be careful when applying this to existing production namespaces, as it will immediately drop all connections not explicitly allowed.

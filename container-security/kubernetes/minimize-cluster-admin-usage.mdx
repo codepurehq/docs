@@ -1,0 +1,88 @@
+---
+title: Ensure Cluster-Admin Role Is Only Used Where Required (CIS 5.1.1)
+description: Enforce least privilege by restricting the use of the powerful cluster-admin role
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Critical
+* **CIS Benchmark:** CIS 5.1.1
+* **Impact:** **Full Cluster Compromise.** The `cluster-admin` role grants super-user access to perform *any* action on *any* resource in the cluster. If a user or service account with this role is compromised, the attacker has complete control over the entire Kubernetes environment, including all secrets, nodes, and workloads.
+
+## Common Misconfiguration
+
+Assigning `cluster-admin` to developers, CI/CD pipelines, or third-party tools (like monitoring agents) "just to make it work." This violates the principle of least privilege.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable ClusterRoleBinding
+# Grants the "cluster-admin" super-user role to a regular developer
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dev-is-admin
+subjects:
+- kind: User
+  name: john.doe@example.com
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  # VULNERABLE: Grants infinite power
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
+```
+
+## Secure Example
+
+```yaml
+# Secure ClusterRoleBinding
+# Grants a limited "view" role instead of admin
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dev-is-viewer
+subjects:
+- kind: User
+  name: john.doe@example.com
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  # SECURE: Only allows reading resources, not modifying them
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+
+```
+
+## Audit Procedure
+
+Obtain a list of the principals who have access to the `cluster-admin` role by reviewing the `ClusterRoleBinding` output:
+
+```bash
+kubectl get clusterrolebindings -o=custom-columns=NAME:.metadata.name,ROLE:.roleRef.name,SUBJECT:.subjects[*].name
+
+```
+
+* **Result:** Look for any binding where the `ROLE` column is `cluster-admin`.
+* **Analyze:** Review the `SUBJECT` column.
+* **Pass:** If the subjects are only `system:masters` or critical system components (often starting with `system:`).
+* **Fail:** If the list includes individual users, developers, or generic service accounts that do not require full control.
+
+
+
+## Remediation
+
+Identify all `ClusterRoleBindings` to the `cluster-admin` role that are not required.
+
+1. Check if the user/service account actually needs full control.
+2. If not, create a custom Role/ClusterRole with fewer privileges or use a default role like `view` or `edit`.
+3. Remove the excessive binding:
+
+```bash
+kubectl delete clusterrolebinding [name]
+
+```
+
+**Note:** Do not remove bindings with the `system:` prefix (e.g., `system:controller:cluster-role-binding`) as these are required for the operation of system components.
+

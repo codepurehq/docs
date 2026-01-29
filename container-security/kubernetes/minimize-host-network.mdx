@@ -1,0 +1,76 @@
+---
+title: Minimize Admission of Containers Sharing Host Network Namespace (CIS 5.2.5)
+description: Prevent traffic sniffing and network policy bypass by isolating container networking
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.2.5
+* **Impact:** **Traffic Sniffing & Policy Bypass.** A container running in the host's network namespace (`hostNetwork: true`) bypasses the Kubernetes network overlay. It can:
+    1.  **Sniff Traffic:** See all network traffic entering and leaving the node.
+    2.  **Access Localhost:** Connect to services listening on `127.0.0.1` on the host (e.g., the Kubelet API, unauthenticated database ports).
+    3.  **Bypass Policies:** Ignore NetworkPolicies that restrict pod-to-pod communication.
+
+## Common Misconfiguration
+
+Enabling `hostNetwork: true` for performance reasons or to simplify access to external services. This is also common for ingress controllers or CNI plugins, but it should be strictly prohibited for standard application workloads.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: promiscuous-pod
+spec:
+  # VULNERABLE: Container shares the host Network namespace
+  hostNetwork: true
+  containers:
+  - name: app
+    image: nginx
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  # SECURE: hostNetwork is not defined (defaults to false)
+  # The container gets its own IP address within the pod network overlay
+  containers:
+  - name: app
+    image: nginx
+
+```
+
+## Audit Procedure
+
+Run the following command to check for pods using the host network namespace:
+
+```bash
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.hostNetwork}\n{end}'
+
+```
+
+* **Result:** The output will list the pod name followed by its `hostNetwork` setting.
+* **Fail:** If you see `true` for any pod that is not a known system component (like `kube-proxy`, `calico-node`, or an Ingress Controller).
+
+## Remediation
+
+Add policies to each namespace in the cluster which has user workloads to restrict the admission of `hostNetwork` containers.
+
+**Using Pod Security Admission:**
+Apply the `baseline` or `restricted` profile to your namespaces. Both profiles strictly forbid `hostNetwork: true`.
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```

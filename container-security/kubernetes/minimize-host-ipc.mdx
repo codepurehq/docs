@@ -1,0 +1,74 @@
+---
+title: Minimize Admission of Containers Sharing Host IPC Namespace (CIS 5.2.4)
+description: Prevent privilege escalation by isolating container shared memory from the host
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.2.4
+* **Impact:** **Shared Memory Attacks & Data Leakage.** The IPC (Inter-Process Communication) namespace controls access to shared memory segments and semaphores. A container running in the host's IPC namespace (`hostIPC: true`) can read or write to the shared memory of the host or other processes. This allows an attacker to potentially access sensitive data (like database credentials in memory) or crash other applications.
+
+## Common Misconfiguration
+
+Enabling `hostIPC: true` for high-performance applications (like databases or scientific computing) that claim to need direct memory access, without understanding the security implications.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: database-pod
+spec:
+  # VULNERABLE: Container shares the host IPC namespace
+  hostIPC: true
+  containers:
+  - name: db
+    image: postgres
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-db
+spec:
+  # SECURE: hostIPC is not defined (defaults to false)
+  # The container uses its own private shared memory segment
+  containers:
+  - name: db
+    image: postgres
+
+```
+
+## Audit Procedure
+
+Run the following command to check for pods using the host IPC namespace:
+
+```bash
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.hostIPC}\n{end}'
+
+```
+
+* **Result:** The output will list the pod name followed by its `hostIPC` setting.
+* **Fail:** If you see `true` for any pod that is not specifically authorized.
+
+## Remediation
+
+Add policies to each namespace in the cluster which has user workloads to restrict the admission of `hostIPC` containers.
+
+**Using Pod Security Admission:**
+Apply the `baseline` or `restricted` profile to your namespaces. Both profiles strictly forbid `hostIPC: true`.
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```
+

@@ -1,0 +1,77 @@
+---
+title: Minimize Admission of Containers Sharing Host PID Namespace (CIS 5.2.3)
+description: Prevent privilege escalation by isolating container processes from the host Process ID namespace
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.2.3
+* **Impact:** **Process Inspection & Privilege Escalation.** A container running in the host's PID namespace (`hostPID: true`) can inspect *all* processes running on the host, not just those inside the container. If the container also has `ptrace` capabilities (which are often default or easily acquired), an attacker can attach to a host process (like `systemd` or a privileged daemon) and inject code to gain root access to the entire node.
+
+## Common Misconfiguration
+
+Enabling `hostPID: true` for monitoring agents or sidecars that need to collect metrics. While sometimes necessary for tools like Datadog or Prometheus Node Exporter, it should never be enabled for standard application workloads.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: monitoring-agent
+spec:
+  # VULNERABLE: Container shares the host Process ID namespace
+  # It can see every process running on the server
+  hostPID: true
+  containers:
+  - name: agent
+    image: my-agent
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-app
+spec:
+  # SECURE: hostPID is not defined (defaults to false)
+  # The container has its own isolated process tree (PID 1 is the app)
+  containers:
+  - name: app
+    image: nginx
+
+```
+
+## Audit Procedure
+
+Run the following command to check for pods using the host PID namespace:
+
+```bash
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.hostPID}\n{end}'
+
+```
+
+* **Result:** The output will list the pod name followed by its `hostPID` setting.
+* **Fail:** If you see `true` for any pod that is not a known, trusted system component (like `node-exporter` or `kube-proxy`).
+
+## Remediation
+
+Configure the Admission Controller (such as Pod Security Admission) to restrict the admission of `hostPID` containers.
+
+**Using Pod Security Admission:**
+Apply the `baseline` or `restricted` profile to your namespaces. Both profiles strictly forbid `hostPID: true`.
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```
+
+If you must run a specific monitoring tool that requires this permission, isolate it in a separate namespace that has a specific exemption or a less restrictive policy, and ensure strict RBAC controls on who can deploy to that namespace.
+

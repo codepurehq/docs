@@ -1,0 +1,77 @@
+---
+title: Ensure Access to Create Pods is Minimized (CIS 5.1.4)
+description: Prevent privilege escalation by restricting who can create Pods directly
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.1.4
+* **Impact:** **Privilege Escalation.** The ability to create pods is effectively root access to the cluster node unless strict Pod Security Standards are enforced. A user with `create pod` permission can:
+    1.  Create a pod that mounts the host's root filesystem (`hostPath`).
+    2.  Create a pod that uses a highly privileged Service Account (e.g., one with `cluster-admin` rights).
+    3.  Run a privileged container to bypass isolation.
+
+## Common Misconfiguration
+
+Granting developers direct `create pod` access to debug applications. Instead, developers should typically interact with higher-level controllers like `Deployments`, `Jobs`, or `ReplicaSets`, or use `exec` permissions on existing pods if debugging is needed.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Role
+# Allows the user to create individual pods directly
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: pod-creator
+rules:
+- apiGroups: [""]
+  # VULNERABLE: Direct access to create pods
+  resources: ["pods"]
+  verbs: ["create"]
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Role
+# Users manage workloads via Deployments, not raw Pods.
+# (Note: This still requires admission controllers to prevent the Deployment
+# from creating privileged pods, but it is the correct RBAC pattern).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: deployment-manager
+rules:
+- apiGroups: ["apps"]
+  # SECURE: Manage high-level abstractions
+  resources: ["deployments", "statefulsets"]
+  verbs: ["create", "patch", "update"]
+
+```
+
+## Audit Procedure
+
+Review the users and roles who have `create` access to `pod` objects in the Kubernetes API.
+
+```bash
+# Check for roles with "create" verb on "pods" resource
+kubectl get roles,clusterroles --all-namespaces -o yaml | grep -C 5 "pods"
+
+```
+
+* **Analyze:** Look for rules where `resources` contains `pods` AND `verbs` contains `create`.
+* **Verify:** Ensure this permission is limited to system controllers (like `replicaset-controller`, `job-controller`) and cluster administrators.
+
+## Remediation
+
+Where possible, remove `create` access to `pod` objects in the cluster for standard users.
+
+1. Encourage users to deploy applications using **Deployments**, **DaemonSets**, or **StatefulSets**.
+2. If a user creates a Deployment, the *Deployment Controller* (a system component) creates the actual pod, not the user directly.
+3. Remove the explicit `pods/create` rule from developer roles.
+

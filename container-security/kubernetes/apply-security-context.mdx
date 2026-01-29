@@ -1,0 +1,84 @@
+---
+title: Apply Security Context to Your Pods and Containers (CIS 5.6.3)
+description: Enforce defense-in-depth by explicitly defining security settings for all workloads
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium (Level 2 - Defense in Depth)
+* **CIS Benchmark:** CIS 5.6.3
+* **Impact:** **Insecure Defaults.** A security context defines privilege and access control settings for a Pod or Container. Without an explicit security context, Kubernetes relies on the container runtime's defaults, which often include running as `root`, having unnecessary Linux capabilities, and allowing write access to the root filesystem. This significantly increases the attack surface if the application is compromised.
+
+## Common Misconfiguration
+
+Omitting the `securityContext` section entirely in Deployment or Pod manifests. This is the most common default state for new deployments, leaving the application running with permissions it likely does not need.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: insecure-pod
+spec:
+  # VULNERABLE: No Pod-level security context
+  containers:
+  - name: app
+    image: nginx
+    # VULNERABLE: No Container-level security context
+    # Result: Runs as root, with writable root FS, and default capabilities.
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  # 1. Pod-Level Context (Applies to all containers)
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    runAsNonRoot: true
+    fsGroup: 2000
+    seccompProfile:
+      type: RuntimeDefault
+      
+  containers:
+  - name: app
+    image: nginx
+    # 2. Container-Level Context (Overrides/Supplements Pod level)
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
+```
+
+## Audit Procedure
+
+Review the pod definitions in your cluster and verify that security contexts are defined. You can use this command to find pods that lack a security context entirely or have specific missing fields.
+
+```bash
+# Check for pods with missing security contexts
+kubectl get pods -A -o=jsonpath='{range .items[*]}{.metadata.name}: {.spec.securityContext} {.spec.containers[*].securityContext}{"\n"}{end}'
+
+```
+
+* **Analyze:** Look for empty brackets `{}` or missing critical fields like `runAsNonRoot` or `capabilities`.
+* **Fail:** If the output indicates `null` or empty configurations for user workloads.
+
+## Remediation
+
+Apply a robust `securityContext` to all your Pods and Containers.
+
+1. **Pod Level:** Set `runAsNonRoot`, `runAsUser`, and `fsGroup` to ensure identity isolation.
+2. **Container Level:** Set `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, and drop `ALL` capabilities to harden the runtime environment.
+

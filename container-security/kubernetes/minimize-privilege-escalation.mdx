@@ -1,0 +1,83 @@
+---
+title: Minimize Admission of Containers with allowPrivilegeEscalation (CIS 5.2.6)
+description: Prevent privilege escalation attacks by disabling the setuid bit in containers
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.2.6
+* **Impact:** **Privilege Escalation via Setuid.** If `allowPrivilegeEscalation` is set to `true` (which is the default), a process inside the container can gain more privileges than its parent process. This is typically achieved via `setuid` binaries (like `sudo`, `ping`, or `passwd`). If an attacker exploits a vulnerability in a setuid binary, they can escalate their privileges to root effectively within the container.
+
+## Common Misconfiguration
+
+Omitting the `securityContext` entirely. By default, Kubernetes and Docker allow privilege escalation. You must explicitly disable it to be secure.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-behavior-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    # VULNERABLE: 'allowPrivilegeEscalation' is not defined.
+    # Default behavior is TRUE, allowing setuid binaries to function.
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    securityContext:
+      # SECURE: Explicitly prevent the process from gaining new privileges
+      allowPrivilegeEscalation: false
+
+```
+
+## Audit Procedure
+
+Run the following command to check the security context of all pods:
+
+```bash
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@..securityContext}\n{end}'
+
+```
+
+* **Analyze:** Look for `allowPrivilegeEscalation: false`.
+* **Fail:** If the output shows `true` or if the field is missing (which implies `true`).
+
+## Remediation
+
+Add policies to each namespace in the cluster to restrict the admission of containers that allow privilege escalation.
+
+**Using Pod Security Admission:**
+Apply the **restricted** profile. The `restricted` profile requires `allowPrivilegeEscalation: false`. (Note: The `baseline` profile allows it).
+
+```bash
+# Enforce the restricted policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=restricted
+
+```
+
+**Workload Configuration:**
+Update your Deployment/Pod manifests to explicitly set the flag:
+
+```yaml
+securityContext:
+  allowPrivilegeEscalation: false
+
+```

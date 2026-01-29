@@ -1,0 +1,93 @@
+---
+title: Avoid Use of system:masters Group (CIS 5.1.7)
+description: Prevent irrevocable administrative access by avoiding the hard-coded system:masters group
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Critical
+* **CIS Benchmark:** CIS 5.1.7
+* **Impact:** **Irrevocable Full Access.** The `system:masters` group has unrestricted access to the Kubernetes API **hard-coded** into the API server source code. Unlike standard RBAC roles, permissions for this group *cannot* be reduced or revoked by modifying ClusterRoleBindings. If a user's client certificate is issued with this group, they have permanent cluster-admin access until the certificate expires or the CA is rotated.
+
+## Common Misconfiguration
+
+Issuing client certificates (e.g., for developers or CI/CD bots) that include `O=system:masters` in the subject line. This is often done to quickly grant "super-user" access, but it bypasses the entire RBAC control plane.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable User Certificate Subject
+# This user is hard-coded as a super-admin by the API server itself.
+# RBAC rules cannot block this user.
+Subject: CN=john-doe, O=system:masters
+
+```
+
+```yaml
+# Vulnerable ClusterRoleBinding (Redundant)
+# Even if you delete this binding, the user STILL has access
+# because the permission is hard-coded for the group.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: bad-binding
+subjects:
+- kind: User
+  name: john-doe
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
+```
+
+## Secure Example
+
+```yaml
+# Secure User Certificate Subject
+# User is in a custom group that we can manage via RBAC.
+Subject: CN=john-doe, O=dev-admins
+
+```
+
+```yaml
+# Secure ClusterRoleBinding
+# We explicitly grant admin rights.
+# If we delete this binding later, the user loses access immediately.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dev-admin-binding
+subjects:
+- kind: Group
+  name: dev-admins
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
+```
+
+## Audit Procedure
+
+Review all credentials (users and service accounts) which have access to the cluster and ensure that the group `system:masters` is not used.
+
+Since this group is often set in Client Certificates, you must inspect the `kubeconfig` files or the PKI certificates issued:
+
+```bash
+# Inspect a kubeconfig or cert for the Organization (O) field
+openssl x509 -in client.crt -text -noout | grep Subject
+
+```
+
+* **Fail:** `Subject: ... O=system:masters`
+* **Pass:** `Subject: ... O=system:nodes` or `O=my-group`
+
+## Remediation
+
+Remove the `system:masters` group from all users in the cluster.
+
+1. **Revoke Certificates:** If a user possesses a certificate with `O=system:masters`, that certificate must be revoked (if using a CRL) or the cluster CA must be rotated to invalidate it.
+2. **Use RBAC:** Instead of the magic group, bind the user to the `cluster-admin` ClusterRole using a standard `ClusterRoleBinding`. This achieves the same level of access but remains manageable and revocable.

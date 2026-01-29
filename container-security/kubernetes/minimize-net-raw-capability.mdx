@@ -1,0 +1,89 @@
+---
+title: Minimize Admission of Containers with NET_RAW Capability (CIS 5.2.8)
+description: Prevent network spoofing attacks by dropping the NET_RAW capability
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.2.8
+* **Impact:** **Network Spoofing & Traffic Interception.** The `NET_RAW` capability allows a process to craft raw network packets. If a malicious container has this capability (which is enabled by default in Docker), an attacker can perform ARP spoofing, DNS spoofing, or create custom packets to bypass network firewalls within the cluster.
+
+## Common Misconfiguration
+
+Running containers with default capabilities. Most container runtimes (like Docker) grant `NET_RAW` by default to allow tools like `ping` to work, but standard web applications and microservices rarely need it.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-caps-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    # VULNERABLE: Implicitly includes NET_RAW
+    # No securityContext defined to drop it
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    securityContext:
+      capabilities:
+        # SECURE: Drop ALL capabilities first
+        drop:
+          - ALL
+        # OPTIONAL: Only add back what is strictly needed (e.g., binding ports)
+        add:
+          - NET_BIND_SERVICE
+
+```
+
+## Audit Procedure
+
+List the policies in use for each namespace or check running pods to ensure `NET_RAW` is dropped.
+
+**Check Running Pods:**
+
+```bash
+# Check if pods are dropping capabilities
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.containers[*].securityContext.capabilities.drop}\n{end}'
+
+```
+
+* **Analyze:** Look for `ALL` or `NET_RAW` in the drop list.
+* **Fail:** If the output is empty (meaning default capabilities are used).
+
+**Check Policies:**
+Verify if the namespace enforces the **restricted** Pod Security Standard (which mandates dropping `NET_RAW`).
+
+```bash
+kubectl get ns --show-labels
+
+```
+
+## Remediation
+
+1. **Update Application Manifests:** Modify your Deployment YAMLs to explicitly drop `NET_RAW` or `ALL`.
+2. **Enforce Policy:** Apply the **restricted** Pod Security Standard to your namespaces, as the `baseline` policy typically permits `NET_RAW`.
+
+```bash
+# Enforce the restricted policy (drops NET_RAW)
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=restricted
+
+```
+

@@ -1,0 +1,86 @@
+---
+title: Minimize Admission of Root Containers (CIS 5.2.7)
+description: Mitigate container breakout risks by enforcing non-root execution
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium (Level 2 - Defense in Depth)
+* **CIS Benchmark:** CIS 5.2.7
+* **Impact:** **Container Breakout.** Containers running as root (UID 0), even if restricted by namespaces, present a higher risk. If a vulnerability exists in the container runtime or kernel, a process already running as root has a much easier path to escaping the container and gaining control of the host than a process running as an unprivileged user.
+
+## Common Misconfiguration
+
+Deploying containers using default images (like `node:latest` or `nginx:latest`) without specifying a user. By default, most Docker images run as root unless the Dockerfile explicitly creates a user or the Kubernetes manifest overrides it.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: root-running-pod
+spec:
+  containers:
+  - name: app
+    image: nginx:latest
+    # VULNERABLE: No securityContext defined.
+    # Nginx image runs as root by default.
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: non-root-pod
+spec:
+  securityContext:
+    # SECURE: Kubelet will refuse to start this pod if it tries to run as UID 0
+    runAsNonRoot: true
+    # SECURE: Explicitly define a non-zero UID (e.g., 1000)
+    runAsUser: 1000
+    runAsGroup: 3000
+  containers:
+  - name: app
+    image: my-secure-app:latest
+
+```
+
+## Audit Procedure
+
+List the policies in use for each namespace and audit the pods to ensure they are not running as root.
+
+**Check Running Pods:**
+
+```bash
+# Check if pods are explicitly configured to run as non-root
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.securityContext.runAsNonRoot}\n{end}'
+
+```
+
+**Check Policies:**
+Verify if the namespace enforces the **restricted** Pod Security Standard.
+
+```bash
+kubectl get ns --show-labels
+
+```
+
+* **Pass:** If the label `pod-security.kubernetes.io/enforce=restricted` is present.
+* **Fail:** If the label is `baseline` or `privileged` (both allow running as root).
+
+## Remediation
+
+1. **Update Application Manifests:** Modify your Deployment YAMLs to include `runAsNonRoot: true` and specify a `runAsUser` > 0.
+2. **Enforce Policy:** Apply the **restricted** Pod Security Standard to your namespaces.
+
+```bash
+# Enforce the restricted policy (blocks root containers)
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=restricted
+
+```

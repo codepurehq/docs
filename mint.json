@@ -121,9 +121,28 @@
             {
               "group": "Kubernetes",
               "pages": [
-                "container-security/kubernetes/allowing-privileged-pods",
-                "container-security/kubernetes/missing-network-policies",
-                "container-security/kubernetes/default-service-accounts"
+                "container-security/kubernetes/minimize-cluster-admin-usage",
+                "container-security/kubernetes/minimize-secrets-access",
+                "container-security/kubernetes/minimize-wildcards-rbac",
+                "container-security/kubernetes/minimize-create-pods-access",
+                "container-security/kubernetes/disable-default-service-account",
+                "container-security/kubernetes/avoid-system-masters-group",
+                "container-security/kubernetes/limit-escalation-permissions",
+                "container-security/kubernetes/minimize-privileged-containers",
+                "container-security/kubernetes/minimize-host-pid",
+                "container-security/kubernetes/minimize-host-ipc",
+                "container-security/kubernetes/minimize-host-network",
+                "container-security/kubernetes/minimize-privilege-escalation",
+                "container-security/kubernetes/minimize-root-containers",
+                "container-security/kubernetes/minimize-net-raw-capability",
+                "container-security/kubernetes/minimize-capabilities",
+                "container-security/kubernetes/minimize-hostpath-volumes",
+                "container-security/kubernetes/minimize-host-ports",
+                "container-security/kubernetes/ensure-network-policies-defined",
+                "container-security/kubernetes/prefer-secrets-as-files",
+                "container-security/kubernetes/ensure-seccomp-profile-default",
+                "container-security/kubernetes/apply-security-context"
+              
               ]
             }
           ]

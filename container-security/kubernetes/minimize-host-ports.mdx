@@ -1,0 +1,98 @@
+---
+title: Minimize Admission of Containers Using HostPorts (CIS 5.2.12)
+description: Prevent network policy bypass and port conflicts by restricting hostPort usage
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** Medium
+* **CIS Benchmark:** CIS 5.2.12
+* **Impact:** **Network Policy Bypass & Port Exhaustion.** Host ports connect a container directly to a specific port on the host's network interface. This traffic often bypasses the Kubernetes CNI overlay and NetworkPolicies, effectively exposing the service to the underlying network without standard controls. It also limits scheduling, as two pods asking for the same `hostPort` cannot run on the same node (port conflict).
+
+## Common Misconfiguration
+
+Using `hostPort` to expose a service for testing or external access. This is an anti-pattern in Kubernetes; the correct way to expose applications is via `Service` objects (NodePort, LoadBalancer) or Ingress.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: host-port-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    ports:
+    - containerPort: 80
+      # VULNERABLE: Binds port 8080 on the host directly to the container
+      hostPort: 8080
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec + Service
+# 1. Pod defines container port only
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+  labels:
+    app: secure-app
+spec:
+  containers:
+  - name: app
+    image: nginx
+    ports:
+    - containerPort: 80
+
+---
+# 2. Service handles external access safely
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-service
+spec:
+  selector:
+    app: secure-app
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 80
+    # SECURE: Kubernetes manages the port mapping securely
+    nodePort: 30080
+
+```
+
+## Audit Procedure
+
+List the policies in use for each namespace or scan running pods for `hostPort` usage.
+
+**Check Running Pods:**
+
+```bash
+# Check for any container specifying a hostPort
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.containers[*].ports[*].hostPort}\n{end}'
+
+```
+
+* **Analyze:** Look for any numeric output (e.g., `80`, `8080`).
+* **Fail:** If any user workload uses `hostPort`.
+
+## Remediation
+
+Add policies to each namespace in the cluster to restrict the admission of containers using `hostPort`.
+
+**Using Pod Security Admission:**
+Apply the `baseline` or `restricted` profile to your namespaces. Both profiles generally forbid `hostPort` (unless explicitly exempted).
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```
+

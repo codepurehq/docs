@@ -1,0 +1,81 @@
+---
+title: Minimize the Admission of Privileged Containers (CIS 5.2.2)
+description: Prevent host compromise by enforcing policies that block privileged containers
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.2.2
+* **Impact:** **Full Host Compromise.** Privileged containers have access to all Linux Kernel capabilities and devices. A container running with `privileged: true` effectively bypasses container isolation, allowing it to do almost everything the host can do (e.g., loading kernel modules, accessing host hardware, modifying host files).
+
+## Common Misconfiguration
+
+Developers often set `privileged: true` to bypass permission errors quickly (e.g., for Docker-in-Docker builds or hardware access) without realizing it grants root-level access to the underlying node.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    securityContext:
+      # VULNERABLE: Grants full host access
+      privileged: true
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    securityContext:
+      # SECURE: Explicitly disabled (default is false, but good to be explicit)
+      privileged: false
+      # BEST PRACTICE: Also prevent escalation
+      allowPrivilegeEscalation: false
+
+```
+
+## Audit Procedure
+
+Run the following command to inventory all privileged usage on the cluster:
+
+```bash
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@..securityContext}\n{end}'
+
+```
+
+* **Analyze:** The output shows the security context for every pod.
+* **Fail:** If you see `{"privileged":true}` in the output for any non-system pod (like `calico-node` or `kube-proxy`, which may legitimately require it).
+
+## Remediation
+
+Add policies to each namespace in the cluster to restrict the admission of privileged containers.
+
+**Using Pod Security Admission (Native K8s):**
+Apply the `baseline` or `restricted` profile to your namespaces. The `baseline` profile forbids privileged containers.
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```
+
+**Using Policy Engines (OPA Gatekeeper / Kyverno):**
+Deploy a `ConstraintTemplate` or `ClusterPolicy` that specifically blocks `securityContext.privileged: true`.
+

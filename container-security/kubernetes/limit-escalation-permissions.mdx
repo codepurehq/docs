@@ -1,0 +1,77 @@
+---
+title: Limit Bind, Impersonate, and Escalate Permissions (CIS 5.1.8)
+description: Prevent hidden privilege escalation paths by restricting dangerous RBAC verbs
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.1.8
+* **Impact:** **Privilege Escalation to Cluster Admin.** These three permissions are "meta-permissions" that allow a user to bypass their assigned restrictions:
+    * **Impersonate:** Allows a user to act as another user (e.g., `system:admin`) or group (`system:masters`), instantly inheriting their rights.
+    * **Bind:** Allows a user to create a RoleBinding to a Role that has *more* permissions than the user currently holds (effectively gifting themselves admin rights).
+    * **Escalate:** Allows a user to edit a Role to add permissions that they do not possess themselves.
+
+## Common Misconfiguration
+
+Granting `*` (all) verbs to a "namespace admin" role. This inadvertently includes `bind` and `escalate`, allowing that local admin to potentially break out of their namespace or become a cluster admin.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Role
+# Intended to manage users, but grants dangerous escalation rights
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: user-manager
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["users", "groups", "serviceaccounts"]
+  # VULNERABLE: 'impersonate' allows becoming any user
+  verbs: ["impersonate"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "clusterroles"]
+  # VULNERABLE: 'bind' and 'escalate' allow granting extra rights
+  verbs: ["bind", "escalate"]
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Role
+# Allows managing RoleBindings but restricted to safe operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: safe-user-manager
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings"]
+  # SECURE: 'create' and 'update' are allowed, but without 'bind' or 'escalate',
+  # Kubernetes prevents the user from binding to a role higher than their own.
+  verbs: ["create", "get", "list", "update"]
+
+```
+
+## Audit Procedure
+
+Review the users and roles who have access to `impersonate`, `bind`, or `escalate` verbs.
+
+```bash
+# Search for dangerous verbs in all Roles and ClusterRoles
+kubectl get roles,clusterroles --all-namespaces -o yaml | grep -E "bind|impersonate|escalate"
+
+```
+
+* **Analyze:** Identify any non-system role containing these verbs.
+* **Fail:** If a standard user role contains `impersonate`, `bind`, or `escalate`.
+
+## Remediation
+
+Where possible, remove the `impersonate`, `bind`, and `escalate` rights from subjects.
+
+1. **Impersonate:** Should only be held by system components (like ingress controllers) that need to act on behalf of users.
+2. **Bind/Escalate:** Should generally be restricted to the `cluster-admin` role. If you need delegated administration, rely on the built-in Kubernetes prevention mechanism (which blocks binding to higher roles) rather than explicitly granting the `bind` or `escalate` verb override.
+

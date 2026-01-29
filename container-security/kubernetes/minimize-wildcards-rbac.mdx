@@ -1,0 +1,80 @@
+---
+title: Minimize Wildcard Use in Roles and ClusterRoles (CIS 5.1.3)
+description: Enforce least privilege by avoiding wildcard characters in Kubernetes RBAC permissions
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.1.3
+* **Impact:** **Excessive Privileges & Lateral Movement.** Using the wildcard character (`*`) in Roles or ClusterRoles grants access to *all* resources or *all* actions. This is dangerous because it automatically grants access to any new resources (like Custom Resource Definitions) added to the cluster in the future. It significantly increases the blast radius if a credential using this role is compromised.
+
+## Common Misconfiguration
+
+Using `*` for `resources` or `verbs` to save time or avoid "permission denied" errors. Administrators often create a "super-admin" role for service accounts that only need to read specific logs or metrics.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Role
+# This role grants full control over EVERYTHING in the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: overly-permissive-role
+rules:
+- apiGroups: ["*"]
+  # VULNERABLE: Wildcards match all resources (secrets, pods, services)
+  resources: ["*"]
+  # VULNERABLE: Wildcards match all actions (delete, create, edit)
+  verbs: ["*"]
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Role
+# This role grants ONLY read access to Pods and Logs
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: log-reader-role
+rules:
+- apiGroups: [""]
+  # SECURE: Explicitly list required resources
+  resources: ["pods", "pods/log"]
+  # SECURE: Explicitly list required actions
+  verbs: ["get", "list", "watch"]
+
+```
+
+## Audit Procedure
+
+Retrieve the Roles and ClusterRoles defined in the cluster and review them for wildcard usage:
+
+```bash
+# Check all Roles in all namespaces
+kubectl get roles --all-namespaces -o yaml | grep -C 5 "\*"
+
+# Check all ClusterRoles
+kubectl get clusterroles -o yaml | grep -C 5 "\*"
+
+```
+
+* **Result:** Look for instances of `resources: ["*"]` or `verbs: ["*"]` or `apiGroups: ["*"]`.
+* **Fail:** If wildcards are present in roles that should be restricted. (Note: The default `cluster-admin` role uses wildcards, which is expected, but custom roles should generally avoid them).
+
+## Remediation
+
+Where possible, replace any use of wildcards in `ClusterRoles` and `Roles` with specific objects or actions.
+
+1. Identify the specific API groups required (e.g., `apps`, `batch`).
+2. Identify the specific resources required (e.g., `deployments`, `cronjobs`).
+3. Identify the specific verbs required (e.g., `create`, `delete` only if necessary).
+
+Refactor the YAML to list these explicitly rather than using `*`.
+
+

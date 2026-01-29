@@ -1,0 +1,92 @@
+---
+title: Minimize Admission of HostPath Volumes (CIS 5.2.11)
+description: Prevent host filesystem compromise by restricting the use of hostPath mounts
+---
+
+## Impact & Risk Analysis
+
+* **Severity:** High
+* **CIS Benchmark:** CIS 5.2.11
+* **Impact:** **Host Filesystem Compromise.** A container with a `hostPath` volume has direct access to the filesystem of the underlying node. If configured incorrectly (e.g., mounting `/`, `/etc`, or `/var/run/docker.sock`), an attacker can read sensitive system configuration, steal credentials, or modify system binaries to gain persistence on the node.
+
+## Common Misconfiguration
+
+Using `hostPath` for persistence in single-node clusters or for "convenience" when sharing files between the node and the pod. This breaks portability and creates a massive security hole.
+
+## Vulnerable Example
+
+```yaml
+# Vulnerable Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dangerous-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - mountPath: /host-fs
+      name: host-root
+  volumes:
+  - name: host-root
+    # VULNERABLE: Mounts the entire host root filesystem into the container
+    hostPath:
+      path: /
+      type: Directory
+
+```
+
+## Secure Example
+
+```yaml
+# Secure Pod Spec
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - mountPath: /data
+      name: data-volume
+  volumes:
+  - name: data-volume
+    # SECURE: Use PersistentVolumeClaims (PVC) or emptyDir instead of hostPath
+    persistentVolumeClaim:
+      claimName: my-pvc
+
+```
+
+## Audit Procedure
+
+List the policies in use for each namespace or scan running pods for `hostPath` usage.
+
+**Check Running Pods:**
+
+```bash
+# Check for any volume using hostPath
+kubectl get pods -A -o=jsonpath=$'{range .items[*]}{@.metadata.name}: {@.spec.volumes[*].hostPath}\n{end}'
+
+```
+
+* **Analyze:** Look for any output containing paths (e.g., `{"path":"/..."}`).
+* **Fail:** If any user workload uses `hostPath`. (Note: System components like `kube-proxy` or CNI plugins often require it, but user apps should not).
+
+## Remediation
+
+Add policies to each namespace in the cluster to restrict the admission of `hostPath` volumes.
+
+**Using Pod Security Admission:**
+Apply the `baseline` or `restricted` profile to your namespaces. Both profiles generally forbid `hostPath` (with very specific exceptions in `baseline` for log collection, but `restricted` is safer).
+
+```bash
+# Enforce the baseline policy on the 'default' namespace
+kubectl label --overwrite ns default pod-security.kubernetes.io/enforce=baseline
+
+```
+
+If you must use `hostPath` (e.g., for a node monitoring agent), isolate it in a separate namespace with a specific exemption policy.
+
