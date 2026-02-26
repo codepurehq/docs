@@ -225,7 +225,8 @@
         "languages/nodejs",
         "languages/python",
         "languages/php",
-        "languages/ruby"
+        "languages/ruby",
+        "supported-lang"
       ]
     },
     {
