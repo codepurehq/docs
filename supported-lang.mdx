@@ -11,14 +11,12 @@ Codepure’s Static Application Security Testing (SAST) engine is built to find 
 
 ## How Codepure SAST Works
 
-Codepure utilizes **Intra-procedural Taint Analysis** combined with robust, language-specific secret scanners. 
+Codepure analyzes your source code to identify and prioritize real security vulnerabilities before they reach production. Our engine is specifically tuned to integrate seamlessly into modern developer workflows, focusing on accuracy and performance.
 
-
-
-* **Developer-First Speed:** By tracking the flow of untrusted data strictly within the boundaries of a single file or function, the engine scans millions of lines of code in seconds, making it ideal for real-time CI/CD pipelines.
-* **Taint Tracking:** The engine maps data flows from vulnerable **sources** (like HTTP requests or UI inputs) through to dangerous **sinks** (like database queries or OS commands).
-* **Smart Sanitization:** To drastically reduce false positives, Codepure intentionally drops taint flags if data passes through safe cleaning functions (such as numeric casts or HTML encoders).
-* **Advanced Secret Scanning:** For mobile and modern web apps, the engine utilizes entropy-based and pattern-based stateless scanning to detect high-risk, hardcoded credentials.
+* **Developer-First Speed:** Engineered for rapid execution, Codepure scans your codebase in seconds, providing instant, actionable feedback directly within your CI/CD pipelines.
+* **Precision Scanning:** The engine intelligently traces data pathways across your application, accurately identifying areas where untrusted input could lead to critical vulnerabilities like injections or unauthorized data access.
+* **Low False Positives:** Codepure understands the context of your code. It recognizes when you have already applied safe coding practices—such as data validation, type casting, or encoding—and automatically filters out those safe patterns so you only spend time on genuine threats.
+* **Comprehensive Secret Detection:** Beyond structural vulnerabilities, Codepure actively hunts for high-risk hardcoded credentials, API keys, and tokens across your repositories, protecting your infrastructure from accidental exposure.
 
 ---
 
