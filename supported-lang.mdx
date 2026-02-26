@@ -1,0 +1,38 @@
+---
+title: "Supported Languages & Frameworks"
+description: "Overview of languages, frameworks, and technologies supported by the Codepure SAST engine."
+---
+
+# Supported Languages & Frameworks
+
+Codepure’s Static Application Security Testing (SAST) engine is built to find and prioritize security issues directly in your source code. Designed for modern, developer-centric workflows, it delivers blazing-fast results with minimal noise.
+
+---
+
+## How Codepure SAST Works
+
+Codepure analyzes your source code to identify and prioritize real security vulnerabilities before they reach production. Our engine is specifically tuned to integrate seamlessly into modern developer workflows, focusing on accuracy and performance.
+
+* **Developer-First Speed:** Engineered for rapid execution, Codepure scans your codebase in seconds, providing instant, actionable feedback directly within your CI/CD pipelines.
+* **Precision Scanning:** The engine intelligently traces data pathways across your application, accurately identifying areas where untrusted input could lead to critical vulnerabilities like injections or unauthorized data access.
+* **Low False Positives:** Codepure understands the context of your code. It recognizes when you have already applied safe coding practices—such as data validation, type casting, or encoding—and automatically filters out those safe patterns so you only spend time on genuine threats.
+* **Comprehensive Secret Detection:** Beyond structural vulnerabilities, Codepure actively hunts for high-risk hardcoded credentials, API keys, and tokens across your repositories, protecting your infrastructure from accidental exposure.
+
+---
+
+## Language Support Matrix
+
+Codepure natively parses the Abstract Syntax Tree (AST) of the following languages. Below is a detailed breakdown of the file types, frameworks, and technologies officially supported by our security engine.
+
+| Language | File Extensions | Key Frameworks & Technologies Supported |
+| :--- | :--- | :--- |
+| **.NET / C#** | `.cs` | **Web:** ASP.NET Core, Minimal API, WebForms, MVC/Razor.<br/>**Data:** Entity Framework, SqlCommand, SQLite, MySQL, PostgreSQL, Oracle, DB2, Firebird, Sybase.<br/>**Other:** Active Directory, BinaryFormatter, JsonSerializer. |
+| **Java** | `.java` | **Web:** Spring Boot, JAX-RS, Servlets.<br/>**Data:** Hibernate/JPA, JDBC.<br/>**Other:** XML (SAXParser, DocumentBuilder), Deserialization (ObjectInputStream), LDAP, HttpClient. |
+| **JavaScript / TypeScript** | `.js`, `.ts`, `.jsx`, `.tsx` | **Web:** Express.js, NestJS, Next.js, React (JSX/DOM).<br/>**Data:** Mongoose, Sequelize, Knex.<br/>**Other:** Axios, Fetch, Got, child_process, fs. |
+| **PHP** | `.php` | **Web:** Laravel, Symfony, Native Superglobals.<br/>**Data:** PDO, Eloquent ORM, MySQLi, PostgreSQL, SQLite, DB2.<br/>**Other:** cURL, XPath, LDAP, native shell execution. |
+| **Python** | `.py` | **Web:** Django, Flask, FastAPI/Asyncio, GraphQL (Saleor).<br/>**Data:** Django ORM, SQLite.<br/>**Other:** Requests, Httpx, Urllib, Subprocess, Pickle, PyYAML, lxml. |
+| **Ruby** | `.rb`, `.erb` | **Web:** Ruby on Rails, Sinatra.<br/>**Data:** Active Record, Sequel, Mongoid, Redis.<br/>**Other:** Faraday, Typhoeus, Nokogiri, REXML, Marshal, JSON. |
+| **Go (Golang)** | `.go` | **Web:** `net/http`, Gin, Echo, Fiber, `html/template`.<br/>**Data:** `database/sql`, GORM, Sqlx, MongoDB (bson).<br/>**Other:** `os/exec`, `encoding/json`, `encoding/gob`, `encoding/xml`, `ldap`. |
+| **Kotlin** | `.kt`, `.kts` | **Android:** Intents, URIs, Content Providers.<br/>**Web:** Spring Boot Web.<br/>**Other:** OkHttpClient, Android UI components. |
+| **Swift (iOS/macOS)** | `.swift` | **iOS:** ViewControllers, UITextField, UISearchBar, WebViews, UIPasteboard.<br/>**Data:** UserDefaults, CoreData (NSPredicate), FileManager.<br/>**Other:** Alamofire, CryptoKit, OSLog, NSKeyedUnarchiver, Swift Package Manager. |
+| **Dart (Flutter)** | `.dart` | **Flutter:** UI TextControllers, WebViews.<br/>**Data:** SQLite, Hive, SharedPreferences, FileCacheStore.<br/>**Other:** Clipboard, Dart Crypto/Math (MD5, SHA1, Random). |
