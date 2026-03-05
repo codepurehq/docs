@@ -8,11 +8,15 @@
   "favicon": "/logo/Asset 7@2x-8.png",
   
   "mode": "dark",
-  "font": {
-    "family": "Plus Jakarta Sans",
-    "url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+"font": {
+    "headings": {
+      "family": "Plus Jakarta Sans"
+    },
+    "body": {
+      "family": "Plus Jakarta Sans"
+    }
   },
-  "colors": {
+    "colors": {
     "primary": "#3B82F6",
     "light": "#60A5FA",
     "dark": "#2563EB",
