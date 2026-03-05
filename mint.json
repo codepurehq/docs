@@ -232,12 +232,6 @@
       "group": "Supported Languages",
       "icon": "globe",
       "pages": [
-        "languages/java",
-        "languages/csharp",
-        "languages/nodejs",
-        "languages/python",
-        "languages/php",
-        "languages/ruby",
         "supported-languages"
       ]
     },
