@@ -6,16 +6,35 @@
     "light": "/logo/logo.png"
   },
   "favicon": "/logo/Asset 7@2x-8.png",
+  
+  "mode": "dark",
+  "font": {
+    "family": "Plus Jakarta Sans",
+    "url": "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+  },
   "colors": {
-    "primary": "#2563EB",
-    "light": "#2563EB",
-    "dark": "#3B82F6",
+    "primary": "#3B82F6",
+    "light": "#60A5FA",
+    "dark": "#2563EB",
+    "background": {
+      "light": "#FFFFFF",
+      "dark": "#0A0F24"
+    },
     "anchors": {
-      "from": "#2563EB",
-      "to": "#3B82F6"
+      "from": "#60A5FA",
+      "to": "#93C5FD"
     }
   },
+
   "topbarLinks": [
+    {
+      "name": "Changelog",
+      "url": "changelog"
+    },
+    {
+      "name": "Roadmap",
+      "url": "roadmap"
+    },
     {
       "name": "Support",
       "url": "mailto:fahad@codepure.com"
@@ -25,13 +44,7 @@
     "name": "Go to Codepure",
     "url": "https://codepure.com"
   },
-  "anchors": [
-    {
-      "name": "Roadmap",
-      "icon": "road",
-      "url": "https://guide.codepure.com/roadmap"
-    }
-  ],
+  
   "navigation": [
     {
       "group": "Getting Started",
@@ -142,7 +155,6 @@
                 "container-security/kubernetes/prefer-secrets-as-files",
                 "container-security/kubernetes/ensure-seccomp-profile-default",
                 "container-security/kubernetes/apply-security-context"
-              
               ]
             }
           ]
@@ -346,18 +358,25 @@
       ]
     },
     {
+      "group": "Security & Trust",
+      "icon": "shield-check",
+      "pages": [
+        "trust/data-residency",
+        "trust/regulatory-compliance",
+        "trust/vulnerability-disclosure",
+        "trust/sla",
+        "trust/acceptable-use-policy",
+        "trust/privacy-policy",
+        "trust/terms-of-service",
+        "trust/dpa",
+        "trust/subprocessors"
+      ]
+    },
+    {
       "group": "User Management",
       "icon": "users-cog",
       "pages": [
         "role_perm"
-      ]
-    },
-    {
-      "group": "Releases & Roadmap",
-      "icon": "map-signs",
-      "pages": [
-        "changelog",
-        "roadmap"
       ]
     }
   ],
