@@ -1,6 +1,6 @@
 ---
 title: 'Roles and Permissions'
-description: 'Understand roles and permissions in Codepure’s on-premise platform for secure application development.'
+description: 'Understand roles and permissions in Codepure’s platform for secure application development.'
 ---
 
 # Roles and Permissions  
@@ -9,70 +9,69 @@ Codepure’s **Role-Based Access Control (RBAC)** is designed to support secure 
 
 ## ✅ Role Summary Table
 
-| **Feature / Action**             | **Admin** | **AppSec** | **Developer** |
-|----------------------------------|:---------:|:----------:|:-------------:|
-| Manage users and roles            | ✅        | ❌         | ❌            |
-| Configure system-wide settings    | ✅        | ❌         | ❌            |
-| Create and manage projects        | ✅        | ✅         | ❌            |
-| Import projects (GitHub, GitLab, Bitbucket, Local) | ✅ | ✅ | ❌ |
-| Assign projects to developers     | ✅        | ✅         | ❌            |
-| Run scans (SAST, SCA, Container Security, Secret Scanning)       | ✅        | ✅         | ❌            |
-| View **all** projects             | ✅        | ✅         | ❌ *(only assigned projects)* |
-| View scan results                 | ✅        | ✅         | ✅ *(only assigned projects)* |
-| Approve vulnerabilities (after dev verification) | ✅ | ✅ | ❌ |
-| Mark vulnerabilities as fixed / false positive | ✅ | ✅ | ✅ *(only assigned projects)* |
-| Assign fixes to developers        | ✅        | ✅         | ❌            |
-| Configure integrations            | ✅        | ✅         | ❌            |
-| Access detailed vulnerability reports | ✅    | ✅         | ✅ *(assigned projects only)* |
-| Leave feedback on vulnerabilities | ✅        | ✅         | ✅ *(assigned projects only)* |
-| Request new language support       | ✅        | ❌         | ❌            |
+| **Feature / Action** | **Admin** | **AppSec** | **Developer** |
+|:---|:---:|:---:|:---:|
+| **System & Administration** | | | |
+| Manage users, roles, and billing | ✅ | ❌ | ❌ |
+| View Audit Logs | ✅ | ❌ | ❌ |
+| Configure system-wide settings (LDAP, SMTP) | ✅ | ❌ | ❌ |
+| Generate and manage API Tokens | ✅ | ❌ | ❌ |
+| **Integrations & Setup** | | | |
+| Setup/Delete Integrations (GitHub, GitLab, Azure) | ✅ | ❌ | ❌ |
+| Import projects / Clone repositories | ✅ | ✅ | ❌ |
+| Configure DevSecOps CI/CD Policies | ✅ | ✅ | ❌ |
+| **Project & Vulnerability Management** | | | |
+| View **all** projects and dashboards | ✅ | ✅ | ❌ *(only assigned)* |
+| Assign projects to developers | ✅ | ✅ | ❌ |
+| Run/Trigger Scans (SAST, SCA, Container, Secret) | ✅ | ✅ | ❌ |
+| Add/Manage Custom SAST Rules | ✅ | ✅ | ❌ |
+| Approve/Reject vulnerabilities | ✅ | ✅ | ❌ |
+| Generate PDF Security Reports | ✅ | ✅ | ❌ |
+| View assigned scan results | ✅ | ✅ | ✅ |
+| Verify bugs (Mark Fixed / False Positive) | ✅ | ✅ | ✅ |
 
 ---
 
 ## 🔑 **Role Descriptions**
 
 ### **Admin**
-- Has **full control** over Codepure.
-- Can manage **users, roles, integrations, and system-wide settings**.
-- Can create and manage all projects.
-- Can run scans, approve vulnerabilities, assign fixes, and manage all permissions.
-- Intended for **platform owners or security leads**.
+- Has **full control** over the Codepure platform.
+- The *only* role that can manage **users, billing, API tokens, and Audit Logs**.
+- The *only* role that can **setup or delete integrations** (GitHub, GitLab, Azure).
+- Can create/manage all projects, run scans, and approve vulnerabilities.
+- Intended for **platform owners, CTOs, or Lead Security Architects**.
 
 ### **AppSec (Application Security Analyst)**
-- Can **create and import projects** from integrations or local sources.
-- Can **run scans** and **see all projects** in the organization.
-- Reviews vulnerabilities reported by the system.
-- After a developer marks a vulnerability as **fixed** or **false positive**, AppSec can **approve or reject** that status.
-- Can **assign specific projects** to developers for verification and fixing vulnerabilities.
-- Cannot manage users, roles, or integrations.
+- Can **import projects** from existing integrations (configured by Admins).
+- Can **run scans**, view all projects, and generate PDF security reports.
+- Manages the vulnerability lifecycle: after a developer marks a bug as fixed, the AppSec role can **approve or reject** it.
+- Can manage custom **SAST Rules** and **DevSecOps Policies**.
+- **Cannot** manage users, roles, system integrations, or view Audit Logs.
+- Intended for **Security Engineers and Analysts**.
 
 ### **Developer**
-- Has access **only to projects assigned to them**.
-- Can view vulnerabilities for assigned projects.
+- Has access **only to projects explicitly assigned to them**.
+- Can view vulnerabilities and bug summaries for their assigned projects.
 - Can **verify vulnerabilities** by marking them as:
   - ✅ **Fixed** (after applying a code fix), or
   - 🚫 **False Positive**.
-- Cannot run scans, approve vulnerabilities, or access other projects.
-- Intended for **software engineers** working on fixing security findings.
+- **Cannot** run scans, approve their own fixes, generate reports, or access other projects.
+- Intended for **software engineers** working on remediation.
 
 ---
 
 ## ⚙️ **How to Assign Roles and Projects**
 
-1. Navigate to **User Management** in the Codepure dashboard.
+1. Navigate to **User Management** in the Codepure dashboard (Admin only).
 2. Assign the role (**Admin**, **AppSec**, or **Developer**) to a user.
-3. For developers, select specific projects to grant access.
+3. If assigning a **Developer**, navigate to the specific project and grant them access.
 4. Click **Save** to apply changes.
 
 ---
 
 ## 🛡️ **Best Practices**
 
-- Keep **Admin** access limited to security leads.
-- Use **AppSec** roles for dedicated security engineers managing scans and vulnerability approvals.
-- Assign **Developers** only the projects they work on to maintain the principle of least privilege.
-- Regularly review role assignments and project access to ensure compliance and security integrity.
-
----
-
-*This RBAC model supports secure, on-premise deployments, enabling organizations to manage security workflows while keeping full control of their data and project access.*
+- Keep **Admin** access strictly limited to a few key security leads.
+- Use **AppSec** roles for your daily security engineers managing scans and triage.
+- Assign **Developers** only the specific projects they are actively working on to maintain the principle of **Least Privilege**.
+- (Admins) Regularly review the **Audit Logs** to ensure compliance and security integrity.
