@@ -8,7 +8,7 @@
   "favicon": "/logo/Asset 7@2x-8.png",
   
   "mode": "dark",
-"font": {
+  "font": {
     "headings": {
       "family": "Plus Jakarta Sans"
     },
@@ -16,7 +16,7 @@
       "family": "Plus Jakarta Sans"
     }
   },
-    "colors": {
+  "colors": {
     "primary": "#3B82F6",
     "light": "#60A5FA",
     "dark": "#2563EB",
@@ -227,8 +227,8 @@
       "icon": "plug",
       "pages": [
         "devsecops",
-        "github",
-        "gitlab",
+        "github_devsecops",
+        "gitlab_devsecops",
         "bitbucket"
       ]
     },

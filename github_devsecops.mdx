@@ -1,0 +1,110 @@
+---
+title: 'GitHub Actions Integration'
+description: 'Automatically scan Pull Requests and block vulnerable code using Codepure DevSecOps gates.'
+icon: 'github'
+---
+
+Codepure natively integrates with GitHub Actions to provide real-time vulnerability scanning on your commits and Pull Requests. You can enforce strict security gates to block merges, or run in Audit Mode to observe findings without disrupting developer workflows.
+
+## Prerequisites
+
+Before setting up the pipeline, you must authenticate your GitHub repository with Codepure.
+
+1. Navigate to **API Tokens** in your Codepure Dashboard.
+2. Click **Generate New Token** and copy the secret key.
+3. In your GitHub repository, go to **Settings > Secrets and variables > Actions**.
+4. Click **New repository secret**.
+5. Name the secret exactly `CODEPURE_TOKEN` and paste your key.
+
+---
+
+## Automated Setup (Recommended)
+
+If you have granted Codepure full access to your repository, we can inject the workflow automatically directly from the UI.
+
+1. Navigate to **Source Control** in Codepure and click **Configure Pipeline** next to your GitHub repository.
+2. In the **Policy Manager**, configure your *Enforcement* and *Audit* branches.
+3. Set your threshold rules for SAST, SCA, Secrets, and Container scanning.
+4. Under **Integration Setup**, select your target branch.
+5. Click **Enable DevSecOps & Enforce Gates**.
+
+Codepure will automatically commit the `.github/workflows/codepure.yml` file to your repository.
+
+---
+
+## Manual Setup
+
+If you prefer to configure your pipelines manually, or if you are committing to a strictly protected branch, you can add the Codepure workflow yourself.
+
+1. Create a new file in your repository at `.github/workflows/codepure.yml`.
+2. Paste the following configuration:
+
+```yaml
+name: Codepure DevSecOps Gate
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  codepure_scan:
+    name: Run Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Codepure API
+        run: |
+          if [ -z "${{ secrets.CODEPURE_TOKEN }}" ]; then
+            echo "🚨 ERROR: CODEPURE_TOKEN is missing! Please add it to your GitHub Repository Secrets."
+            exit 1
+          fi
+
+          echo "🚀 Triggering Codepure DevSecOps Scan for branch: ${{ github.ref_name }}..."
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "[https://app.codepure.com/api/devsecops/scan/trigger](https://app.codepure.com/api/devsecops/scan/trigger)" \
+            -H "Authorization: Token ${{ secrets.CODEPURE_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "project_id": "${{ github.repository }}", 
+              "repo_name": "${{ github.repository }}",
+              "branch": "${{ github.ref_name }}",
+              "commit_hash": "${{ github.sha }}",
+              "provider": "github",
+              "triggered_by": "${{ github.actor }}"
+            }')
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+             echo "🚨 FATAL: Failed to reach Codepure API (Status: $HTTP_STATUS)"
+             echo "Response: $BODY"
+             exit 1
+          fi
+
+          # Parse JSON response securely
+          API_STATUS=$(echo "$BODY" | jq -r '.status')
+          API_MSG=$(echo "$BODY" | jq -r '.message')
+          MD_SUMMARY=$(echo "$BODY" | jq -r '.markdown_summary')
+
+          # Draw the Markdown Table on the GitHub Job Summary Page
+          echo "$MD_SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+          # Post Native GitHub PR Annotations
+          if [ "$API_STATUS" == "blocked" ]; then
+            echo "::error title=Codepure Security Gate Failed::$API_MSG"
+            exit 1
+          elif [ "$API_STATUS" == "warn" ]; then
+            echo "::warning title=Codepure Audit Warning::$API_MSG"
+            exit 0
+          else
+            echo "::notice title=Codepure Security Passed::All checks passed cleanly."
+            exit 0
+          fi
+```
+
+3. Commit the file. GitHub Actions will automatically trigger a scan on your next push!
+
+## Understanding the Results
+
+When a scan finishes, Codepure generates a rich **Markdown Step Summary** directly inside the GitHub Actions UI. This table breaks down exactly which engines ran and the severity of any findings. If a security gate fails, Codepure will place a native red annotation directly on the Pull Request code to immediately notify the developer.

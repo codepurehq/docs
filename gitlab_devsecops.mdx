@@ -1,0 +1,58 @@
+---
+title: 'GitLab CI/CD Integration'
+description: 'Integrate Codepure DevSecOps gates into your GitLab pipelines.'
+icon: 'gitlab'
+---
+
+Codepure seamlessly plugs into your `.gitlab-ci.yml` file to provide automated vulnerability scanning and Merge Request enforcement.
+
+## Prerequisites
+
+GitLab requires a secure token to authenticate with the Codepure API.
+
+1. Navigate to **API Tokens** in your Codepure Dashboard.
+2. Click **Generate New Token** and copy the secret key.
+3. In your GitLab repository, go to **Settings > CI/CD > Variables**.
+4. Click **Add variable**.
+5. Set the Key to `CODEPURE_TOKEN`.
+6. Paste your token into the Value field. Ensure **Mask variable** is checked so it doesn't appear in your pipeline logs.
+
+---
+
+## Automated Setup (Recommended)
+
+Codepure can automatically inject the required CI/CD template into your repository directly from the dashboard.
+
+1. Go to **Source Control** in Codepure and click **Configure Pipeline** next to your GitLab repository.
+2. Set your vulnerability thresholds in the **Policy Manager**.
+3. Select your target branch under **Integration Setup**.
+4. Click **Enable DevSecOps & Enforce Gates**.
+
+Codepure will securely commit the configuration directly to your `.gitlab-ci.yml` file.
+
+---
+
+## Manual Setup
+
+If you already have a complex `.gitlab-ci.yml` file, you can easily include the Codepure template using a remote import to keep your code clean.
+
+1. Open your `.gitlab-ci.yml` file.
+2. Add the following configuration to the top of your file:
+
+```yaml
+include:
+  - remote: '[https://raw.githubusercontent.com/codepurehq/ci-templates/main/gitlab-v1.yml](https://raw.githubusercontent.com/codepurehq/ci-templates/main/gitlab-v1.yml)'
+
+variables:
+  CODEPURE_PROJECT_ID: "$CI_PROJECT_ID"
+```
+
+<Note>
+If you have custom stages defined in your GitLab pipeline, ensure you add `- codepure_security_scan` to your `stages:` array block.
+</Note>
+
+## How it Works
+
+When a Merge Request is opened or code is pushed, GitLab will trigger the `codepure_devsecops_gate` job. 
+* If the branch is configured as an **Audit Branch**, the job will exit with Code 3 (Warning), turning the pipeline yellow but allowing the merge to proceed.
+* If the branch is an **Enforcement Branch** and vulnerabilities violate your policy, the job will exit with Code 1 (Fatal), turning the pipeline red and strictly blocking the Merge Request.
