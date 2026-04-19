@@ -1,187 +1,359 @@
 ---
 title: 'Static Application Security Testing (SAST)'
-description: 'Comprehensive source code security analysis with Codepure SAST.'
+description: 'Find vulnerabilities in your source code before they reach production. 22 languages. Zero blind spots.'
 ---
 
-## Overview
+## For Executives
 
-Static Application Security Testing (SAST) is a white-box security testing methodology that analyzes source code, bytecode, or binary code to identify security vulnerabilities without executing the application. Codepure's SAST solution provides deep code analysis capabilities that integrate seamlessly into your development workflow, enabling you to build secure software from the ground up.
+Codepure SAST scans your source code for security vulnerabilities before they reach production. It works with **22 programming languages**, including enterprise platforms like SAP ABAP, COBOL, Salesforce Apex, and Solidity smart contracts — languages that most security tools cannot read.
 
-## What is SAST?
+Every finding includes a complete attack trace that shows exactly how user input reaches a dangerous operation, so your developers know what to fix and why. The engine ships with built-in compliance mapping for NCA ECC, SAMA, PCI DSS, GDPR, and HIPAA, so your audit reports are ready from day one.
 
-Codepure's SAST engine performs comprehensive security analysis of your application's source code during the development phase. By examining code structure, data flows, and control flows, SAST identifies security vulnerabilities, quality issues, and compliance violations before they reach production.
+- **22 languages** — from JavaScript and Python to ABAP, COBOL, and Solidity
+- **Complete attack traces** — every finding shows source to sink, not just a pattern match
+- **Built-in compliance** — NCA ECC, SAMA, PCI DSS, GDPR, HIPAA mapped automatically
+- **Zero infrastructure** — one binary, no dependencies, runs on-premises or air-gapped
+- **Secret detection included** — 34 pattern types scan all file types for hardcoded credentials
 
-### Core Capabilities
+---
 
-- **Deep Code Analysis**: Examines code paths, data flows, and control structures
-- **Language-Agnostic Scanning**: Supports 30+ programming languages and frameworks
-- **Incremental Scanning**: Analyzes only changed code for faster feedback
-- **Custom Rule Engine**: Define organization-specific security policies
-- **AI-Powered Detection**: Machine learning models identify complex vulnerability patterns
-- **Developer-Friendly Reporting**: Clear, actionable remediation guidance
+## What SAST Does
 
-## How SAST Works
+Static Application Security Testing analyzes your application's source code without running it. It reads every file, builds a structured understanding of the code, tracks how data moves through the application, and flags any path where untrusted user input reaches a dangerous operation without being sanitized first.
 
-### Analysis Methodology
+This catches SQL injection, command injection, cross-site scripting, path traversal, server-side request forgery, insecure deserialization, XXE, hardcoded secrets, and dozens of other vulnerability types — before the code is ever deployed.
 
-Codepure SAST employs multiple analysis techniques for comprehensive coverage:
+## How Codepure SAST Works
 
-#### 1. **Lexical Analysis**
-- Tokenizes source code into meaningful components
-- Identifies dangerous functions and deprecated methods
-- Detects hardcoded secrets and credentials
+Codepure uses a taint-propagation analysis engine. Instead of looking for code that *resembles* a vulnerability, it follows the actual flow of data through the application.
 
-#### 2. **Syntactic Analysis**
-- Builds Abstract Syntax Trees (AST) of your code
-- Validates code structure and patterns
-- Identifies anti-patterns and insecure constructs
+**Step 1 — Source Detection**
 
-#### 3. **Semantic Analysis**
-- Understands code behavior and intent
-- Tracks variable states and transformations
-- Analyzes type safety and memory management
+The engine identifies where untrusted data enters the application: HTTP request parameters and headers, file uploads, environment variables, database reads, API responses, message queue payloads, CLI arguments.
 
-#### 4. **Data Flow Analysis**
-- Traces data movement through the application
-- Identifies tainted data sources
-- Tracks data sanitization and validation
+**Step 2 — Taint Propagation**
 
-#### 5. **Control Flow Analysis**
-- Maps all possible execution paths
-- Identifies unreachable code and dead ends
-- Detects race conditions and timing issues
+Tainted data is tracked through variable assignments, function calls, object properties, array indices, method chains, and return values. The engine follows data across file and module boundaries using inter-procedural analysis.
 
-### Vulnerability Detection Categories
+**Step 3 — Sanitizer Recognition**
 
-#### **Injection Flaws**
-- **SQL Injection**: Unsanitized database queries
-- **Command Injection**: OS command execution vulnerabilities
-- **LDAP Injection**: Directory service query manipulation
-- **XPath Injection**: XML query vulnerabilities
-- **NoSQL Injection**: Document database vulnerabilities
+When tainted data passes through a validation or encoding function — `htmlspecialchars()` in PHP, `$wpdb->prepare()` in WordPress, `PreparedStatement` in Java, parameterized queries in .NET — the taint is cleared. The engine understands language-specific and framework-specific sanitizers.
 
-#### **Authentication & Session Management**
-- Weak password policies
-- Insecure session handling
-- Missing authentication checks
-- Privilege escalation paths
-- Broken authentication flows
+**Step 4 — Sink Matching**
 
-#### **Cross-Site Scripting (XSS)**
-- **Reflected XSS**: Immediate execution vulnerabilities
-- **Stored XSS**: Persistent script injection
-- **DOM-based XSS**: Client-side script vulnerabilities
+The engine identifies dangerous operations where tainted data causes harm: SQL execution, command execution, file system operations, outbound HTTP requests, XML parsing, deserialization. Only findings where unsanitized data reaches a sink are reported.
 
-#### **Security Misconfiguration**
-- Hardcoded credentials
-- Insecure default settings
-- Verbose error messages
-- Unnecessary features enabled
-- Missing security headers
+**Step 5 — Attack Trace Generation**
 
-#### **Sensitive Data Exposure**
-- Unencrypted data transmission
-- Weak cryptographic algorithms
-- Improper key management
-- Data leakage in logs
-- Insufficient data masking
+Every finding includes a complete source-to-sink chain with line numbers, code snippets, and variable names at each step. This tells developers exactly where the vulnerability is and how to fix it.
 
-#### **Access Control Issues**
-- **Path Traversal**: Directory traversal vulnerabilities
-- **Insecure Direct Object References**: Unauthorized data access
-- **Missing Function Level Access Control**: Unprotected APIs
-- **CORS Misconfiguration**: Cross-origin resource sharing issues
+## Vulnerability Categories
 
-#### **Business Logic Flaws**
-- Race conditions
-- Time-of-check to time-of-use (TOCTOU)
-- Improper input validation
-- Integer overflow/underflow
-- Buffer overflows
+Codepure detects the following vulnerability types across its supported languages. Each category includes multiple detection rules tuned for specific frameworks and patterns.
 
-## Why SAST is Critical
+| Category | CWE | Description |
+|----------|-----|-------------|
+| **SQL Injection** | CWE-89 | Unsanitized input in SQL queries, ORM raw queries, EF Core FromSqlRaw, Sequelize raw queries, dynamic SOQL/SOSL |
+| **NoSQL Injection** | CWE-943 | User input in MongoDB/Mongoose queries, Sequelize where clauses, DynamoDB expressions |
+| **Command Injection** | CWE-78 | Unsanitized input in OS command execution — `system()`, `exec()`, `ProcessBuilder`, `child_process`, `Runtime.exec()` |
+| **Code Injection** | CWE-94 | User input passed to `eval()`, `Function()` constructor, `call_user_func()`, `include` with variable paths, `source` in shell |
+| **Cross-Site Scripting (XSS)** | CWE-79 | Reflected, stored, and DOM-based XSS through unsanitized response output, `innerHTML`, `document.write()`, framework equivalents |
+| **Path Traversal** | CWE-22 | Directory traversal through unsanitized file paths in file read/write/stream operations |
+| **Server-Side Request Forgery (SSRF)** | CWE-918 | User-controlled URLs in outbound HTTP requests, `URL.openStream()`, HTTP client methods, `curl`/`wget` with variable input |
+| **XML External Entity (XXE)** | CWE-611 | XML parsing with DTD processing enabled — `XmlReader`, `DocumentBuilder`, `libxml`, `XElement.Parse` |
+| **Insecure Deserialization** | CWE-502 | Deserialization of untrusted data — `ObjectInputStream`, `BinaryFormatter`, `pickle.loads()`, `unserialize()`, `Yaml.load()` |
+| **LDAP Injection** | CWE-90 | Unsanitized input in LDAP query filters through `DirectorySearcher`, `LdapConnection`, Spring LDAP templates |
+| **Remote File Inclusion** | — | Dynamic file inclusion with user-controlled paths in PHP, .NET, and Java |
+| **Local File Inclusion** | — | File read operations with user-controlled paths allowing access to sensitive system files |
+| **Open Redirect** | CWE-601 | User-controlled URLs in redirect operations — `PageReference`, `redirect()`, `Response.Redirect()` |
+| **Hardcoded Credentials** | CWE-798 | Passwords, API keys, tokens, and secrets written directly in source code |
+| **Broken Cryptography** | CWE-327 | Use of deprecated algorithms — DES, 3DES, SHA-1, MD5 — and weak encryption modes like ECB |
+| **Weak Random Number Generation** | CWE-338 | `Math.random()`, `java.util.Random`, `mt_rand()` used in security-sensitive contexts |
+| **Cleartext Transmission** | CWE-319 | HTTP instead of HTTPS, unencrypted network requests, cleartext storage of sensitive data |
+| **Sensitive Data Exposure** | CWE-200 | Stack traces in responses, environment variables in logs, sensitive data to clipboard, unmasked output |
+| **Log Information Leakage** | CWE-532 | Passwords, tokens, and sensitive data written to application logs |
+| **Buffer Overflow** | CWE-120 | `strcpy`, `strcat`, `memcpy` without bounds checking in C/C++ |
+| **Out-of-Bounds Read/Write** | CWE-125 / CWE-787 | Unsafe array access and assignment in C/C++ kernel code |
+| **Use After Free** | CWE-416 | Accessing memory after `kfree`/`vfree` in C kernel code |
+| **Double Free** | CWE-415 | Calling `free()` twice on the same pointer |
+| **Format String Vulnerability** | CWE-134 | User-controlled format strings in `printf`/`fprintf` |
+| **Type Confusion** | CWE-843 | Unsafe type casts in C/C++ kernel code |
+| **Privilege Escalation** | CWE-732 | `sudo`/`su` usage in shell scripts with variable input |
+| **Insecure Direct Object Reference** | CWE-639 | Unauthorized data access through manipulated object identifiers |
+| **Broken Access Control** | CWE-284 | Missing authorization checks on insert/update/delete operations (Apex), unprotected administrative endpoints |
+| **JWT Weaknesses** | CWE-347 | Hardcoded JWT secrets, algorithm confusion (HS256 vs RS256), `jwt.decode()` without verification |
+| **Insecure Certificate Validation** | CWE-295 | Disabled TLS certificate verification in network requests |
+| **Insecure Biometric Authentication** | CWE-287 | Weak biometric auth implementations in mobile apps (Dart/Flutter) |
+| **Insufficient Session Expiration** | CWE-613 | Sessions that do not expire or use weak expiration logic |
+| **CRLF Injection** | CWE-93 | User input injected into HTTP headers through carriage return/line feed sequences |
+| **Prototype Pollution** | CWE-1321 | User-controlled property names in JavaScript object assignment |
+| **Server-Side Template Injection** | CWE-94 | User input rendered directly in template engines — Twig, Jinja2, Blade, Thymeleaf, EJS |
+| **SOQL/SOSL Injection** | — | Dynamic SOQL/SOSL queries with string concatenation in Salesforce Apex |
+| **ABAP Native SQL Injection** | — | Unsanitized input in `EXEC SQL` and dynamic Open SQL WHERE clauses |
+| **ABAP Missing Authority Checks** | — | Database operations without `AUTHORITY-CHECK` in ABAP programs |
+| **COBOL Arithmetic Overflow** | — | Arithmetic operations without `ON SIZE ERROR` handling |
+| **COBOL Buffer Overflow** | — | `MOVE` without length check, `UNSTRING` overflow |
+| **CI/CD Pipeline Misconfiguration** | — | Unpinned actions, hardcoded credentials in workflows, insecure OIDC config, running as root, missing approval gates |
 
-### Security Benefits
+## Supported Languages and Frameworks
 
-**Shift-Left Security**
-- Integrate security into the earliest stages of development
-- Reduce the cost of vulnerability remediation by 100x
-- Prevent vulnerabilities from reaching production
+Codepure scans 22 programming languages with framework-specific detection rules built from real-world code patterns.
 
-**Comprehensive Coverage**
-- Analyze 100% of your codebase
-- Detect vulnerabilities in rarely executed code paths
-- Identify issues in third-party integrations
+### JavaScript / TypeScript
 
-**Continuous Security**
-- Automated scanning on every commit
-- Real-time security feedback during development
-- Progressive security improvement over time
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Node.js** (Express, Fastify, Koa, Hapi) | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Deserialization, Prototype Pollution |
+| **NestJS** | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Deserialization |
+| **Next.js** | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Open Redirect, Eval Injection |
+| **React** | DOM XSS, Script Injection, Prototype Pollution, Open Redirect, Eval |
+| **Angular** | DOM XSS, Script Injection, Safe bypass patterns |
+| **Vue.js** | DOM XSS, v-html unsafe binding |
+| **Socket.IO** | Event-based injection, unsafe message handling |
+| **Apollo GraphQL** | Query injection, resolver-level vulnerabilities |
+| **Sequelize ORM** | Raw query SQLi, where-clause injection |
+| **Mongoose** | NoSQL injection, query operator injection |
+| **Prisma** | Raw query SQLi |
+| **TypeORM** | Raw query SQLi |
 
-### Business Impact
+### Python
 
-#### **Cost Reduction**
-- **Early Detection**: Fix vulnerabilities when they're 100x cheaper to resolve
-- **Automated Testing**: Reduce manual security review overhead
-- **Prevent Breaches**: Avoid costly security incidents and data breaches
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Django** | SQLi, XSS, CMDi, PT, SSRF, LDAPi, XXE, Deserialization, Open Redirect |
+| **Flask** | SQLi, XSS, CMDi, PT, SSRF, LDAPi, XXE, Deserialization, SSTI |
+| **FastAPI** | SQLi, XSS, CMDi, PT, SSRF, Deserialization |
+| **Pyramid** | SQLi, XSS, CMDi, PT |
+| **Bottle** | SQLi, XSS, CMDi, PT |
+| **Tornado** | SQLi, XSS, CMDi, PT |
+| **Celery** | Insecure task serialization, command injection |
+| **SQLAlchemy** | Raw SQL injection, text() clause injection |
+| **Pandas** | Code injection via eval(), unsafe deserialization |
+| **Jinja2** | Server-Side Template Injection (SSTI) |
 
-#### **Accelerated Development**
-- **Instant Feedback**: Developers get security insights in real-time
-- **Automated Remediation**: AI-powered fix suggestions
-- **Reduced Rework**: Fewer security issues in later stages
+### PHP
 
-#### **Compliance Assurance**
-- Meet regulatory requirements (GDPR, HIPAA, PCI DSS)
-- Satisfy security audit requirements
-- Demonstrate due diligence in software security
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Laravel** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization, SSTI (Blade) |
+| **Symfony** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization |
+| **WordPress** | SQLi (`$wpdb`), XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization, Plugin patterns |
+| **Drupal** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF |
+| **Magento** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF |
+| **CodeIgniter** | SQLi, XSS, CMDi, PT, RFI, LFI |
+| **Slim** | SQLi, XSS, CMDi, PT |
+| **CakePHP** | SQLi, XSS, CMDi, PT |
+| **Yii** | SQLi, XSS, CMDi, PT |
+| **PHPMailer** | Command injection, header injection |
 
-## Supported Technologies
+### Java
 
-### Programming Languages
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Spring Boot** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization, Open Redirect |
+| **Spring MVC** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
+| **Spring Security** | Bypass patterns, misconfiguration |
+| **Spring Data / JPA** | JPQL injection, native query SQLi |
+| **Jakarta EE** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization |
+| **Apache Struts** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization, OGNL injection |
+| **JSF (JavaServer Faces)** | SQLi, XSS, CMDi, PT, SSRF, XXE |
+| **Hibernate** | HQL injection, native SQL injection |
+| **JPA** | JPQL injection, Criteria API misuse |
+| **MyBatis** | XML-based SQLi, annotation SQLi |
+| **Micronaut** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
+| **Quarkus** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
+| **Eclipse Vert.x** | SQLi, XSS, CMDi, PT, SSRF |
+| **Apache Camel** | Route injection, endpoint misuse |
 
-**Web Technologies**
-- JavaScript/TypeScript (Node.js, React, Angular, Vue)
-- Python (Django, Flask, FastAPI)
-- PHP (Laravel, Symfony, WordPress)
-- Ruby (Rails, Sinatra)
+### C# / .NET
 
-**Enterprise Languages**
-- Java (Spring, Struts, JSF)
-- C# (.NET Core, ASP.NET)
-- Go
-- Scala
-- Kotlin
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **ASP.NET Core MVC** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization, JWT, Open Redirect |
+| **ASP.NET Core Web API** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, JWT |
+| **ASP.NET Core Minimal APIs** | SQLi, XSS, CMDi, PT, SSRF, XXE |
+| **ASP.NET Web Forms** | SQLi, XSS, PT, SSRF, XXE, ViewState misuse |
+| **ASP.NET Framework (Legacy)** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
+| **Blazor** | SQLi, XSS, CMDi, PT, SSRF |
+| **Entity Framework Core** | FromSqlRaw SQLi, ExecuteSqlRaw SQLi |
+| **Entity Framework (Legacy)** | SQL injection via raw queries |
+| **Dapper** | SQLi via Query/Execute with string concatenation |
+| **WCF (Windows Communication Foundation)** | Deserialization, injection via service contracts |
+| **SQLite (System.Data.SQLite)** | SQLi via raw queries |
 
-**System Languages**
-- C/C++
-- Rust
-- Swift
-- Objective-C
+### Go
 
-**Mobile Development**
-- Android (Java/Kotlin)
-- iOS (Swift/Objective-C)
-- React Native
-- Flutter/Dart
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **net/http** (standard library) | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, NoSQLi, Deserialization |
+| **Gin** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
+| **Echo** | SQLi, XSS, CMDi, PT, SSRF, XXE |
+| **Fiber** | SQLi, XSS (Send), CMDi, PT, SSRF |
+| **Gorilla Mux** | SQLi, XSS, CMDi, PT, SSRF |
+| **Chi** | SQLi, XSS, CMDi, PT, SSRF |
+| **GORM** | Raw SQL injection, Scan injection |
+| **sqlx** | SQLi via Queryx, Exec |
+| **gRPC** | Injection via service handlers |
 
-**Infrastructure as Code**
-- Terraform
-- CloudFormation
-- Ansible
-- Kubernetes YAML
+### Ruby
 
-### Frameworks and Libraries
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Ruby on Rails** | SQLi (ActiveRecord), XSS (ERB), CMDi (system/open), PT, SSRF, Deserialization (YAML), Open Redirect |
+| **Sinatra** | SQLi, XSS, CMDi, PT, SSRF |
+| **Padrino** | SQLi, XSS, CMDi, PT |
+| **Devise** | Authentication bypass, session fixation |
+| **ActiveRecord** | SQL injection via where(), find_by_sql() |
+| **Sidekiq** | Insecure job serialization, command injection |
 
-Codepure maintains an extensive database of framework-specific security rules:
-- Spring Security patterns
-- Django security middleware
-- Express.js security configurations
-- React security best practices
-- And 100+ more frameworks
+### Kotlin
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Spring Boot (Kotlin)** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
+| **Ktor** | SQLi, XSS, CMDi, PT, SSRF |
+| **Android SDK** | SQLi (SQLite), XSS (WebView), Intent injection, insecure file access |
+| **Exposed** | SQL injection via unsafe queries |
+| **Anko** | SQLi, insecure database operations |
+
+### Scala
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Play Framework** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
+| **Akka** | Injection via actor messages, insecure serialization |
+| **Slick** | SQL injection via unsafe queries |
+| **Cats / ZIO** | Effect-level injection patterns |
+
+### Groovy
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Grails** | SQLi (GString), XSS (GSP), CMDi, PT, SSRF |
+| **Gradle Plugins** | Command injection in build scripts, insecure task execution |
+| **Jenkins Shared Libraries** | CMDi (sh with interpolation), credential exposure |
+| **Spock** | Test-time injection patterns |
+| **Groovy Templates** | Server-Side Template Injection |
+
+### Swift
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **iOS SDK** | SQLi (SQLite), XSS (WebView), insecure file access, keychain misuse |
+| **SwiftUI** | XSS via Text rendering, insecure data flow |
+| **UIKit** | XSS, insecure URL handling, pasteboard data leakage |
+| **Vapor** | SQLi, XSS, CMDi, PT, SSRF |
+| **Kitura** | SQLi, XSS, CMDi, PT, SSRF |
+| **Combine** | Reactive injection patterns |
+
+### Dart / Flutter
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Flutter** | SQLi (sqflite), XSS (WebView), PT, insecure network, hardcoded secrets |
+| **Dio** | SSRF, insecure HTTP, certificate bypass |
+| **http package** | SSRF, cleartext transmission |
+| **sqflite** | SQL injection via raw queries |
+| **Firebase** | Insecure rules, hardcoded credentials |
+| **Provider / Riverpod** | State management injection |
+| **WebView (webview_flutter)** | XSS via JavaScript injection |
+
+### Rust
+
+| Framework | Detection Coverage |
+|-----------|-------------------|
+| **Axum** | SQLi, XSS, CMDi, PT, SSRF |
+| **Actix** | SQLi, XSS, CMDi, PT, SSRF |
+| **Rocket** | SQLi, XSS, CMDi, PT, SSRF |
+| **Warp** | SQLi, XSS, CMDi, PT |
+| **Tokio** | Command injection, async injection patterns |
+| **Serde** | Insecure deserialization |
+| **Diesel** | SQL injection via raw queries |
+| **sqlx** | SQL injection via macro misuse |
+
+### C
+
+| Domain | Detection Coverage |
+|--------|-------------------|
+| **Linux Kernel** | Buffer overflow (strcpy/strcat), out-of-bounds read/write, use-after-free, double free, type confusion |
+| **POSIX / glibc** | Buffer overflow, format string, command injection |
+| **Embedded Systems** | Buffer overflow, insecure memory operations |
+
+### C++
+
+| Domain | Detection Coverage |
+|--------|-------------------|
+| **STL** | Buffer overflow, format string, command injection |
+| **Boost** | Buffer overflow, unsafe operations |
+| **Qt** | XSS, command injection, path traversal |
+| **Embedded Systems** | Buffer overflow, unsafe memory operations |
+
+### Solidity
+
+| Platform | Detection Coverage |
+|----------|-------------------|
+| **Ethereum Smart Contracts** | Reentrancy, integer overflow, access control, tx.origin, block timestamp dependence, delegatecall, unchecked send |
+| **OpenZeppelin** | Inheritance misuse, initializer bypass |
+| **Hardhat / Truffle** | Test-time injection patterns |
+
+### Salesforce Apex
+
+| Platform | Detection Coverage |
+|----------|-------------------|
+| **Salesforce Core** | SOQL injection, SOSL injection, XSS (ApexPages), open redirect |
+| **Lightning Web Components (LWC)** | XSS, insecure data handling |
+| **Aura Components** | XSS, insecure server calls |
+| **DML Operations** | Access control bypass (insert/update/delete without security) |
+
+### SAP ABAP
+
+| Platform | Detection Coverage |
+|----------|-------------------|
+| **SAP ECC** | Native SQL injection, Open SQL dynamic WHERE, XSS (WRITE unescaped), missing AUTHORITY-CHECK, command execution (SXPG_COMMAND_EXECUTE) |
+| **S/4HANA** | SQL injection, authority checks, sensitive field exposure |
+| **BSP (Business Server Pages)** | XSS, injection |
+| **Web Dynpro** | XSS, injection |
+| **RFC / BAPI** | Remote function call injection, dangerous FM usage (RFC_SYSTEM_INFO, RFC_PING, TH_DELETE_USER, RFC_READ_TABLE, GUI_DOWNLOAD, GUI_UPLOAD, WS_EXECUTE, TH_WPINFO, WS_FILENAME_GET) |
+
+### COBOL
+
+| Platform | Detection Coverage |
+|----------|-------------------|
+| **IBM Mainframe** | SQL injection, command injection (CALL), buffer overflow (MOVE without length check), arithmetic overflow (without ON SIZE ERROR), sensitive data exposure, hardcoded credentials, dynamic file operations |
+| **CICS** | Transaction injection, insecure file handling |
+| **DB2** | SQL injection via string variables, dynamic SQL |
+| **VSAM** | Insecure file access |
+
+### Bash / Shell
+
+| Domain | Detection Coverage |
+|--------|-------------------|
+| **Bash / sh / zsh** | Command injection (eval, bash -c, xargs), code injection (source/.), path traversal (file read/write), SSRF (curl/wget, nc/socat), info disclosure (echo/printenv), XSS (CGI echo), privilege escalation (sudo/su), insecure deserialization (base64) |
+| **CGI Scripts** | XSS, command injection via query parameters |
+| **Cron Jobs** | Command injection, insecure file paths |
+
+### YAML (CI/CD)
+
+| Platform | Detection Coverage |
+|----------|-------------------|
+| **GitHub Actions** | Unpinned actions, hardcoded credentials, insecure OIDC, running as root, missing approval gates, untrusted third-party actions, variable exposure in logs, insecure artifact uploads, curl pipe bash, missing SAST steps |
+| **GitLab CI** | Unprotected deployments, insecure cache, download-and-execute patterns, variable exposure |
+| **Jenkins** | Disabled security, hardcoded credentials, untrusted agents, eval in Groovy |
+| **Azure Pipelines** | Broad resource access, missing approval, unverified tasks, variable in scripts |
+
+## Compliance Mapping
+
+Every Codepure finding is automatically mapped to the compliance frameworks your organization and auditors care about. The SARIF output includes control IDs and descriptions for each vulnerability.
+
+- **Saudi NCA ECC** — Essential Cybersecurity Controls for input validation, XSS, path traversal, XXE, deserialization, SSRF, and credential management
+- **Saudi SAMA** — Cybersecurity Framework for secure coding, access control, XML processing, encryption, and cryptographic algorithms
+- **PCI DSS** — Payment Card Industry requirements for injection flaws, cross-site scripting, strong cryptography, and credential management
+- **GDPR** — General Data Protection Regulation requirements for personal data protection, encryption in transit, and access controls
+- **HIPAA** — Health Insurance Portability and Accountability Act requirements for protected health information, encryption, and audit controls
 
 ## Using Codepure SAST
 
-### Quick Start Guide
+### Quick Start
 
 #### 1. Initiate Scan
 
@@ -191,14 +363,13 @@ Configure and launch your SAST analysis:
   <img src="/assets/sast2.PNG" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-**Steps:**
 - Navigate to your project dashboard
 - Select the repository or upload code
 - Choose **SAST** from the scanner options
 - Configure scan parameters:
   - Select rule sets (OWASP, CWE, Custom)
   - Set severity thresholds
-  - Choose incremental or full scan
+  - Choose full or targeted scan
 - Click **Start Scanning** to begin analysis
 
 #### 2. Review Results
@@ -209,20 +380,15 @@ Access detailed vulnerability findings with contextual information:
   <img src="/assets/sast-1.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-**Understanding Results:**
-- **Severity Levels**: Critical, High, Medium, Low, Informational
-- **Confidence Scores**: Likelihood of true positive
-- **CWE Mapping**: Common Weakness Enumeration classification
-- **OWASP Alignment**: Top 10 category mapping
-- **Compliance Tags**: PCI DSS, HIPAA, GDPR relevance
+Each finding includes:
 
-**Filtering Options:**
-- By severity level
-- By vulnerability type (CWE category)
-- By compliance standard (OWASP, PCI, ISO)
-- By file or component
-- By introduction date
-- By developer/team
+- **Severity** — Critical, High, Medium, Low, Informational
+- **CWE classification** — Common Weakness Enumeration mapping
+- **OWASP Top 10 category** — alignment with industry standards
+- **Compliance tags** — NCA ECC, SAMA, PCI DSS, GDPR, HIPAA relevance
+- **Complete attack trace** — source-to-sink chain showing exactly how user input reaches the dangerous operation, with line numbers and code at each step
+
+Filter results by severity, vulnerability type, compliance standard, file, team, or introduction date.
 
 #### 3. Remediate Vulnerabilities
 
@@ -232,34 +398,45 @@ Get actionable fix guidance with code examples:
   <img src="/assets/sast-sqli.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-**Remediation Features:**
-- **Detailed Description**: Understanding the vulnerability
-- **Attack Scenario**: How the vulnerability could be exploited
-- **Code Examples**: Vulnerable vs. secure code patterns
-- **Fix Suggestions**: Step-by-step remediation guidance
-- **Auto-Fix**: One-click fixes for common issues (where applicable)
-- **Verification**: Re-scan to confirm successful remediation
+Each finding includes a detailed description of the vulnerability, a realistic attack scenario showing how it could be exploited, vulnerable code alongside the secure pattern, and specific step-by-step remediation guidance. Re-scan to confirm the fix.
 
-### Advanced Features
+### Built-In Capabilities
 
-#### Incremental Scanning
+#### Secret Detection
 
-Optimize scan times with intelligent incremental analysis:
-- Scans only modified code and dependencies
-- Maintains security context across scans
-- Reduces scan time by up to 90%
-- Perfect for CI/CD integration
+34 pattern types scan for hardcoded credentials, API keys, tokens, and private keys across all file types — not just source code. Finds secrets in configuration files, environment files, documentation, and commit history. Runs as part of the standard SAST scan — no separate tool needed.
 
-#### Custom Rule Creation
+Detects: AWS access keys and secrets, Azure connection strings and tenant IDs, database connection strings and JDBC URLs, Docker passwords, GitHub tokens and OAuth tokens, GitLab tokens, Google Cloud API keys and service accounts, Heroku API keys, JWT secrets, Mailchimp and Mailgun API keys, OpenAI API keys, RSA and SSH private keys, Slack tokens and webhooks, Stripe publishable and secret keys, Twilio API keys and account SIDs, and generic password and secret assignment patterns.
 
-Define organization-specific security policies:
+#### CI/CD Pipeline Scanning
 
-```yaml
-custom_rule:
-  name: "Sensitive Data in Logs"
-  severity: "HIGH"
-  languages: ["java", "python", "javascript"]
-  pattern: |
-    log.*(password|token|secret|api_key)
-  message: "Sensitive data should not be logged"
-  remediation: "Remove or mask sensitive data before logging"
+53 patterns check CI/CD configuration files for security misconfigurations in GitHub Actions, GitLab CI, Jenkins, and Azure Pipelines:
+
+- Unpinned action versions
+- Hardcoded credentials in workflow files
+- Insecure OIDC configurations
+- Containers running as root
+- Missing approval gates for production deployments
+- Untrusted third-party actions
+- Variables exposed in logs
+- Insecure artifact uploads
+- `curl | bash` and `wget | bash` patterns
+- Missing SAST scan steps
+- World-writable permissions
+- chmod 777 usage
+- Dangerous rm -rf patterns
+- sudo usage in pipelines
+
+#### SARIF Output
+
+Export findings in OASIS SARIF 2.1.0 format with `--format=sarif`. The output includes full rule definitions with security severity levels, complete result details with locations, partial fingerprints for deduplication, custom compliance mappings with NCA ECC/SAMA/PCI DSS control IDs, and taint traces showing the complete attack chain.
+
+Compatible with GitHub Advanced Security, GitLab SAST, Azure DevOps, and all SARIF consumers.
+
+#### Inter-Procedural Analysis
+
+Codepure tracks tainted data across file and module boundaries. When user input enters through a controller, flows through a service layer, and reaches a SQL query in a data access object, Codepure connects all three files into a single finding with a complete attack trace.
+
+#### AST Caching
+
+Parsed abstract syntax trees are cached to avoid redundant re-parsing. When the same file is scanned multiple times — common in CI/CD pipelines — Codepure reuses the cached AST, reducing scan time on repeated and incremental runs.
