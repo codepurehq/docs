@@ -1,204 +1,393 @@
 ---
 title: 'Container Security'
-description: 'Comprehensive container security scanning for Docker, Kubernetes, Docker Compose, and containerized applications to detect vulnerabilities, misconfigurations, and compliance issues.'
+description: 'Comprehensive container and cloud infrastructure security scanning — 100% native engine, zero external dependencies.'
 ---
 
-# What is Container Security?
+## Overview
 
-Codepure's Container Security provides comprehensive scanning and protection for your entire container ecosystem. Whether you're using Docker, Kubernetes, Docker Compose, or other container orchestration platforms, our security scanner identifies vulnerabilities, misconfigurations, and compliance issues before they reach production.
+Container Security is Codepure's unified scanning engine that analyzes container images, Kubernetes configurations, and cloud infrastructure for security misconfigurations, OS-level vulnerabilities, and compliance violations. Built entirely from the ground up in native Go — no Trivy, no Checkov, no external dependencies — it delivers sub-second scan performance with full air-gapped deployment support.
 
-## Supported Container Technologies
+## What is Container Security?
 
-### Docker
-* **Docker Images**: Scans local and registry-hosted images for vulnerabilities
-* **Dockerfiles**: Analyzes build instructions for security best practices
-* **Docker Registry**: Continuous monitoring of images in Docker Hub, Amazon ECR, Azure Container Registry, and private registries
-* **Multi-stage Builds**: Security analysis across all build stages
+Codepure Container Security performs comprehensive analysis across the entire container and cloud infrastructure lifecycle. By examining Dockerfiles, Docker Compose files, Kubernetes manifests, Terraform configurations, Ansible playbooks, Helm charts, CloudFormation templates, and Azure ARM templates, it identifies security misconfigurations, hardcoded secrets, and OS-level package vulnerabilities before they reach production.
 
-### Docker Compose
-* **Service Configuration**: Validates security settings across all services
-* **Network Policies**: Ensures proper network isolation between containers
-* **Volume Permissions**: Checks for insecure volume mounts and permissions
-* **Environment Variables**: Detects exposed secrets in compose files
+### Core Capabilities
 
-### Kubernetes
-* **Pod Security**: Scans pod specifications and running containers
-* **RBAC Policies**: Validates role-based access control configurations
-* **Network Policies**: Ensures proper network segmentation
-* **Secrets Management**: Detects hardcoded secrets and improper secret usage
-* **Helm Charts**: Security analysis of Helm chart templates and values
-* **Admission Controllers**: Integration with Kubernetes admission controllers for runtime protection
+- **Real Docker Image Scanning**: Reads actual package manifests (APK, DPKG, RPM) from Docker image layers to detect OS-level CVEs
+- **Infrastructure-as-Code Analysis**: Native parsers for 8 IaC formats — Dockerfile, Compose, Kubernetes, Terraform, Ansible, Helm, CloudFormation, ARM
+- **Secret Detection**: 16+ regex patterns and entropy analysis detect hardcoded credentials, API keys, and tokens
+- **Multi-Cloud CSPM**: Cloud Security Posture Management across AWS (35+ rules), GCP (25+ rules), and Azure (30+ rules)
+- **SBOM Generation**: Export Software Bill of Materials in SPDX 2.3 and CycloneDX 1.5 formats
+- **SARIF 2.1.0 Output**: Integration with GitHub Code Scanning, Azure DevOps, and GitLab Security
+- **9-Frame Compliance**: Every finding maps to CIS, SOC2, PCI-DSS, NCA-ECC (Saudi), SAMA CSF (Saudi), NIST, GDPR, HIPAA, and FedRAMP
+- **Air-Gapped Ready**: All CVE databases and rule sets bundled on disk — zero internet dependency
 
-### Additional Platforms
-* **OpenShift**: Full support for Red Hat OpenShift container platform
-* **Amazon ECS/EKS**: Native integration with AWS container services
-* **Azure AKS**: Seamless scanning for Azure Kubernetes Service
-* **Google GKE**: Complete support for Google Kubernetes Engine
-* **Podman**: Security scanning for rootless container environments
+## How Container Security Works
 
-# How Container Security Works
+### Scanning Methodology
 
-## Comprehensive Scanning Approach
+Codepure Container Security employs multiple analysis techniques for comprehensive coverage across container and cloud infrastructure:
 
-When you initiate a Container Security scan, Codepure performs multi-layered analysis:
+#### 1. **Dockerfile Static Analysis**
+- Parses Dockerfile instructions line by line
+- Tracks ARG/ENV variable resolution
+- Identifies multi-stage build boundaries
+- Detects insecure patterns: root user, latest tags, missing HEALTHCHECK, secrets in ENV, ADD vs COPY misuse
 
-### 1. Image Layer Analysis
-* **Base Image Vulnerabilities**: Identifies CVEs in OS and runtime layers
-* **Dependency Scanning**: Analyzes all installed packages, libraries, and frameworks
-* **Binary Analysis**: Detects vulnerabilities in compiled applications
-* **Distroless Image Support**: Specialized scanning for minimal container images
+#### 2. **YAML Manifest Analysis (Compose & Kubernetes)**
+- Parses multi-document YAML files
+- Maps service and pod specifications
+- Identifies security context misconfigurations
+- Detects privileged containers, host namespace sharing, missing resource limits
 
-### 2. Configuration Security
-* **Dockerfile Best Practices**: Validates against CIS Docker Benchmark
-* **Kubernetes Manifests**: Checks against Kubernetes security best practices
-* **Resource Limits**: Ensures proper CPU and memory constraints
-* **Security Contexts**: Validates user permissions, capabilities, and SELinux settings
-* **Network Exposure**: Identifies unnecessary open ports and services
+#### 3. **HCL Parsing (Terraform)**
+- Parses Terraform HCL configurations using regex-based resource detection
+- Identifies cloud resource misconfigurations across AWS, GCP, and Azure
+- Detects overly permissive IAM, unencrypted storage, public endpoints
 
-### 3. Secret Detection
-* **Embedded Credentials**: Finds hardcoded passwords, API keys, and tokens
-* **Certificate Analysis**: Validates SSL/TLS certificates and their expiration
-* **Environment Variables**: Scans for sensitive data in environment configurations
-* **Configuration Files**: Detects secrets in application configuration
+#### 4. **Real Docker Image Layer Scanning**
+- Opens Docker image `.tar` archives (from `docker save`)
+- Reads `manifest.json` to identify image layers
+- Extracts actual package manifests from each layer:
+  - **Alpine**: Parses `/var/lib/apk/db/installed` (APK format: `P:name\nV:version`)
+  - **Debian/Ubuntu**: Parses `/var/lib/dpkg/status` (DPKG format: `Package:\nVersion:\nStatus:`)
+  - **RHEL/CentOS**: Parses RPM manifest files (text format: `Name:\nVersion:\nRelease:`)
+- Cross-references installed packages against bundled CVE database
+- Reports vulnerabilities with severity, fix version, and compliance tags
 
-### 4. Compliance Validation
-* **CIS Benchmarks**: Automated checks against CIS Docker and Kubernetes benchmarks
-* **NIST Guidelines**: Compliance with NIST container security guidelines
-* **PCI DSS**: Container-specific PCI compliance requirements
-* **HIPAA/SOC2**: Healthcare and service organization compliance checks
-* **Custom Policies**: Define organization-specific security policies
+#### 5. **Secret Detection (Regex + Entropy)**
+- 16+ regex patterns detect known secret formats (AWS keys, GitHub PATs, Stripe tokens)
+- entropy analysis identifies unknown high-entropy strings
+- Scans across all file types in the target directory
+- Filters false positives (variable references, paths, example values)
 
-## Scanning Modes
+#### 6. **Ansible Playbook Analysis**
+- Parses YAML playbooks and task definitions
+- Identifies privilege escalation, shell injection, hardcoded passwords
+- Detects TLS validation disabled, firewall disabled, insecure HTTP fetches
 
-### Pre-Build Scanning
-Analyze Dockerfiles and configuration files before building images to catch issues early in the development cycle.
+#### 7. **Helm Chart Analysis**
+- Parses Helm templates and values files
+- Identifies privileged containers, host network/PID, missing resource limits
+- Detects hardcoded secrets, default namespace deployment, missing NetworkPolicy
 
-### Build-Time Scanning
-Integrate with CI/CD pipelines to scan images automatically during the build process.
+### Vulnerability & Misconfiguration Detection Categories
 
-### Registry Scanning
-Continuous monitoring of container registries to detect newly discovered vulnerabilities in stored images.
+#### **Container Runtime Misconfigurations**
+- **Privileged Containers**: Full host access and capability escalation
+- **Host Namespace Sharing**: Network, PID, IPC, UTS namespace exposure
+- **Missing Resource Limits**: No memory or CPU constraints (DoS risk)
+- **No Read-Only Filesystem**: Writable container root filesystem
+- **Docker Socket Mounted**: Container escape via Docker API access
+- **Missing Healthchecks**: No container health monitoring
 
-### Runtime Protection
-Real-time monitoring of running containers in Kubernetes clusters for active threat detection.
+#### **Image-Level Vulnerabilities (CVEs)**
+- **OS Package CVEs**: Known vulnerabilities in installed Alpine/Debian/Ubuntu/RHEL packages
+- **Outdated Packages**: Packages with available security fixes
+- **Base Image Vulnerabilities**: CVEs inherited from base image layers
+- **Critical CVEs**: Buffer overflows, privilege escalation, remote code execution
 
-# Why Container Security is Critical
+#### **Kubernetes Security**
+- **RBAC Misconfigurations**: Cluster-admin bindings, wildcard permissions, secrets access
+- **Pod Security Violations**: Privileged pods, host namespaces, running as root
+- **Missing Security Contexts**: No `allowPrivilegeEscalation: false`, no `runAsNonRoot`
+- **Network Policy Gaps**: Missing network policies, overly permissive ingress/egress
+- **Secret Mismanagement**: Hardcoded secrets in environment variables, missing Secret resources
 
-Container adoption continues to grow, but with it comes unique security challenges:
+#### **Cloud Infrastructure Misconfigurations (CSPM)**
 
-## Key Benefits
+##### AWS
+- **S3 Public Access**: Buckets with public ACLs or missing public access blocks
+- **Open Security Groups**: SSH (22), RDP (3389), databases (3306, 5432, 6379) open to 0.0.0.0/0
+- **IAM Over-Privilege**: Admin policies (`*` on `*`), root access keys, wildcard actions
+- **Unencrypted Storage**: RDS without storage encryption, S3 without server-side encryption
+- **Missing Logging**: CloudTrail without encryption, VPC without flow logs
+- **Public Endpoints**: RDS, EKS, ElastiCache publicly accessible
 
-### Shift-Left Security
-* Identify vulnerabilities during development, not in production
-* Reduce remediation costs by catching issues early
-* Integrate security into DevOps workflows seamlessly
+##### GCP
+- **Public Storage**: Buckets accessible to allUsers or allAuthenticatedUsers
+- **IAM Issues**: Owner roles on service accounts, default SA with editor role
+- **GKE Misconfigurations**: Legacy ABAC enabled, logging/monitoring disabled
+- **Unencrypted Resources**: Compute disks, Cloud SQL without SSL, Pub/Sub without encryption
+- **Open Firewall**: Ingress from 0.0.0.0/0, HTTP load balancers
 
-### Supply Chain Protection
-* Verify the integrity of base images and dependencies
-* Track the provenance of container components
-* Ensure only approved images are deployed
+##### Azure
+- **Storage Issues**: Public blob access, HTTPS not enforced
+- **VM Security**: Password authentication, hardcoded passwords in templates
+- **Network Security**: NSGs allowing unrestricted inbound, no DDoS protection
+- **Key Vault**: Missing soft delete, weak access policies
+- **AKS**: RBAC disabled, no network policies, logging disabled
+- **Database Exposure**: SQL public access, Cosmos DB without IP restrictions
 
-### Compliance Assurance
-* Automated compliance reporting for audits
-* Continuous monitoring for policy violations
-* Evidence collection for regulatory requirements
+#### **Infrastructure-as-Code Flaws**
+- **CloudFormation**: Public S3, open security groups, RDS publicly accessible, IAM admin access
+- **Azure ARM**: Password-based VM auth, storage without HTTPS, NSG open rules
+- **Ansible**: Shell injection, hardcoded passwords, TLS validation disabled, firewall disabled
+- **Helm**: Hardcoded secrets, privileged containers, missing resource limits, no NetworkPolicy
 
-### Risk Reduction
-* Prevent container breakouts and privilege escalation
-* Eliminate hardcoded secrets and credentials
-* Ensure proper network segmentation and isolation
+#### **Hardcoded Secrets**
+- **Cloud Credentials**: AWS Access Key IDs, AWS Secret Access Keys, GCP Service Account JSON
+- **API Tokens**: GitHub PATs, Slack tokens, Google API keys, Stripe keys, SendGrid keys, Twilio keys
+- **Private Keys**: SSH RSA/DSA/EC private keys, TLS/SSL private keys
+- **Database Credentials**: Connection strings with embedded passwords
+- **Azure Secrets**: Storage account connection strings with AccountKey
+- **High-Entropy Strings**: Unknown secrets detected via entropy analysis
 
-# Getting Started with Container Security
+## Why Container Security is Critical
 
-## Prerequisites
+### Security Benefits
 
-Before running container security scans, ensure you have:
-* Container images available locally or in a registry
-* Proper authentication credentials for private registries
-* Network access to Codepure scanning infrastructure
+**Unified Visibility**
+- Single engine covers containers, Kubernetes, and multi-cloud infrastructure
+- Eliminate tool sprawl — no need for separate Trivy, Checkov, and custom secret scanners
+- Consistent findings format across all scan types
 
-## Step-by-Step Scanning Guide
+**Real Image Scanning**
+- Reads actual package manifests from Docker image layers — no guessing
+- Detects OS-level CVEs in Alpine, Debian, Ubuntu, and RHEL-based containers
+- Identifies vulnerable packages with specific fix versions
 
-### 1. Configure Your Environment
+**Comprehensive IaC Coverage**
+- 8 infrastructure-as-code formats analyzed natively
+- 160+ misconfiguration detection rules
+- Multi-cloud CSPM across AWS, GCP, and Azure
 
-First, set up your scanning environment by selecting the appropriate configuration:
+**Air-Gapped Deployment**
+- All CVE databases, rule sets, and compliance mappings bundled on disk
+- Zero internet dependency — works in fully isolated environments
+- Ideal for regulated industries and government deployments
 
-* **Docker Standalone**: For individual Docker hosts
-* **Docker Compose Project**: For multi-container applications
-* **Kubernetes Cluster**: For orchestrated container deployments
-* **Container Registry**: For centralized image scanning
+### Business Impact
+
+#### **Cost Reduction**
+- **Early Detection**: Catch misconfigurations in IaC before deployment
+- **Prevent Breaches**: Identify publicly exposed cloud resources before attackers find them
+- **Reduce Tool Costs**: One engine replaces Trivy, Checkov, and multiple secret scanners
+
+#### **Accelerated Development**
+- **Sub-Second Scans**: 31 Docker images in 21ms, 219 infrastructure files in 414ms
+- **CI/CD Ready**: Exit codes based on severity thresholds gate deployments automatically
+- **SARIF Integration**: Native GitHub Code Scanning, Azure DevOps, and GitLab compatibility
+
+#### **Compliance Assurance**
+- Meet regulatory requirements with 9 framework mappings per finding
+- Satisfy GCC market requirements with NCA-ECC and SAMA CSF coverage
+- Generate audit-ready reports with SBOM in SPDX and CycloneDX formats
+
+## Supported Technologies
+
+### Container & Orchestration
+
+**Container Runtimes**
+- Docker / Docker Engine
+- Docker Compose (v2 and v3)
+- Kubernetes (any distribution)
+- Helm Charts (templates and values)
+
+### Cloud Providers
+
+**AWS (35+ Rules)**
+- S3, EC2, Security Groups, IAM, RDS, Lambda, VPC
+- CloudTrail, API Gateway, DynamoDB, ElastiCache
+- EKS, ECS, ECR, KMS, SNS, SQS
+
+**GCP (25+ Rules)**
+- Cloud Storage, Compute Engine, GKE, IAM
+- BigQuery, KMS, Cloud Functions, Cloud Run
+- Pub/Sub, Cloud SQL, Cloud DNS, Firewall
+
+**Azure (30+ Rules)**
+- Virtual Machines, Storage Accounts, AKS
+- Key Vault, App Service, SQL Database, Cosmos DB
+- Container Registry, Network Security Groups, Redis Cache, Monitor
+
+### Infrastructure as Code
+
+- **Terraform** (AWS, GCP, Azure, Docker, Kubernetes providers)
+- **Ansible** Playbooks (YAML)
+- **Helm** Charts (Go templates + values)
+- **AWS CloudFormation** (YAML and JSON)
+- **Azure ARM Templates** (JSON)
+
+### Operating Systems (Image Scanning)
+
+- **Alpine Linux** — APK package database parsing
+- **Debian** — DPKG status file parsing
+- **Ubuntu** — DPKG status file parsing
+- **RHEL / CentOS / Fedora** — RPM manifest parsing
+- **Amazon Linux** — RPM manifest parsing
+
+### Compliance Frameworks
+
+Every finding maps to all 9 frameworks simultaneously:
+
+- **CIS Benchmarks** — Docker, Kubernetes, AWS, GCP, Azure hardening
+- **SOC2** — CC6.1, CC6.6, CC7.2 Trust Services Criteria
+- **PCI-DSS** — 1.3, 2.2, 3.4, 6.2, 6.5, 7.1, 8.1, 10.6
+- **NCA-ECC** — Saudi NCA Essential Cybersecurity Controls (3-1-2, 3-2-1, 3-3-1, 4-1-1, 4-2-1)
+- **SAMA CSF** — Saudi SAMA Cyber Security Framework (3-1-1, 3-2-1, 3-3-1, 4-1-2, 4-2-1)
+- **NIST 800-53** — AC-6, SC-7, SC-12, SI-2, CM-7
+- **GDPR** — Article 32 Security of Processing
+- **HIPAA** — 164.312 Access Control and Encryption
+- **FedRAMP** — AC-6, SC-7, SC-12, SI-2
+
+### Output Formats
+
+- **Enterprise JSON** — Multi-tenant SaaS-ready with scan_id, tenant_id, CSPM/Container separation
+- **SARIF 2.1.0** — GitHub Code Scanning, Azure DevOps, GitLab Security compatible
+- **SPDX 2.3** — ISO standard Software Bill of Materials
+- **CycloneDX 1.5** — OWASP standard SBOM with vulnerability data (JSON and XML)
+
+## Using Codepure Container Security
+
+### Quick Start Guide
+
+#### 1. Initiate Scan
+
+Configure and launch your container security analysis:
 
 <Frame>
-  <img src="/assets/container_security1.PNG" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/container-security-scan.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-### 2. Select Scan Target and Initiate Scan
+**Steps:**
+- Navigate to your project dashboard
+- Select the repository or upload your infrastructure code
+- Choose **Container Security** from the scanner options
+- Configure scan parameters:
+  - Select scan types (Dockerfile, Compose, K8s, Terraform, Image CVE, Secrets)
+  - Enable CVE scanning for Docker images
+  - Enable secret scanning
+  - Set severity thresholds
+  - Select compliance frameworks (all enabled by default)
+- Click **Start Scanning** to begin analysis
 
-Choose your scanning target:
-* **Local Images**: Scan images on your Docker host
-* **Registry Images**: Scan images from Docker Hub, ECR, ACR, or private registries
-* **Running Containers**: Scan active containers in your environment
-* **Kubernetes Workloads**: Scan deployments, pods, and services
+#### 2. Review Results
 
-From the dashboard, select your project, choose Container Security, and click Start Scanning.
-
-### 3. Review Scan Results
-
-After the scan completes, you'll see a comprehensive security report:
-
-* **Critical Vulnerabilities**: High-priority issues requiring immediate attention
-* **Configuration Issues**: Misconfigurations and policy violations
-* **Compliance Status**: Pass/fail status for various compliance frameworks
-* **Secret Exposures**: Detected credentials and sensitive data
-
-Click the project name and select Full Result to view detailed findings.
+Access detailed vulnerability findings with contextual information:
 
 <Frame>
-  <img src="/assets/container_security-results.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/container-security-results.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-### 4. Analyze Individual Findings
+**Understanding Results:**
+- **Severity Levels**: Critical, High, Medium, Low
+- **CSPM Categorization**: Findings organized by cloud provider (AWS/GCP/Azure) and security domain (IAM/Network/DataAtRest/Logging)
+- **Container CVEs**: Package-level vulnerability details with installed version, fix version, and CVSS score
+- **Compliance Tags**: CIS, SOC2, PCI-DSS, NCA, SAMA, NIST, GDPR, HIPAA, FedRAMP mappings per finding
+- **Remediation Guidance**: Step-by-step fix instructions with example commands and configuration snippets
 
-For each detected issue, Codepure provides:
-* **Severity Rating**: Critical, High, Medium, or Low
-* **CVSS Score**: Industry-standard vulnerability scoring
-* **Affected Components**: Specific packages or configurations
-* **Attack Vector**: How the vulnerability could be exploited
-* **Business Impact**: Potential consequences if exploited
+**Filtering Options:**
+- By severity level
+- By scan type (Dockerfile, Compose, K8s, Terraform, CVE, Secret)
+- By cloud provider (AWS, GCP, Azure)
+- By compliance standard (CIS, SOC2, PCI-DSS, NCA, SAMA)
+- By resource type or file path
 
-### 5. Implement Remediation
+#### 3. Remediate Vulnerabilities
 
-Click Open on any issue to access detailed remediation guidance:
-
-* **Quick Fixes**: Immediate actions to resolve the issue
-* **Best Practices**: Long-term improvements for security posture
-* **Alternative Solutions**: Different approaches based on your constraints
-* **Validation Steps**: How to verify the fix is effective
-
-The Remediation section provides specific instructions such as:
-* Updating base images to patched versions
-* Removing unnecessary privileges and capabilities
-* Implementing proper secret management
-* Applying security policies and network controls
-
-After applying fixes, update the issue status to Fixed in Codepure.
+Get actionable fix guidance with code examples:
 
 <Frame>
-  <img src="/assets/container_security-results1.png" style={{ borderRadius: '0.5rem' }} />
+  <img src="/assets/container-security-remediation.png" style={{ borderRadius: '0.5rem' }} />
 </Frame>
 
-## Integration with CI/CD Pipelines
+**Remediation Features:**
+- **Detailed Description**: Understanding the misconfiguration or vulnerability
+- **Attack Scenario**: How the misconfiguration could be exploited
+- **Compliance Impact**: Which frameworks are violated and which controls apply
+- **Fix Suggestions**: Step-by-step remediation guidance with code examples
+- **Verification**: Re-scan to confirm successful remediation
 
-### Jenkins Integration
-```groovy
-pipeline {
-    stage('Container Security Scan') {
-        steps {
-            codepureScan(
-                scanType: 'container',
-                imageName: '${IMAGE_NAME}:${BUILD_NUMBER}',
-                failOnCritical: true
-            )
-        }
-    }
-}
+### Advanced Features
+
+#### SBOM Export
+
+Generate Software Bill of Materials for scanned container images:
+
+**SPDX 2.3**
+- ISO standard SBOM format
+- Package inventory with name, version, and supplier information
+- Relationships between packages and the scanned image
+- Vulnerability mappings per package
+
+**CycloneDX 1.5**
+- OWASP standard SBOM format
+- Component inventory with Package URLs (PURL)
+- Dependency graphs showing package relationships
+- Vulnerability data with severity, CVSS scores, and remediation recommendations
+- Evidence of package discovery (file paths, layer information)
+
+#### SARIF 2.1.0 Integration
+
+Export findings in Static Analysis Results Interchange Format for platform integration:
+- **GitHub Code Scanning**: Upload SARIF files to the Security tab
+- **Azure DevOps**: Use the Security extension for SARIF import
+- **GitLab Security Dashboard**: Import SARIF results into the vulnerability report
+- **Microsoft Defender for Cloud**: Feed SARIF findings into the cloud security posture
+
+Each SARIF result includes `findingType` property to distinguish CSPM misconfigurations from container CVEs, plus full compliance tag arrays.
+
+#### Air-Gapped Deployment
+
+Container Security works fully offline:
+- All CVE databases bundled on disk
+- All rule sets embedded in the binary
+- No internet connectivity required
+- Custom CVE databases loadable via `--advisory-db` flag
+
+
+
+
+## What Makes Codepure Container Security Different
+
+### 100% Native Engine
+
+Unlike tools that wrap Trivy for image scanning, Checkov for Terraform, and custom scripts for secrets, Codepure built our Container Security engine **entirely from the ground up in native Go**:
+
+| Capability | Traditional Approach | Codepure Approach |
+|-----------|---------------------|-------------------|
+| Docker image scanning | Requires Trivy binary and Python runtime | Native layer parser reads APK/DPKG/RPM directly |
+| Terraform scanning | Requires Checkov subprocess | Native HCL parser with 90+ rules |
+| Secret scanning | Requires external tool (gitleaks, trufflehog) | Built-in regex + entropy engine |
+| SBOM export | Requires syft or separate tool | Built-in SPDX 2.3 and CycloneDX 1.5 |
+| CVE database | Downloads at runtime, needs internet | Bundled on disk, works fully offline |
+| Dependencies | Python, pip, multiple packages | Zero — single compiled binary |
+| Startup time | Seconds (runtime initialization) | Milliseconds (compiled binary) |
+
+### Real Image Layer Parsing
+
+Our engine doesn't guess what packages might be in an image — it reads the actual package manifests:
+
+```
+Docker Image .tar (from docker save)
+        │
+        ▼
+  Read manifest.json → Identify layer.tar files
+        │
+        ▼
+  Parse each layer for:
+    • /var/lib/apk/db/installed  → Alpine packages (APK format)
+    • /var/lib/dpkg/status        → Debian/Ubuntu packages (DPKG format)
+    • RPM manifest files          → RHEL/CentOS packages (RPM format)
+    • /etc/os-release             → Operating system detection
+        │
+        ▼
+  Cross-reference packages against CVE database
+        │
+        ▼
+  Report: CVE ID, severity, installed version, fix version
+```
+
+This means accurate vulnerability detection based on **what's actually installed** in your container, not what we think might be there.
+
+### Unified Multi-Cloud CSPM
+
+One scan covers security posture across all three major cloud providers with domain categorization:
+
+| Domain | What It Covers |
+|--------|---------------|
+| **IAM** | Overly permissive policies, admin access, missing MFA, root access keys |
+| **Network** | Open security groups, missing VPC flow logs, exposed API endpoints, public subnets |
+| **Data at Rest** | Missing KMS encryption, unencrypted databases, public storage buckets |
+| **Logging** | Disabled CloudTrail, missing diagnostic settings, no threat detection |

@@ -101,245 +101,91 @@ Codepure scans 22 programming languages with framework-specific detection rules 
 
 ### JavaScript / TypeScript
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Node.js** (Express, Fastify, Koa, Hapi) | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Deserialization, Prototype Pollution |
-| **NestJS** | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Deserialization |
-| **Next.js** | SQLi, NoSQLi, XSS, CMDi, PT, SSRF, Open Redirect, Eval Injection |
-| **React** | DOM XSS, Script Injection, Prototype Pollution, Open Redirect, Eval |
-| **Angular** | DOM XSS, Script Injection, Safe bypass patterns |
-| **Vue.js** | DOM XSS, v-html unsafe binding |
-| **Socket.IO** | Event-based injection, unsafe message handling |
-| **Apollo GraphQL** | Query injection, resolver-level vulnerabilities |
-| **Sequelize ORM** | Raw query SQLi, where-clause injection |
-| **Mongoose** | NoSQL injection, query operator injection |
-| **Prisma** | Raw query SQLi |
-| **TypeORM** | Raw query SQLi |
+Node.js, Express, Fastify, Koa, Hapi, NestJS, Next.js, Nuxt, React, Angular, Vue.js, Socket.IO, Apollo GraphQL, Sequelize, Mongoose, Prisma, TypeORM
 
 ### Python
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Django** | SQLi, XSS, CMDi, PT, SSRF, LDAPi, XXE, Deserialization, Open Redirect |
-| **Flask** | SQLi, XSS, CMDi, PT, SSRF, LDAPi, XXE, Deserialization, SSTI |
-| **FastAPI** | SQLi, XSS, CMDi, PT, SSRF, Deserialization |
-| **Pyramid** | SQLi, XSS, CMDi, PT |
-| **Bottle** | SQLi, XSS, CMDi, PT |
-| **Tornado** | SQLi, XSS, CMDi, PT |
-| **Celery** | Insecure task serialization, command injection |
-| **SQLAlchemy** | Raw SQL injection, text() clause injection |
-| **Pandas** | Code injection via eval(), unsafe deserialization |
-| **Jinja2** | Server-Side Template Injection (SSTI) |
+Django, Flask, FastAPI, Pyramid, Bottle, Tornado, Celery, SQLAlchemy, Pandas, Jinja2
 
 ### PHP
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Laravel** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization, SSTI (Blade) |
-| **Symfony** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization |
-| **WordPress** | SQLi (`$wpdb`), XSS, CMDi, PT, RFI, LFI, SSRF, XXE, Deserialization, Plugin patterns |
-| **Drupal** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF |
-| **Magento** | SQLi, XSS, CMDi, PT, RFI, LFI, SSRF |
-| **CodeIgniter** | SQLi, XSS, CMDi, PT, RFI, LFI |
-| **Slim** | SQLi, XSS, CMDi, PT |
-| **CakePHP** | SQLi, XSS, CMDi, PT |
-| **Yii** | SQLi, XSS, CMDi, PT |
-| **PHPMailer** | Command injection, header injection |
+Laravel, Symfony, WordPress, Drupal, Magento, CodeIgniter, Slim, CakePHP, Yii, PHPMailer
 
 ### Java
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Spring Boot** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization, Open Redirect |
-| **Spring MVC** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
-| **Spring Security** | Bypass patterns, misconfiguration |
-| **Spring Data / JPA** | JPQL injection, native query SQLi |
-| **Jakarta EE** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization |
-| **Apache Struts** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization, OGNL injection |
-| **JSF (JavaServer Faces)** | SQLi, XSS, CMDi, PT, SSRF, XXE |
-| **Hibernate** | HQL injection, native SQL injection |
-| **JPA** | JPQL injection, Criteria API misuse |
-| **MyBatis** | XML-based SQLi, annotation SQLi |
-| **Micronaut** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
-| **Quarkus** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
-| **Eclipse Vert.x** | SQLi, XSS, CMDi, PT, SSRF |
-| **Apache Camel** | Route injection, endpoint misuse |
+Spring Boot, Spring MVC, Spring Security, Spring Data/JPA, Jakarta EE, Apache Struts, JSF (JavaServer Faces), Hibernate, JPA, MyBatis, Micronaut, Quarkus, Eclipse Vert.x, Apache Camel
 
 ### C# / .NET
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **ASP.NET Core MVC** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, Deserialization, JWT, Open Redirect |
-| **ASP.NET Core Web API** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, JWT |
-| **ASP.NET Core Minimal APIs** | SQLi, XSS, CMDi, PT, SSRF, XXE |
-| **ASP.NET Web Forms** | SQLi, XSS, PT, SSRF, XXE, ViewState misuse |
-| **ASP.NET Framework (Legacy)** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
-| **Blazor** | SQLi, XSS, CMDi, PT, SSRF |
-| **Entity Framework Core** | FromSqlRaw SQLi, ExecuteSqlRaw SQLi |
-| **Entity Framework (Legacy)** | SQL injection via raw queries |
-| **Dapper** | SQLi via Query/Execute with string concatenation |
-| **WCF (Windows Communication Foundation)** | Deserialization, injection via service contracts |
-| **SQLite (System.Data.SQLite)** | SQLi via raw queries |
+ASP.NET Core MVC, ASP.NET Core Web API, ASP.NET Core Minimal APIs, ASP.NET Web Forms, ASP.NET Framework (Legacy), Blazor, Entity Framework Core, Entity Framework (Legacy), Dapper, WCF (Windows Communication Foundation), SQLite (System.Data.SQLite)
 
 ### Go
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **net/http** (standard library) | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi, NoSQLi, Deserialization |
-| **Gin** | SQLi, XSS, CMDi, PT, SSRF, XXE, LDAPi |
-| **Echo** | SQLi, XSS, CMDi, PT, SSRF, XXE |
-| **Fiber** | SQLi, XSS (Send), CMDi, PT, SSRF |
-| **Gorilla Mux** | SQLi, XSS, CMDi, PT, SSRF |
-| **Chi** | SQLi, XSS, CMDi, PT, SSRF |
-| **GORM** | Raw SQL injection, Scan injection |
-| **sqlx** | SQLi via Queryx, Exec |
-| **gRPC** | Injection via service handlers |
+net/http (standard library), Gin, Echo, Fiber, Gorilla Mux, Chi, GORM, sqlx, gRPC
 
 ### Ruby
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Ruby on Rails** | SQLi (ActiveRecord), XSS (ERB), CMDi (system/open), PT, SSRF, Deserialization (YAML), Open Redirect |
-| **Sinatra** | SQLi, XSS, CMDi, PT, SSRF |
-| **Padrino** | SQLi, XSS, CMDi, PT |
-| **Devise** | Authentication bypass, session fixation |
-| **ActiveRecord** | SQL injection via where(), find_by_sql() |
-| **Sidekiq** | Insecure job serialization, command injection |
+Ruby on Rails, Sinatra, Padrino, Devise, ActiveRecord, Sidekiq
 
 ### Kotlin
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Spring Boot (Kotlin)** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
-| **Ktor** | SQLi, XSS, CMDi, PT, SSRF |
-| **Android SDK** | SQLi (SQLite), XSS (WebView), Intent injection, insecure file access |
-| **Exposed** | SQL injection via unsafe queries |
-| **Anko** | SQLi, insecure database operations |
+Spring Boot (Kotlin), Ktor, Android SDK, Exposed, Anko
 
 ### Scala
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Play Framework** | SQLi, XSS, CMDi, PT, SSRF, XXE, Deserialization |
-| **Akka** | Injection via actor messages, insecure serialization |
-| **Slick** | SQL injection via unsafe queries |
-| **Cats / ZIO** | Effect-level injection patterns |
+Play Framework, Akka, Slick, Cats, ZIO
 
 ### Groovy
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Grails** | SQLi (GString), XSS (GSP), CMDi, PT, SSRF |
-| **Gradle Plugins** | Command injection in build scripts, insecure task execution |
-| **Jenkins Shared Libraries** | CMDi (sh with interpolation), credential exposure |
-| **Spock** | Test-time injection patterns |
-| **Groovy Templates** | Server-Side Template Injection |
+Grails, Gradle Plugins, Jenkins Shared Libraries, Spock, Groovy Templates
 
 ### Swift
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **iOS SDK** | SQLi (SQLite), XSS (WebView), insecure file access, keychain misuse |
-| **SwiftUI** | XSS via Text rendering, insecure data flow |
-| **UIKit** | XSS, insecure URL handling, pasteboard data leakage |
-| **Vapor** | SQLi, XSS, CMDi, PT, SSRF |
-| **Kitura** | SQLi, XSS, CMDi, PT, SSRF |
-| **Combine** | Reactive injection patterns |
+iOS SDK, SwiftUI, UIKit, Vapor, Kitura, Combine
 
 ### Dart / Flutter
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Flutter** | SQLi (sqflite), XSS (WebView), PT, insecure network, hardcoded secrets |
-| **Dio** | SSRF, insecure HTTP, certificate bypass |
-| **http package** | SSRF, cleartext transmission |
-| **sqflite** | SQL injection via raw queries |
-| **Firebase** | Insecure rules, hardcoded credentials |
-| **Provider / Riverpod** | State management injection |
-| **WebView (webview_flutter)** | XSS via JavaScript injection |
+Flutter, Dio, http package, sqflite, Firebase, Provider, Riverpod, WebView (webview_flutter)
 
 ### Rust
 
-| Framework | Detection Coverage |
-|-----------|-------------------|
-| **Axum** | SQLi, XSS, CMDi, PT, SSRF |
-| **Actix** | SQLi, XSS, CMDi, PT, SSRF |
-| **Rocket** | SQLi, XSS, CMDi, PT, SSRF |
-| **Warp** | SQLi, XSS, CMDi, PT |
-| **Tokio** | Command injection, async injection patterns |
-| **Serde** | Insecure deserialization |
-| **Diesel** | SQL injection via raw queries |
-| **sqlx** | SQL injection via macro misuse |
+Axum, Actix, Rocket, Warp, Tokio, Serde, Diesel, sqlx
 
 ### C
 
-| Domain | Detection Coverage |
-|--------|-------------------|
-| **Linux Kernel** | Buffer overflow (strcpy/strcat), out-of-bounds read/write, use-after-free, double free, type confusion |
-| **POSIX / glibc** | Buffer overflow, format string, command injection |
-| **Embedded Systems** | Buffer overflow, insecure memory operations |
+Linux Kernel, POSIX/glibc, Embedded Systems
 
 ### C++
 
-| Domain | Detection Coverage |
-|--------|-------------------|
-| **STL** | Buffer overflow, format string, command injection |
-| **Boost** | Buffer overflow, unsafe operations |
-| **Qt** | XSS, command injection, path traversal |
-| **Embedded Systems** | Buffer overflow, unsafe memory operations |
+STL, Boost, Qt, Embedded Systems
 
 ### Solidity
 
-| Platform | Detection Coverage |
-|----------|-------------------|
-| **Ethereum Smart Contracts** | Reentrancy, integer overflow, access control, tx.origin, block timestamp dependence, delegatecall, unchecked send |
-| **OpenZeppelin** | Inheritance misuse, initializer bypass |
-| **Hardhat / Truffle** | Test-time injection patterns |
+Ethereum Smart Contracts, OpenZeppelin, Hardhat, Truffle
 
 ### Salesforce Apex
 
-| Platform | Detection Coverage |
-|----------|-------------------|
-| **Salesforce Core** | SOQL injection, SOSL injection, XSS (ApexPages), open redirect |
-| **Lightning Web Components (LWC)** | XSS, insecure data handling |
-| **Aura Components** | XSS, insecure server calls |
-| **DML Operations** | Access control bypass (insert/update/delete without security) |
+Salesforce Core, Lightning Web Components (LWC), Aura Components, DML Operations
 
 ### SAP ABAP
 
-| Platform | Detection Coverage |
-|----------|-------------------|
-| **SAP ECC** | Native SQL injection, Open SQL dynamic WHERE, XSS (WRITE unescaped), missing AUTHORITY-CHECK, command execution (SXPG_COMMAND_EXECUTE) |
-| **S/4HANA** | SQL injection, authority checks, sensitive field exposure |
-| **BSP (Business Server Pages)** | XSS, injection |
-| **Web Dynpro** | XSS, injection |
-| **RFC / BAPI** | Remote function call injection, dangerous FM usage (RFC_SYSTEM_INFO, RFC_PING, TH_DELETE_USER, RFC_READ_TABLE, GUI_DOWNLOAD, GUI_UPLOAD, WS_EXECUTE, TH_WPINFO, WS_FILENAME_GET) |
+SAP ECC, S/4HANA, BSP (Business Server Pages), Web Dynpro, RFC/BAPI
 
 ### COBOL
 
-| Platform | Detection Coverage |
-|----------|-------------------|
-| **IBM Mainframe** | SQL injection, command injection (CALL), buffer overflow (MOVE without length check), arithmetic overflow (without ON SIZE ERROR), sensitive data exposure, hardcoded credentials, dynamic file operations |
-| **CICS** | Transaction injection, insecure file handling |
-| **DB2** | SQL injection via string variables, dynamic SQL |
-| **VSAM** | Insecure file access |
+IBM Mainframe, CICS, DB2, VSAM
 
 ### Bash / Shell
 
-| Domain | Detection Coverage |
-|--------|-------------------|
-| **Bash / sh / zsh** | Command injection (eval, bash -c, xargs), code injection (source/.), path traversal (file read/write), SSRF (curl/wget, nc/socat), info disclosure (echo/printenv), XSS (CGI echo), privilege escalation (sudo/su), insecure deserialization (base64) |
-| **CGI Scripts** | XSS, command injection via query parameters |
-| **Cron Jobs** | Command injection, insecure file paths |
+Bash, sh, zsh, CGI Scripts, Cron Jobs
 
 ### YAML (CI/CD)
 
-| Platform | Detection Coverage |
-|----------|-------------------|
-| **GitHub Actions** | Unpinned actions, hardcoded credentials, insecure OIDC, running as root, missing approval gates, untrusted third-party actions, variable exposure in logs, insecure artifact uploads, curl pipe bash, missing SAST steps |
-| **GitLab CI** | Unprotected deployments, insecure cache, download-and-execute patterns, variable exposure |
-| **Jenkins** | Disabled security, hardcoded credentials, untrusted agents, eval in Groovy |
-| **Azure Pipelines** | Broad resource access, missing approval, unverified tasks, variable in scripts |
+GitHub Actions, GitLab CI, Jenkins, Azure Pipelines
+
+### Secrets (All File Types)
+
+Configuration files, environment files, documentation, source code, commit history
 
 ## Compliance Mapping
 
