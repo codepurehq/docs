@@ -7,11 +7,11 @@ description: 'Find vulnerabilities in your source code before they reach product
 
 Codepure SAST scans your source code for security vulnerabilities before they reach production. It works with **22 programming languages**, including enterprise platforms like SAP ABAP, COBOL, Salesforce Apex, and Solidity smart contracts — languages that most security tools cannot read.
 
-Every finding includes a complete attack trace that shows exactly how user input reaches a dangerous operation, so your developers know what to fix and why. The engine ships with built-in compliance mapping for NCA ECC, SAMA, PCI DSS, GDPR, and HIPAA, so your audit reports are ready from day one.
+Every finding includes a complete attack trace that shows exactly how user input reaches a dangerous operation, so your developers know what to fix and why. The engine ships with built-in compliance mapping for PCI DSS, GDPR, HIPAA, and Gulf frameworks (NCA ECC, SAMA), so your audit reports are ready from day one.
 
 - **22 languages** — from JavaScript and Python to ABAP, COBOL, and Solidity
 - **Complete attack traces** — every finding shows source to sink, not just a pattern match
-- **Built-in compliance** — NCA ECC, SAMA, PCI DSS, GDPR, HIPAA mapped automatically
+- **Built-in compliance** — PCI DSS, GDPR, HIPAA, NCA ECC, SAMA mapped automatically
 - **Zero infrastructure** — one binary, no dependencies, runs on-premises or air-gapped
 - **Secret detection included** — 34 pattern types scan all file types for hardcoded credentials
 
@@ -191,11 +191,11 @@ Configuration files, environment files, documentation, source code, commit histo
 
 Every Codepure finding is automatically mapped to the compliance frameworks your organization and auditors care about. The SARIF output includes control IDs and descriptions for each vulnerability.
 
-- **Saudi NCA ECC** — Essential Cybersecurity Controls for input validation, XSS, path traversal, XXE, deserialization, SSRF, and credential management
-- **Saudi SAMA** — Cybersecurity Framework for secure coding, access control, XML processing, encryption, and cryptographic algorithms
 - **PCI DSS** — Payment Card Industry requirements for injection flaws, cross-site scripting, strong cryptography, and credential management
 - **GDPR** — General Data Protection Regulation requirements for personal data protection, encryption in transit, and access controls
 - **HIPAA** — Health Insurance Portability and Accountability Act requirements for protected health information, encryption, and audit controls
+- **NCA ECC (Saudi Arabia)** — Essential Cybersecurity Controls for input validation, XSS, path traversal, XXE, deserialization, SSRF, and credential management
+- **SAMA (Saudi Arabia)** — Cybersecurity Framework for secure coding, access control, XML processing, encryption, and cryptographic algorithms
 
 ## Using Codepure SAST
 
@@ -231,7 +231,7 @@ Each finding includes:
 - **Severity** — Critical, High, Medium, Low, Informational
 - **CWE classification** — Common Weakness Enumeration mapping
 - **OWASP Top 10 category** — alignment with industry standards
-- **Compliance tags** — NCA ECC, SAMA, PCI DSS, GDPR, HIPAA relevance
+- **Compliance tags** — PCI DSS, GDPR, HIPAA, NCA ECC, SAMA relevance
 - **Complete attack trace** — source-to-sink chain showing exactly how user input reaches the dangerous operation, with line numbers and code at each step
 
 Filter results by severity, vulnerability type, compliance standard, file, team, or introduction date.
